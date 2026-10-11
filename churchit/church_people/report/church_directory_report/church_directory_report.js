@@ -118,7 +118,7 @@ frappe.query_reports["Church Directory Report"] = {
 		},
 		{
 			fieldname: "show_hoh",
-			label: __("Head of Household"),
+			label: __("Family Relationships"),
 			fieldtype: "Check",
 			default: 1,
 			group: __("Show"),

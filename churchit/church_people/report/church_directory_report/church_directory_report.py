@@ -409,16 +409,15 @@ def get_directory_html(
 			frappe.qb.from_(Person)
 			.left_join(Spouse)
 			.on(Spouse.name == Person.spouse)
-			.left_join(Family)
-			.on(Family.name == Person.family)
 			.select(
 				Person.name.as_("person_name"),
 				Person.spouse.as_("spouse_name"),
 				Person.first_name.as_("person_first"),
+				Person.last_name.as_("person_last"),
 				Person.full_name.as_("person_full"),
 				Spouse.first_name.as_("spouse_first"),
-				Person.family.as_("family_id"),
-				Coalesce(Family.family_name, "").as_("family_name"),
+				Spouse.last_name.as_("spouse_last"),
+				Spouse.full_name.as_("spouse_full"),
 				Person.anniversary,
 				Month(Person.anniversary).as_("ann_month"),
 				Day(Person.anniversary).as_("ann_day"),
@@ -447,13 +446,14 @@ def get_directory_html(
 				seen_persons.add(row.spouse_name)
 			row["month_name"] = calendar.month_name[int(row.ann_month)]
 			row["month_day"] = f"{calendar.month_name[int(row.ann_month)]} {int(row.ann_day)}"
-			family_name = listed_family_name(row.family_name, row.family_id in hidden_head_families)
-			if row.spouse_first and family_name:
-				row["display_name"] = f"{row.person_first} & {row.spouse_first} {family_name}"
-			elif row.spouse_first:
-				row["display_name"] = f"{row.person_full} & {row.spouse_first}"
-			else:
+			if not row.spouse_name:
 				row["display_name"] = row.person_full
+			elif row.person_last == row.spouse_last:
+				row["display_name"] = (
+					f"{row.person_first} & {row.spouse_first} {row.person_last or ''}".strip()
+				)
+			else:
+				row["display_name"] = f"{row.person_full} & {row.spouse_full}"
 			anniversaries.append(row)
 
 	# ── Missionaries ─────────────────────────────────────────────
