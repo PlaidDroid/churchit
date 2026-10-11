@@ -289,3 +289,57 @@ class TestPerson(FrappeTestCase):
 		data = get_user_dashboard_data({"transactions": []})
 		self.assertIn({"label": "Church", "items": ["Person"]}, data["transactions"])
 		self.assertEqual(data["non_standard_fieldnames"]["Person"], "user")
+
+
+class TestPersonMembership(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		for status in ("Active", "Inactive"):
+			_ensure("Member Status", {"status": status}, {"status": status})
+		for membership_type in ("Member", "Contact"):
+			_ensure("Membership Type", {"type": membership_type}, {"type": membership_type})
+		for event_type in ("Membership", "Death"):
+			_ensure("Life Event Type", {"type": event_type}, {"type": event_type})
+
+	def test_a_new_person_is_active(self):
+		person = frappe.get_doc({"doctype": "Person", "first_name": "_Test Newcomer"}).insert()
+		self.assertEqual(person.membership_status, "Active")
+
+	def test_a_membership_event_makes_the_person_a_member(self):
+		person = frappe.get_doc({"doctype": "Person", "first_name": "_Test Joiner"}).insert()
+		person.append("life_events", {"event_type": "Membership", "date": nowdate()})
+		person.save()
+		self.assertEqual(person.membership, "Member")
+
+	def test_an_existing_membership_event_leaves_a_changed_membership_alone(self):
+		person = frappe.get_doc(
+			{
+				"doctype": "Person",
+				"first_name": "_Test Former",
+				"life_events": [{"event_type": "Membership", "date": "2010-01-01"}],
+			}
+		).insert()
+		person.membership = "Contact"
+		person.save()
+		self.assertEqual(person.membership, "Contact")
+
+	def test_a_death_event_makes_the_person_inactive(self):
+		person = frappe.get_doc({"doctype": "Person", "first_name": "_Test Departed"}).insert()
+		person.append("life_events", {"event_type": "Death", "date": nowdate()})
+		person.save()
+		self.assertEqual(person.membership_status, "Inactive")
+		self.assertEqual(person.inactive_reason, "Deceased")
+
+	def test_the_inactive_reason_goes_when_the_person_is_active_again(self):
+		person = frappe.get_doc(
+			{
+				"doctype": "Person",
+				"first_name": "_Test Returner",
+				"membership_status": "Inactive",
+				"inactive_reason": "Moved away",
+			}
+		).insert()
+		person.membership_status = "Active"
+		person.save()
+		self.assertIsNone(person.inactive_reason)

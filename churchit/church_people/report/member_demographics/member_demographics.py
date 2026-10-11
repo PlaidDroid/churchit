@@ -3,6 +3,7 @@ from frappe import _
 from frappe.query_builder.functions import Coalesce, Count
 from pypika.terms import LiteralValue
 
+from churchit.church_people.membership import is_active_member
 from churchit.church_scope import scoped
 from churchit.query import CurDate, TimestampDiff
 
@@ -59,7 +60,7 @@ def get_data(filters=None):
 			.join(LifeEvent)
 			.on(birth_event)
 			.select(*gender_counts)
-			.where((Person.membership_status == "Active") & LifeEvent.date.isnotnull() & age[low:high])
+			.where(is_active_member(Person) & LifeEvent.date.isnotnull() & age[low:high])
 			.groupby(Person.gender)
 		)
 		rows.append(_tally(label, scoped(bucket, Person, filters).run(as_dict=True)))
@@ -69,7 +70,7 @@ def get_data(filters=None):
 		.left_join(LifeEvent)
 		.on(birth_event)
 		.select(*gender_counts)
-		.where((Person.membership_status == "Active") & LifeEvent.date.isnull())
+		.where(is_active_member(Person) & LifeEvent.date.isnull())
 		.groupby(Person.gender)
 	)
 	unknown = scoped(unknown_query, Person, filters).run(as_dict=True)

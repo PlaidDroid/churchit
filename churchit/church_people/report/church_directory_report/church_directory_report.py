@@ -11,8 +11,9 @@ from frappe.utils.weasyprint import import_weasyprint
 from markupsafe import Markup
 from pypika import Order
 
+from churchit.church_people.membership import ACTIVE, is_active_member
 from churchit.church_people.report.church_directory_report.booklet import impose_booklet
-from churchit.church_scope import church_filter, is_feature_enabled, root_church, scoped
+from churchit.church_scope import church_filter, root_church, scoped
 from churchit.contacts import primary_address_query, primary_email_query, primary_phone_query
 from churchit.query import Day, Month
 from churchit.scripture import get_printable_passage
@@ -61,8 +62,6 @@ def get_individual_columns():
 
 
 def get_individual_data(filters):
-	members_only = frappe.utils.cint((filters or {}).get("members_only", 0))
-
 	Person = frappe.qb.DocType("Person")
 
 	query = (
@@ -76,15 +75,13 @@ def get_individual_data(filters):
 		.orderby(Person.last_name)
 		.orderby(Person.first_name)
 	)
-	if members_only:
-		query = query.where(Person.membership_status == "Active")
 
-	return scoped(with_home_address(listed(query, Person), Person), Person, filters).run(as_dict=True)
+	return scoped(with_home_address(listed(query, Person, filters), Person), Person, filters).run(
+		as_dict=True
+	)
 
 
 def get_data(filters):
-	members_only = frappe.utils.cint((filters or {}).get("members_only", 0))
-
 	Family = frappe.qb.DocType("Family")
 	Address = frappe.qb.DocType("Address")
 	Person = frappe.qb.DocType("Person")
@@ -108,10 +105,8 @@ def get_data(filters):
 		.select(Person.name, Person.full_name, Person.family, Person.is_head_of_household)
 		.where(Person.family.isnotnull() & (Person.family != ""))
 	)
-	if members_only:
-		members_query = members_query.where(Person.membership_status == "Active")
 
-	all_members = scoped(listed(members_query, Person), Person, filters).run(as_dict=True)
+	all_members = scoped(listed(members_query, Person, filters), Person, filters).run(as_dict=True)
 
 	members_by_family = {}
 	for m in all_members:
@@ -139,6 +134,7 @@ def get_data(filters):
 @frappe.whitelist()
 def get_directory_html(
 	members_only: bool = 0,
+	hide_non_active: bool = 0,
 	group_by_family: bool = 1,
 	show_photos: bool = 0,
 	show_roles: bool = 0,
@@ -159,8 +155,7 @@ def get_directory_html(
 	church: str | None = None,
 ):
 	"""Generate the full HTML for the church directory, ready to print."""
-	filters = {"church": church}
-	members_only = frappe.utils.cint(members_only)
+	filters = {"church": church, "members_only": members_only, "hide_non_active": hide_non_active}
 	group_by_family = frappe.utils.cint(group_by_family)
 	show_photos = frappe.utils.cint(show_photos)
 	show_roles = frappe.utils.cint(show_roles)
@@ -185,7 +180,7 @@ def get_directory_html(
 	if church_doc and church_doc.address:
 		church_address = frappe.get_doc("Address", church_doc.address)
 	church_verse = get_printable_passage(church_doc.church_verse, church_doc.name) if church_doc else None
-	website = frappe.utils.get_url().split("://", 1)[-1] if is_feature_enabled("enable_website") else None
+	website = church_doc.printed_website if church_doc else None
 
 	Family = frappe.qb.DocType("Family")
 	Address = frappe.qb.DocType("Address")
@@ -213,7 +208,7 @@ def get_directory_html(
 			Person.last_name,
 			primary_phone_query(Person).as_("primary_phone"),
 			primary_email_query(Person).as_("email"),
-			Person.membership_status,
+			Person.membership,
 			Person.is_head_of_household,
 			Person.gender,
 			Person.spouse,
@@ -226,14 +221,12 @@ def get_directory_html(
 		.orderby(Person.last_name)
 		.orderby(Person.first_name)
 	)
-	if members_only:
-		members_query = members_query.where(Person.membership_status == "Active")
 	if show_missionaries:
 		members_query = without_missionaries(members_query, Person, filters)
 
-	all_members = scoped(with_home_address(listed(members_query, Person), Person), Person, filters).run(
-		as_dict=True
-	)
+	all_members = scoped(
+		with_home_address(listed(members_query, Person, filters), Person), Person, filters
+	).run(as_dict=True)
 
 	# Fetch active positions if requested
 	roles_by_person = {}
@@ -319,45 +312,30 @@ def get_directory_html(
 			Person.last_name,
 			primary_phone_query(Person).as_("primary_phone"),
 			primary_email_query(Person).as_("email"),
-			Person.membership_status,
+			Person.membership,
 			Person.photo,
 		)
 		.where(Person.family.isnull() | (Person.family == ""))
 		.orderby(Person.last_name)
 		.orderby(Person.first_name)
 	)
-	if members_only:
-		individuals_query = individuals_query.where(Person.membership_status == "Active")
 	if show_missionaries:
 		individuals_query = without_missionaries(individuals_query, Person, filters)
 
 	individuals_raw = scoped(
-		with_home_address(listed(individuals_query, Person), Person), Person, filters
+		with_home_address(listed(individuals_query, Person, filters), Person), Person, filters
 	).run(as_dict=True)
 
 	for p in individuals_raw:
 		p["positions"] = roles_by_person.get(p.person_name, [])
 		p["is_head_of_household"] = 0
 
-	# Resolve membership_status hashes to human-readable status labels
 	all_people = list(all_members) + list(individuals_raw)
-	status_names = list({p.membership_status for p in all_people if p.membership_status})
-	status_map = {}
-	if status_names:
-		for row in frappe.get_all(
-			"Member Status", filters=[["name", "in", status_names]], fields=["name", "status"]
-		):
-			status_map[row.name] = row.status
-	for p in all_people:
-		if p.membership_status:
-			p["membership_status"] = status_map.get(p.membership_status, p.membership_status)
-		else:
-			p["membership_status"] = "Non-Member"
 
 	# Build merged sorted entry list
 	all_entries = []
 
-	hidden_head_families = get_families_with_hidden_head()
+	hidden_head_families = get_families_with_hidden_head(frappe.utils.cint(hide_non_active))
 	if group_by_family:
 		for family in families:
 			family_name = listed_family_name(family.family_name, family.family_id in hidden_head_families)
@@ -416,10 +394,8 @@ def get_directory_html(
 			.orderby(Person.last_name)
 			.orderby(Person.first_name)
 		)
-		if members_only:
-			birthdays_query = birthdays_query.where(Person.membership_status == "Active")
 
-		raw_birthdays = scoped(listed(birthdays_query, Person), Person, filters).run(as_dict=True)
+		raw_birthdays = scoped(listed(birthdays_query, Person, filters), Person, filters).run(as_dict=True)
 		for row in raw_birthdays:
 			row["month_name"] = calendar.month_name[int(row.birth_month)]
 			row["month_day"] = f"{calendar.month_name[int(row.birth_month)]} {int(row.birth_day)}"
@@ -454,10 +430,14 @@ def get_directory_html(
 			.orderby(Person.last_name)
 			.orderby(Person.first_name)
 		)
-		if members_only:
-			anniversaries_query = anniversaries_query.where(Person.membership_status == "Active")
+		if frappe.utils.cint(hide_non_active):
+			anniversaries_query = anniversaries_query.where(
+				Spouse.name.isnull() | (Spouse.membership_status == ACTIVE)
+			)
 
-		raw_anniversaries = scoped(listed(anniversaries_query, Person), Person, filters).run(as_dict=True)
+		raw_anniversaries = scoped(listed(anniversaries_query, Person, filters), Person, filters).run(
+			as_dict=True
+		)
 		seen_persons = set()
 		for row in raw_anniversaries:
 			if row.person_name in seen_persons:
@@ -555,7 +535,7 @@ def download_directory_pdf(**options):
 	booklet_printing = frappe.utils.cint(options.get("booklet_printing"))
 	document = get_paginated_directory(options)
 	if booklet_printing and len(document.pages) % 4:
-		# Pad before the notes page, which belongs on the inside back cover
+		# Fill the last sheet with notes pages, which end on the inside back cover
 		padding_pages = -len(document.pages) % 4
 		document = get_paginated_directory({**options, "padding_pages": padding_pages})
 	pdf = document.write_pdf(dpi=200)
@@ -598,18 +578,25 @@ def with_home_address(query, Person):
 	)
 
 
-def listed(query, Person):
-	"""*query* without the people who asked to be left out of the directory."""
-	return query.where(Person.hide_from_directory == 0)
+def listed(query, Person, filters):
+	"""*query* without the people who asked to be left out of the directory, or that *filters* leave out."""
+	filters = filters or {}
+	query = query.where(Person.hide_from_directory == 0)
+	if frappe.utils.cint(filters.get("members_only")):
+		query = query.where(is_active_member(Person))
+	if frappe.utils.cint(filters.get("hide_non_active")):
+		query = query.where(Person.membership_status == ACTIVE)
+	return query
 
 
-def get_families_with_hidden_head():
-	"""Families whose head of household is left out of the directory."""
+def get_families_with_hidden_head(hide_non_active=False):
+	"""Families whose head of household is left out of the directory, or is not Active when *hide_non_active*."""
+	hidden = {"hide_from_directory": 1}
+	if hide_non_active:
+		hidden["membership_status"] = ["!=", ACTIVE]
 	# church-scope: only used to shorten names of families the scoped queries already listed
 	return set(
-		frappe.get_all(
-			"Person", filters={"is_head_of_household": 1, "hide_from_directory": 1}, pluck="family"
-		)
+		frappe.get_all("Person", filters={"is_head_of_household": 1}, or_filters=hidden, pluck="family")
 	)
 
 

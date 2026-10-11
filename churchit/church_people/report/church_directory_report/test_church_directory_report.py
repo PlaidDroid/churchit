@@ -1,18 +1,22 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+import base64
 import io
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from PIL import Image
 from pypdf import PdfReader
 
 from churchit.church_people.report.church_directory_report.booklet import SHEET_WIDTH, get_booklet_spreads
 from churchit.church_people.report.church_directory_report.church_directory_report import (
 	download_directory_pdf,
+	execute,
 	get_directory_html,
+	get_paginated_directory,
 )
-from churchit.tests.helpers import ensure_root_church, make_address, make_person, make_translation
+from churchit.tests.helpers import ensure, ensure_root_church, make_address, make_person, make_translation
 
 
 class TestChurchDirectoryReport(FrappeTestCase):
@@ -38,17 +42,17 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		translation = make_translation(self, "_TDV", [("JOS", 24, 15, "We will serve the LORD.")])
 		self.set_church_value("default_bible_translation", translation)
 		self.set_church_value("church_verse", "Joshua 24:15")
-		self.set_website_feature(1)
+		self.set_church_value("website", "https://test-church.example.org/")
 
 		html = self.render()
 
 		self.assertIn("We will serve the LORD.", html)
 		self.assertIn(f"Joshua 24:15 ({translation})", html)
-		website = frappe.utils.get_url().split("://", 1)[-1]
-		self.assertIn(f'<div class="cover-website">{website}</div>', html)
+		self.assertIn('<div class="cover-website">test-church.example.org</div>', html)
 
-	def test_cover_leaves_out_the_website_when_the_web_site_module_is_off(self):
-		self.set_website_feature(0)
+	def test_cover_leaves_out_the_website_when_the_church_has_none(self):
+		self.set_church_value("website", None)
+		self.set_website_feature(1)
 
 		self.assertNotIn('<div class="cover-website">', self.render())
 
@@ -59,6 +63,22 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		self.assertIn(
 			'<img class="cover-image" src="/files/_test_church.png"', self.render(show_church_image="1")
 		)
+
+	def test_cover_image_fills_the_space_under_the_text_on_one_page(self):
+		for width, height in ((1600, 900), (600, 1200)):
+			self.set_church_value("image", make_png_data_uri(width, height))
+			for booklet in ("0", "1"):
+				with self.subTest(image=(width, height), booklet=booklet):
+					options = {"church": self.church, "show_church_image": "1", "booklet_printing": booklet}
+					html = get_directory_html(**options)
+					self.assertGreater(html.index('class="cover-image"'), html.index('class="cover-date"'))
+
+					pages = get_paginated_directory(options).pages
+					image = find_box(pages[0]._page_box, "img")
+					self.assertGreater(
+						image.height, MM_TO_PX * 100, "the image takes the space left on the cover"
+					)
+					self.assertIsNone(find_box(pages[1]._page_box, "img"), "the image stays on the cover")
 
 	def test_cover_leaves_out_the_mission_statement(self):
 		self.set_church_value("mission_statement", "_Test mission statement")
@@ -159,6 +179,40 @@ class TestChurchDirectoryReport(FrappeTestCase):
 			self.assertNotIn("_Test Solo", html)
 			self.assertNotIn("_Test Gus", html)
 
+	def test_people_who_are_not_active_are_left_out_only_when_ticked(self):
+		ensure("Member Status", {"status": "Inactive"})
+		ensure("Member Status", {"status": "_Test Homebound"})
+		family = make_family("_Test Lapsed - Ivy", "_Test Lapsed Street")
+		born = [{"event_type": "Birth", "date": "1980-07-07"}]
+		ivy = make_person(
+			"_Test Ivy",
+			"Lapsed",
+			family=family.name,
+			is_head_of_household=1,
+			membership_status="Inactive",
+			life_events=born,
+		)
+		make_person(
+			"_Test Abe",
+			"Lapsed",
+			family=family.name,
+			spouse=ivy.name,
+			is_married=1,
+			anniversary="2001-08-08",
+		)
+		make_person("_Test Solo", "Lapsed", membership_status="_Test Homebound")
+
+		options = {"show_birthdays": "1", "show_anniversaries": "1"}
+		self.assertIn("_Test Ivy", self.render(**options))
+		grouped = self.render(hide_non_active="1", **options)
+		self.assertIn("_Test Lapsed Family", grouped)
+		for html in (grouped, self.render(hide_non_active="1", group_by_family="0", **options)):
+			self.assertIn("_Test Abe Lapsed", html)
+			self.assertNotIn("Ivy", html, "an anniversary would name the inactive spouse")
+			self.assertNotIn("_Test Solo Lapsed", html)
+		people = [row["person"] for row in execute({"group_by_family": 0, "hide_non_active": 1})[1]]
+		self.assertNotIn(ivy.name, people)
+
 	def test_missionaries_are_listed_once_when_their_section_is_ticked(self):
 		make_person("_Test", "Directory Neighbor")
 		missionary = make_person("_Test", "Directory Sent")
@@ -242,6 +296,18 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		self.assertEqual(inside_back_cover[0], "Notes")
 		self.assertIn(str(len(sides) * 2 - 1), inside_back_cover)
 
+	def test_booklet_fills_its_empty_pages_with_notes_pages(self):
+		self.assertEqual(self.render(padding_pages="2").count('<div class="appendix-heading">Notes</div>'), 2)
+
+		sides = self.render_pdf(booklet_printing="1")
+
+		halves = [
+			[word for x, word in get_positioned_words(side) if (x >= SHEET_WIDTH / 2) == is_right]
+			for side in sides
+			for is_right in (False, True)
+		]
+		self.assertEqual(sum(not words for words in halves), 1, "only the back cover is blank")
+
 
 def make_family(family_name, street):
 	"""A Family whose primary address is on *street*."""
@@ -253,6 +319,26 @@ def make_family(family_name, street):
 			"addresses": [{"address": address, "is_primary": 1}],
 		}
 	).insert(ignore_permissions=True)
+
+
+MM_TO_PX = 96 / 25.4
+
+
+def make_png_data_uri(width, height):
+	"""A plain PNG of *width* by *height* pixels, inline so no file is left behind."""
+	output = io.BytesIO()
+	Image.new("RGB", (width, height), "steelblue").save(output, "PNG")
+	return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode()
+
+
+def find_box(box, tag):
+	"""The first laid-out box for an element named *tag* under *box*, or None."""
+	element = getattr(box, "element", None)
+	if element is not None and element.tag == tag:
+		return box
+	for child in getattr(box, "children", []):
+		if found := find_box(child, tag):
+			return found
 
 
 def get_positioned_words(page):

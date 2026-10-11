@@ -17,22 +17,23 @@ class TestCelebrations(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		cls.active = ensure("Member Status", {"status": "Active"})
-		cls.visitor = ensure("Member Status", {"status": "_Test Visitor"})
+		ensure("Member Status", {"status": "Active"})
+		cls.inactive = ensure("Member Status", {"status": "Inactive"})
+		cls.member = ensure("Membership Type", {"type": "Member"})
+		cls.visitor = ensure("Membership Type", {"type": "Visitor"})
 
 	def test_birthdays_in_a_window_across_the_new_year(self):
+		make_person("Late", "_Test December", membership=self.member, life_events=born_on("1990-12-30"))
+		make_person("Early", "_Test January", membership=self.member, life_events=born_on("1985-01-02"))
+		make_person("Leap", "_Test Day", membership=self.member, life_events=born_on("1988-02-29"))
+		make_person("Outside", "_Test Window", membership=self.member, life_events=born_on("1990-01-04"))
+		make_person("Visiting", "_Test Guest", membership=self.visitor, life_events=born_on("1990-12-31"))
 		make_person(
-			"Late", "_Test December", membership_status=self.active, life_events=born_on("1990-12-30")
-		)
-		make_person(
-			"Early", "_Test January", membership_status=self.active, life_events=born_on("1985-01-02")
-		)
-		make_person("Leap", "_Test Day", membership_status=self.active, life_events=born_on("1988-02-29"))
-		make_person(
-			"Outside", "_Test Window", membership_status=self.active, life_events=born_on("1990-01-04")
-		)
-		make_person(
-			"Visiting", "_Test Guest", membership_status=self.visitor, life_events=born_on("1990-12-31")
+			"Moved",
+			"_Test Away",
+			membership=self.member,
+			membership_status=self.inactive,
+			life_events=born_on("1990-12-31"),
 		)
 
 		rows = [(row.day, row.name) for row in celebrations.birthdays(START, END)]
@@ -40,6 +41,7 @@ class TestCelebrations(FrappeTestCase):
 		self.assertEqual(rows[:2], [("Dec 30", "Late _Test December"), ("Jan 2", "Early _Test January")])
 		self.assertNotIn(("Jan 4", "Outside _Test Window"), rows)
 		self.assertNotIn(("Dec 31", "Visiting _Test Guest"), rows)
+		self.assertNotIn(("Dec 31", "Moved _Test Away"), rows)
 		self.assertIn(
 			("Feb 28", "Leap _Test Day"),
 			[(r.day, r.name) for r in celebrations.birthdays("2031-02-28", "2031-02-28")],
@@ -49,15 +51,15 @@ class TestCelebrations(FrappeTestCase):
 		make_person(
 			"Shy",
 			"_Test Hidden",
-			membership_status=self.active,
+			membership=self.member,
 			hide_from_directory=1,
 			life_events=born_on("1990-12-30"),
 		)
-		partner = make_person("Partner", "_Test Hidden", membership_status=self.active, hide_from_directory=1)
+		partner = make_person("Partner", "_Test Hidden", membership=self.member, hide_from_directory=1)
 		make_person(
 			"Open",
 			"_Test Hidden",
-			membership_status=self.active,
+			membership=self.member,
 			is_married=1,
 			anniversary="2010-12-29",
 			spouse=partner.name,
@@ -68,33 +70,31 @@ class TestCelebrations(FrappeTestCase):
 		self.assertFalse([name for name in names if "_Test Hidden" in name])
 
 	def test_everyone_includes_non_members(self):
-		make_person(
-			"Visiting", "_Test Everyone", membership_status=self.visitor, life_events=born_on("1990-12-31")
-		)
+		make_person("Visiting", "_Test Everyone", membership=self.visitor, life_events=born_on("1990-12-31"))
 		rows = celebrations.birthdays(START, END, members_only=False)
 		self.assertIn("Visiting _Test Everyone", [row.name for row in rows])
 
 	def test_anniversaries_list_each_couple_once(self):
 		# Person links spouses both ways on save.
-		sarah = make_person("Sarah", "_Test Smith", membership_status=self.active)
+		sarah = make_person("Sarah", "_Test Smith", membership=self.member)
 		make_person(
 			"Matt",
 			"_Test Smith",
-			membership_status=self.active,
+			membership=self.member,
 			is_married=1,
 			anniversary="2010-12-29",
 			spouse=sarah.name,
 		)
-		ann = make_person("Ann", "_Test Jones", membership_status=self.active)
+		ann = make_person("Ann", "_Test Jones", membership=self.member)
 		make_person(
 			"Ben",
 			"_Test Brown",
-			membership_status=self.active,
+			membership=self.member,
 			is_married=1,
 			anniversary="2005-01-01",
 			spouse=ann.name,
 		)
-		make_person("Single", "_Test Widow", membership_status=self.active, anniversary="2005-01-01")
+		make_person("Single", "_Test Widow", membership=self.member, anniversary="2005-01-01")
 
 		rows = [(row.day, row.name) for row in celebrations.anniversaries(START, END)]
 

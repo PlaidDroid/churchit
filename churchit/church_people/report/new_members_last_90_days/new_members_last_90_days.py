@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import cint
 from pypika import Field, Interval, Order
 
+from churchit.church_people.membership import is_active_member
 from churchit.church_scope import scoped
 from churchit.contacts import primary_email_query, primary_phone_query
 from churchit.query import CurDate
@@ -57,7 +58,7 @@ def get_data(filters=None):
 			primary_email_query(Person).as_("email"),
 			membership_date.as_("membership_date"),
 		)
-		.where(Person.membership_status == "Active")
+		.where(is_active_member(Person))
 		.having(
 			Field("membership_date").isnotnull()
 			& (Field("membership_date") >= CurDate() - Interval(days=days))

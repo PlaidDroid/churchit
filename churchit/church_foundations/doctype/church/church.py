@@ -62,6 +62,12 @@ class Church(NestedSet):
 		super().on_trash()
 		church_access.move_church_permissions(self.name, parent)
 
+	@property
+	def printed_website(self):
+		"""This church's website, else its nearest parent's, without the scheme or a trailing slash."""
+		website = inherited_value(self.name, "website")
+		return website.split("://", 1)[-1].rstrip("/") if website else None
+
 	def validate_parent_is_group(self):
 		if self.parent_church and not frappe.db.get_value("Church", self.parent_church, "is_group"):
 			frappe.throw(

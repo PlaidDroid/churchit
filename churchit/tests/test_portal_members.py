@@ -47,14 +47,14 @@ class TestPortalMembers(FrappeTestCase):
 		self.assertFalse(frappe.has_permission("Background Check", "read"))
 
 	def test_a_member_changes_only_what_personal_details_offers(self):
-		ensure("Member Status", {"status": "Active"})
+		ensure("Member Status", {"status": "Inactive"})
 		frappe.set_user(self.member)
 		person = frappe.get_doc("Person", self.own.name)
 		person.alergies = "_Test Peanuts"
 		person.hide_from_directory = 1
 		person.save()
 
-		person.membership_status = "Active"
+		person.membership_status = "Inactive"
 		with self.assertRaises(frappe.PermissionError):
 			person.save()
 

@@ -5,13 +5,14 @@
   "doctype": "Number Card",
   "document_type": "Person",
   "dynamic_filters_json": "[]",
-  "filters_json": "[[\"Person\",\"membership_status\",\"=\",\"Active\",false]]",
+  "filters_json": "[[\"Person\",\"membership\",\"=\",\"Member\",false],[\"Person\",\"membership_status\",\"=\",\"Active\",false]]",
   "function": "Count",
   "idx": 0,
   "is_public": 0,
   "is_standard": 1,
   "label": "Member Count",
-  "modified": "2026-09-28 13:30:00.000000",
+  "method": "churchit.dashboard.count_people",
+  "modified": "2026-10-11 12:00:00.000000",
   "modified_by": "Administrator",
   "module": "Church People",
   "name": "Members",
@@ -20,6 +21,5 @@
   "report_function": "Sum",
   "show_percentage_stats": 0,
   "stats_time_interval": "Yearly",
-  "type": "Custom",
-  "method": "churchit.dashboard.count_people"
+  "type": "Custom"
 }

@@ -33,11 +33,19 @@ body {
     padding: 40mm 20mm;
 }
 
+/* WeasyPrint has no vh, so a cover with an image gets the page height inside the margins, and the image takes what the text leaves. */
+.cover.cover-with-image {
+    height: 243mm;
+    justify-content: flex-start;
+    padding: 12mm 0 0;
+}
+
 .cover-image {
-    max-width: 70mm;
-    max-height: 45mm;
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
+    margin-top: 24px;
     object-fit: contain;
-    margin-bottom: 16px;
 }
 
 .cover-church-name {
@@ -412,6 +420,11 @@ body {
 .cover {
     padding: 30mm 0;
 }
+
+.cover.cover-with-image {
+    height: 233mm;
+    padding: 10mm 0 0;
+}
 {% endif %}
 </style>
 </head>
@@ -424,11 +437,8 @@ body {
 <!-- ════════════════════════════════════════════════════════════
      COVER PAGE
 ═════════════════════════════════════════════════════════════ -->
-<div class="cover">
-    {% if show_church_image and church.image %}
-    <img class="cover-image" src="{{ church.image }}" alt="">
-    {% endif %}
-
+{% set cover_image = church.image if show_church_image else None %}
+<div class="cover{% if cover_image %} cover-with-image{% endif %}">
     <div class="cover-church-name">{{ church.church_name }}</div>
 
     {% if church.legal_name and church.legal_name != church.church_name %}
@@ -453,6 +463,10 @@ body {
         {% if church_verse.text %}<div class="cover-verse-text">&ldquo;{{ church_verse.text }}&rdquo;</div>{% endif %}
         <div class="cover-verse-reference">{{ church_verse.reference }}</div>
     </div>
+    {% endif %}
+
+    {% if cover_image %}
+    <img class="cover-image" src="{{ cover_image }}" alt="">
     {% endif %}
 </div>
 
@@ -504,8 +518,8 @@ body {
                 </div>
                 {% endif %}
                 <table class="detail-rows">
-                    {% if show_membership and member.membership_status %}
-                    <tr><th>Membership</th><td><span class="status-badge">{{ member.membership_status }}</span></td></tr>
+                    {% if show_membership and member.membership %}
+                    <tr><th>Membership</th><td><span class="status-badge">{{ member.membership }}</span></td></tr>
                     {% endif %}
                     {% if show_phone and member.primary_phone %}
                     <tr><th>Phone</th><td>{{ member.primary_phone }}</td></tr>
@@ -599,17 +613,15 @@ body {
 </div>
 {% endif %}
 
-{% for page in range(padding_pages) %}<div class="blank-page"></div>{% endfor %}
-
 <!-- ════════════════════════════════════════════════════════════
-     NOTES
+     NOTES (and the pages a booklet is padded with)
 ═════════════════════════════════════════════════════════════ -->
-{% if include_notes_page %}
+{% for page in range(padding_pages + include_notes_page) %}
 <div class="appendix-section">
     <div class="appendix-heading">Notes</div>
     {% for line in range(24) %}<div class="note-line"></div>{% endfor %}
 </div>
-{% endif %}
+{% endfor %}
 
 {% if blank_back_cover or booklet_printing %}
 <div class="blank-page"></div>

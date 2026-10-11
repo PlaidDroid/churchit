@@ -41,10 +41,10 @@ fixtures = [
 		"filters": [["type", "in", ["Confirmed", "Assumed", "Signed-Up", "Checked-In", "Absent"]]],
 	},
 	{"dt": "Notification", "filters": [["module", "like", "Church%"]]},
-	# The map block on the Missions workspace. App-owned: the workspace JSON
-	# references it by name and is re-synced on every migrate, so it has to be
-	# re-applied alongside it.
-	{"dt": "Custom HTML Block", "filters": [["name", "in", ["MissionaryMap"]]]},
+	# The map block on the Missions workspace and the preview on Web Site.
+	# App-owned: the workspace JSON references each by name and is re-synced on
+	# every migrate, so they have to be re-applied alongside it.
+	{"dt": "Custom HTML Block", "filters": [["name", "in", ["MissionaryMap", "WebsitePreview"]]]},
 ]
 # Apps
 # ------------------
@@ -157,6 +157,11 @@ after_install = "churchit.patches.after_install.execute"
 # Workspaces ship as standard records, so migrate re-imports them and resets the
 # visibility Church Features set. Re-apply it, and add newly shipped dock entries.
 after_migrate = ["churchit.church_setup.doctype.church_features.church_features.apply_on_migrate"]
+
+# Frappe collects the login notes on `on_login`, which runs before the session
+# is the user's, so it stores them for Guest and the desk shows none. Collect
+# them again once the session belongs to the user.
+on_session_creation = ["frappe.desk.doctype.note.note._get_unseen_notes"]
 
 setup_wizard_requires = "/assets/churchit/js/setup_wizard.js"
 

@@ -2,7 +2,7 @@
  "actions": [],
  "autoname": "field:status",
  "creation": "2025-08-25 22:44:34.512827",
- "description": "Status type of the `Church Member` as defined by the church.",
+ "description": "Whether a person still takes part in the church: Active, Inactive, or a status the church adds.",
  "doctype": "DocType",
  "documentation": "/app/manual%3A-people",
  "engine": "InnoDB",
@@ -36,7 +36,7 @@
    "link_fieldname": "membership_status"
   }
  ],
- "modified": "2026-09-28 13:00:00",
+ "modified": "2026-10-11 12:00:00",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Member Status",
@@ -79,9 +79,9 @@
  ],
  "quick_entry": 1,
  "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "show_title_field_in_link": 1,
  "states": [],
  "title_field": "status"
 }
