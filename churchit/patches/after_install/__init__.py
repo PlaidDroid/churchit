@@ -277,6 +277,8 @@ def _create_person_relation_types():
 		"Son-in-law",
 		"Daughter-in-law",
 		"Cousin",
+		"Fiancé",
+		"Fiancée",
 	):
 		_insert_if_missing("Person Relation Type", {"type": relation}, type=relation)
 

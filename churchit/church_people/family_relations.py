@@ -19,6 +19,7 @@ ROLE_TYPES = {
 	"step_child": ("Stepson", "Stepdaughter"),
 	"child_in_law": ("Son-in-law", "Daughter-in-law"),
 	"cousin": ("Cousin", "Cousin"),
+	"fiance": ("Fiancé", "Fiancée"),
 }
 ROLE_OF_TYPE = {relation_type: role for role, types in ROLE_TYPES.items() for relation_type in types}
 
@@ -38,6 +39,7 @@ INVERSE_ROLES = {
 	"parent_in_law": "child_in_law",
 	"child_in_law": "parent_in_law",
 	"cousin": "cousin",
+	"fiance": "fiance",
 }
 
 # What a member's spouse is to the head, from that member's role.

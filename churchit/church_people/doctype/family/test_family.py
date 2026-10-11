@@ -113,6 +113,20 @@ class TestFamily(FrappeTestCase):
 
 		self.assertEqual(self._relations(head)[bob.name], ("Stepson", 1))
 
+	def test_fiancee_gives_the_other_side_fiance(self):
+		family, _head, _mom, bob, _bill = self._make_household("Engaged Household")
+		for relation_type in ("Fiancé", "Fiancée"):
+			if not frappe.db.exists("Person Relation Type", relation_type):
+				frappe.get_doc({"doctype": "Person Relation Type", "type": relation_type}).insert(
+					ignore_permissions=True
+				)
+		fay = self._make_person("Fay", gender="Female", family=family.name)
+		bob = frappe.get_doc("Person", bob.name)
+		bob.append("relations", {"person": fay.name, "type": "Fiancée"})
+		bob.save(ignore_permissions=True)
+
+		self.assertEqual(self._relations(fay)[bob.name], ("Fiancé", 1))
+
 	def test_relation_with_no_reverse_type_leaves_the_other_side_blank(self):
 		_family, head, _mom, bob, _bill = self._make_household("Reverse Household")
 		if not frappe.db.exists("Person Relation Type", "Godfather"):
