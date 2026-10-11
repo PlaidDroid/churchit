@@ -284,6 +284,37 @@ class TestChurchDirectoryReport(FrappeTestCase):
 			"_Test Former Ashby</", html, "an inactive missionary's people are listed with everyone"
 		)
 
+	def test_deceased_people_are_left_out_everywhere(self):
+		for event_type in ("Birth", "Death"):
+			ensure("Life Event Type", {"type": event_type})
+		family = make_family("_Test Mourning - Walt", "_Test Mourning Street")
+		walt = make_person(
+			"_Test Walt",
+			"Mourning",
+			family=family.name,
+			is_head_of_household=1,
+			life_events=[
+				{"event_type": "Birth", "date": "1950-09-09"},
+				{"event_type": "Death", "date": "2024-01-01"},
+			],
+		)
+		make_person(
+			"_Test Rose",
+			"Mourning",
+			family=family.name,
+			spouse=walt.name,
+			is_married=1,
+			anniversary="1975-10-10",
+			life_events=[{"event_type": "Birth", "date": "1952-09-10"}],
+		)
+
+		options = {"show_birthdays": "1", "show_anniversaries": "1"}
+		grouped = self.render(**options)
+		self.assertIn("_Test Mourning Family", grouped)
+		for html in (grouped, self.render(group_by_family="0", **options)):
+			self.assertIn("_Test Rose Mourning", html)
+			self.assertNotIn("Walt", html)
+
 	def test_record_values_are_escaped(self):
 		self.set_church_value("church_name", 'Saint "Mary" </style><script>x()</script>')
 		make_person("_Test", "<b>Directory Escaped</b>", photo='/files/_test.png" onerror="alert(1)')

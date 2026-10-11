@@ -425,6 +425,7 @@ def get_directory_html(
 			)
 			.where(Person.anniversary.isnotnull() & (Person.is_married == 1))
 			.where(Coalesce(Spouse.hide_from_directory, 0) == 0)
+			.where(Spouse.name.isnull() | Spouse.name.notin(deceased_people()))
 			.orderby(Month(Person.anniversary))
 			.orderby(Day(Person.anniversary))
 			.orderby(Person.last_name)
@@ -586,9 +587,9 @@ def with_home_address(query, Person):
 
 
 def listed(query, Person, filters):
-	"""*query* without the people who asked to be left out of the directory, or that *filters* leave out."""
+	"""*query* without the deceased, the people who asked to be left out of the directory, and those *filters* leave out."""
 	filters = filters or {}
-	query = query.where(Person.hide_from_directory == 0)
+	query = query.where((Person.hide_from_directory == 0) & Person.name.notin(deceased_people()))
 	if frappe.utils.cint(filters.get("members_only")):
 		query = query.where(is_active_member(Person))
 	if frappe.utils.cint(filters.get("hide_non_active")):
@@ -597,13 +598,25 @@ def listed(query, Person, filters):
 
 
 def get_families_with_hidden_head(hide_non_active=False):
-	"""Families whose head of household is left out of the directory, or is not Active when *hide_non_active*."""
-	hidden = {"hide_from_directory": 1}
+	"""Families whose head of household is hidden, deceased, or not Active when *hide_non_active*."""
+	Person = frappe.qb.DocType("Person")
+	is_hidden = (Person.hide_from_directory == 1) | Person.name.isin(deceased_people())
 	if hide_non_active:
-		hidden["membership_status"] = ["!=", ACTIVE]
+		is_hidden |= Coalesce(Person.membership_status, "") != ACTIVE
 	# church-scope: only used to shorten names of families the scoped queries already listed
-	return set(
-		frappe.get_all("Person", filters={"is_head_of_household": 1}, or_filters=hidden, pluck="family")
+	heads = (
+		frappe.qb.from_(Person).select(Person.family).where((Person.is_head_of_household == 1) & is_hidden)
+	)
+	return set(heads.run(pluck=True))
+
+
+def deceased_people():
+	"""Subquery of the people with a Death life event."""
+	LifeEvent = frappe.qb.DocType("Life Event")
+	return (
+		frappe.qb.from_(LifeEvent)
+		.select(LifeEvent.parent)
+		.where((LifeEvent.parenttype == "Person") & (LifeEvent.event_type == "Death"))
 	)
 
 
@@ -629,7 +642,7 @@ def without_missionaries(query, Person, filters):
 
 
 def get_missionary_people(missionaries):
-	"""{missionary: [full names]} of the people on each missionary, in form order, without hidden people."""
+	"""{missionary: [full names]} of the people on each missionary, in form order, without hidden or deceased people."""
 	if not missionaries:
 		return {}
 	MissionaryPerson = frappe.qb.DocType("Missionary Person")
@@ -644,6 +657,7 @@ def get_missionary_people(missionaries):
 			(MissionaryPerson.parenttype == "Missionary")
 			& MissionaryPerson.parent.isin(missionaries)
 			& (Person.hide_from_directory == 0)
+			& Person.name.notin(deceased_people())
 		)
 		.orderby(MissionaryPerson.idx)
 		.run(as_dict=True)
