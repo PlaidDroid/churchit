@@ -613,17 +613,15 @@ body {
 </div>
 {% endif %}
 
-{% for page in range(padding_pages) %}<div class="blank-page"></div>{% endfor %}
-
 <!-- ════════════════════════════════════════════════════════════
-     NOTES
+     NOTES (and the pages a booklet is padded with)
 ═════════════════════════════════════════════════════════════ -->
-{% if include_notes_page %}
+{% for page in range(padding_pages + include_notes_page) %}
 <div class="appendix-section">
     <div class="appendix-heading">Notes</div>
     {% for line in range(24) %}<div class="note-line"></div>{% endfor %}
 </div>
-{% endif %}
+{% endfor %}
 
 {% if blank_back_cover or booklet_printing %}
 <div class="blank-page"></div>

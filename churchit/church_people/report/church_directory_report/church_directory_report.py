@@ -535,7 +535,7 @@ def download_directory_pdf(**options):
 	booklet_printing = frappe.utils.cint(options.get("booklet_printing"))
 	document = get_paginated_directory(options)
 	if booklet_printing and len(document.pages) % 4:
-		# Pad before the notes page, which belongs on the inside back cover
+		# Fill the last sheet with notes pages, which end on the inside back cover
 		padding_pages = -len(document.pages) % 4
 		document = get_paginated_directory({**options, "padding_pages": padding_pages})
 	pdf = document.write_pdf(dpi=200)

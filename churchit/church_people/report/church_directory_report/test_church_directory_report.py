@@ -296,6 +296,18 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		self.assertEqual(inside_back_cover[0], "Notes")
 		self.assertIn(str(len(sides) * 2 - 1), inside_back_cover)
 
+	def test_booklet_fills_its_empty_pages_with_notes_pages(self):
+		self.assertEqual(self.render(padding_pages="2").count('<div class="appendix-heading">Notes</div>'), 2)
+
+		sides = self.render_pdf(booklet_printing="1")
+
+		halves = [
+			[word for x, word in get_positioned_words(side) if (x >= SHEET_WIDTH / 2) == is_right]
+			for side in sides
+			for is_right in (False, True)
+		]
+		self.assertEqual(sum(not words for words in halves), 1, "only the back cover is blank")
+
 
 def make_family(family_name, street):
 	"""A Family whose primary address is on *street*."""
