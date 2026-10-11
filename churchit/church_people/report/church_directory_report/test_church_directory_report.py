@@ -179,6 +179,30 @@ class TestChurchDirectoryReport(FrappeTestCase):
 			self.assertNotIn("_Test Solo", html)
 			self.assertNotIn("_Test Gus", html)
 
+	def test_anniversaries_name_only_the_spouses(self):
+		family = make_family("_Test Wed - Carl", "_Test Wed Street")
+		carl = make_person("_Test Carl", "Wed", family=family.name, is_head_of_household=1)
+		make_person(
+			"_Test Dana", "Wed", family=family.name, spouse=carl.name, is_married=1, anniversary="2003-03-03"
+		)
+		eve = make_person("_Test Eve", "Pine")
+		make_person("_Test Finn", "Oak", spouse=eve.name, is_married=1, anniversary="2004-04-04")
+
+		html = self.render(show_anniversaries="1")
+
+		self.assertIn('<span class="calendar-name">_Test Carl &amp; _Test Dana Wed</span>', html)
+		self.assertIn('<span class="calendar-name">_Test Finn Oak &amp; _Test Eve Pine</span>', html)
+
+	def test_family_relationships_are_printed_only_when_ticked(self):
+		family = make_family("_Test Kin - Gil", "_Test Kin Street")
+		gil = make_person("_Test Gil", "Kin", family=family.name, is_head_of_household=1, gender="Male")
+		make_person("_Test Hope", "Kin", family=family.name, spouse=gil.name, is_married=1, gender="Female")
+
+		html = self.render()
+		self.assertIn('<span class="member-relation">(Head of Household)</span>', html)
+		self.assertIn('<span class="member-relation">(Wife)</span>', html)
+		self.assertNotIn('class="member-relation"', self.render(show_hoh="0"))
+
 	def test_people_who_are_not_active_are_left_out_only_when_ticked(self):
 		ensure("Member Status", {"status": "Inactive"})
 		ensure("Member Status", {"status": "_Test Homebound"})
