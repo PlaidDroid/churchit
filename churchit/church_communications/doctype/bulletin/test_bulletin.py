@@ -91,6 +91,12 @@ class TestBulletin(FrappeTestCase):
 		self.assertIn(sensitive.name, with_sensitive)
 		self.assertNotIn(former.name, with_sensitive)
 
+	def test_missionary_rotation_skips_inactive_missionaries(self):
+		ensure("Missionary Status", {"status": "Inactive"})
+		inactive = self.make_missionary("_Test Inactive Missionary", status="Inactive")
+
+		self.assertNotIn(inactive.name, supported_missionaries(FUNCTION_DATE))
+
 	def test_missionary_rotation_changes_weekly_and_wraps(self):
 		self.make_missionary("_Test Rotation Missionary A")
 		self.make_missionary("_Test Rotation Missionary B")

@@ -11,6 +11,7 @@ from frappe.utils.weasyprint import import_weasyprint
 from markupsafe import Markup
 from pypika import Order
 
+from churchit.church_missions.doctype.missionary_status.missionary_status import is_current_missionary
 from churchit.church_people.membership import ACTIVE, is_active_member
 from churchit.church_people.report.church_directory_report.booklet import impose_booklet
 from churchit.church_scope import church_filter, root_church, scoped
@@ -463,6 +464,7 @@ def get_directory_html(
 		missionaries_query = (
 			frappe.qb.from_(Missionary)
 			.select(
+				Missionary.name,
 				Missionary.title,
 				Missionary.agency,
 				Missionary.country,
@@ -472,9 +474,13 @@ def get_directory_html(
 				Missionary.sensitive,
 				Missionary.mission_statement,
 			)
+			.where(is_current_missionary(Missionary))
 			.orderby(Missionary.title)
 		)
 		missionaries = scoped(missionaries_query, Missionary, filters).run(as_dict=True)
+		people = get_missionary_people([m.name for m in missionaries])
+		for m in missionaries:
+			m["people"] = people.get(m.name, [])
 		# Resolve agency hashes to human-readable agency names
 		agency_names = list({m.agency for m in missionaries if m.agency})
 		if agency_names:
@@ -617,9 +623,35 @@ def without_missionaries(query, Person, filters):
 		.join(Missionary)
 		.on(Missionary.name == MissionaryPerson.parent)
 		.select(MissionaryPerson.person)
-		.where(MissionaryPerson.parenttype == "Missionary")
+		.where((MissionaryPerson.parenttype == "Missionary") & is_current_missionary(Missionary))
 	)
 	return query.where(Person.name.notin(scoped(missionary_people, Missionary, filters)))
+
+
+def get_missionary_people(missionaries):
+	"""{missionary: [full names]} of the people on each missionary, in form order, without hidden people."""
+	if not missionaries:
+		return {}
+	MissionaryPerson = frappe.qb.DocType("Missionary Person")
+	Person = frappe.qb.DocType("Person")
+	# church-scope: only the people of missionaries the scoped query already listed
+	rows = (
+		frappe.qb.from_(MissionaryPerson)
+		.join(Person)
+		.on(Person.name == MissionaryPerson.person)
+		.select(MissionaryPerson.parent, Person.full_name)
+		.where(
+			(MissionaryPerson.parenttype == "Missionary")
+			& MissionaryPerson.parent.isin(missionaries)
+			& (Person.hide_from_directory == 0)
+		)
+		.orderby(MissionaryPerson.idx)
+		.run(as_dict=True)
+	)
+	people = {}
+	for row in rows:
+		people.setdefault(row.parent, []).append(row.full_name)
+	return people
 
 
 def header_church(filters):

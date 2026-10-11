@@ -8,6 +8,7 @@ from frappe.utils import formatdate, getdate, now_datetime
 from frappe.utils.print_format import download_pdf as download_print_pdf
 
 from churchit.church_communications.doctype.bulletin.sections import BulletinSections
+from churchit.church_missions.doctype.missionary_status.missionary_status import INACTIVE
 from churchit.church_prayers.doctype.prayer_request.prayer_request import CLOSED_STATUSES
 from churchit.church_scope import church_filters
 from churchit.scripture import format_reference
@@ -81,8 +82,10 @@ def missionary_of_the_week(on_date, include_sensitive=False, church=None):
 
 
 def supported_missionaries(on_date, include_sensitive=False, church=None):
-	"""Names of the missionaries whose support has not ended by *on_date*, in title order."""
-	filters = church_filters(church) if include_sensitive else church_filters(church, sensitive=0)
+	"""Names of the missionaries who are not Inactive and whose support has not ended by *on_date*, in title order."""
+	filters = church_filters(church, status=["!=", INACTIVE])
+	if not include_sensitive:
+		filters["sensitive"] = 0
 	return frappe.get_all(
 		"Missionary",
 		filters=filters,

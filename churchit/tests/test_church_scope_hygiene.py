@@ -43,6 +43,7 @@ GLOBAL_DOCTYPES = {
 		"Life Event Type",
 		"Member Status",
 		"Membership Type",
+		"Missionary Status",
 		"Missionary Support Frequency",
 		"Payment Type",
 		"Person Relation Type",

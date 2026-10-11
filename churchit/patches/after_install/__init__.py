@@ -11,6 +11,9 @@ from pathlib import Path
 
 import frappe
 
+from churchit.church_missions.doctype.missionary_status.missionary_status import (
+	DEFAULT_STATUSES as DEFAULT_MISSIONARY_STATUSES,
+)
 from churchit.church_people.membership import MEMBER_STATUSES, MEMBERSHIP_TYPES
 
 # We define this here so we can import it from sample_data
@@ -36,6 +39,7 @@ def execute():
 	_create_prayer_request_statuses()
 	_create_prayer_request_types()
 	_create_missionary_support_frequencies()
+	_create_missionary_statuses()
 	_create_group_roles()
 	_create_group_statuses()
 	_create_default_ministry()
@@ -312,6 +316,11 @@ def _create_prayer_request_types():
 			type=name,
 			description=description,
 		)
+
+
+def _create_missionary_statuses():
+	for status, description in DEFAULT_MISSIONARY_STATUSES.items():
+		_insert_if_missing("Missionary Status", {"status": status}, status=status, description=description)
 
 
 def _create_missionary_support_frequencies():

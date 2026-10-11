@@ -251,8 +251,38 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		self.assertIn("Directory Sent</", self.render())
 		html = self.render(show_missionaries="1")
 		self.assertIn("_Test Directory Sent Family", html)
-		self.assertNotIn("Directory Sent</", html)
+		self.assertEqual(html.count("Directory Sent</"), 1)
+		self.assertIn('<div class="missionary-people">_Test Directory Sent</div>', html)
 		self.assertIn("Directory Neighbor</", html)
+
+	def test_missionaries_list_their_people_and_leave_out_inactive_ones(self):
+		ensure("Missionary Status", {"status": "Inactive"})
+		sent = make_person("_Test Sent", "Kinley")
+		shy = make_person("_Test Shy", "Kinley", hide_from_directory=1)
+		frappe.get_doc(
+			{
+				"doctype": "Missionary",
+				"title": "_Test Kinley Family",
+				"people": [{"person": sent.name}, {"person": shy.name}],
+			}
+		).insert(ignore_permissions=True)
+		former = make_person("_Test Former", "Ashby")
+		frappe.get_doc(
+			{
+				"doctype": "Missionary",
+				"title": "_Test Ashby Family",
+				"status": "Inactive",
+				"people": [{"person": former.name}],
+			}
+		).insert(ignore_permissions=True)
+
+		html = self.render(show_missionaries="1")
+
+		self.assertIn('<div class="missionary-people">_Test Sent Kinley</div>', html)
+		self.assertNotIn("_Test Ashby Family", html)
+		self.assertIn(
+			"_Test Former Ashby</", html, "an inactive missionary's people are listed with everyone"
+		)
 
 	def test_record_values_are_escaped(self):
 		self.set_church_value("church_name", 'Saint "Mary" </style><script>x()</script>')
