@@ -439,11 +439,7 @@ class Rolodex {
 		const facets = [
 			["church", __("Church"), this.choices.church],
 			["membership", __("Membership"), with_not_set(this.choices.membership, __("Not set"))],
-			[
-				"status",
-				__("Membership Status"),
-				with_not_set(this.choices.status, __("No status")),
-			],
+			["status", __("Status"), with_not_set(this.choices.status, __("No status"))],
 			["group", __("Group"), this.choices.group],
 			["position", __("Position"), this.choices.position.map((name) => [name, name])],
 		].filter(([facet, , options]) => options.length > (facet === "church" ? 1 : 0));

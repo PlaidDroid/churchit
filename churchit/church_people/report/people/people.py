@@ -31,7 +31,7 @@ def get_columns():
 		{
 			"fieldname": "membership_status",
 			"fieldtype": "Link",
-			"label": _("Membership Status"),
+			"label": _("Status"),
 			"options": "Member Status",
 			"width": 120,
 		},
