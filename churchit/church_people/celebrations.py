@@ -9,7 +9,7 @@ People who ticked Hide from Directory and Bulletin are left out, and so is a cou
 import frappe
 from frappe.utils import formatdate, getdate
 
-ACTIVE_MEMBER_STATUS = "Active"
+from churchit.church_people.membership import ACTIVE_MEMBER_FILTERS, is_active_member
 
 
 def birthdays(start, end, members_only=True, church=None):
@@ -26,7 +26,7 @@ def birthdays(start, end, members_only=True, church=None):
 		.where(Person.hide_from_directory == 0)
 	)
 	if members_only:
-		query = query.where(Person.membership_status == ACTIVE_MEMBER_STATUS)
+		query = query.where(is_active_member(Person))
 	if church:
 		query = query.where(Person.church == church)
 	rows = [
@@ -41,7 +41,7 @@ def anniversaries(start, end, members_only=True, church=None):
 	"""Couples whose wedding anniversary falls between *start* and *end*, as (day, name), one row per couple."""
 	filters = {"is_married": 1, "anniversary": ("is", "set"), "hide_from_directory": 0}
 	if members_only:
-		filters["membership_status"] = ACTIVE_MEMBER_STATUS
+		filters.update(ACTIVE_MEMBER_FILTERS)
 	if church:
 		filters["church"] = church
 	# church-scope: scoped by the church the caller passes in

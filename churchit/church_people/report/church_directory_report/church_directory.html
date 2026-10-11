@@ -504,8 +504,8 @@ body {
                 </div>
                 {% endif %}
                 <table class="detail-rows">
-                    {% if show_membership and member.membership_status %}
-                    <tr><th>Membership</th><td><span class="status-badge">{{ member.membership_status }}</span></td></tr>
+                    {% if show_membership and member.membership %}
+                    <tr><th>Membership</th><td><span class="status-badge">{{ member.membership }}</span></td></tr>
                     {% endif %}
                     {% if show_phone and member.primary_phone %}
                     <tr><th>Phone</th><td>{{ member.primary_phone }}</td></tr>

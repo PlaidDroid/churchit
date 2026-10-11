@@ -13,7 +13,7 @@ frappe.pages["rolodex"].on_page_show = function (wrapper) {
 const API = "churchit.church_people.page.rolodex.rolodex";
 const ADD_TO_GROUP_API = "churchit.church_people.doctype.group.group.add_people";
 const LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "#"];
-const NO_STATUS = "__none__";
+const NOT_SET = "__none__";
 const DESKTOP = "(min-width: 992px)";
 // Some email apps cut a mailto link off at around 2000 characters.
 const MAILTO_LIMIT = 1800;
@@ -44,6 +44,7 @@ class Rolodex {
 		this.query = "";
 		this.filters = {
 			church: new Set(),
+			membership: new Set(),
 			status: new Set(),
 			group: new Set(),
 			position: new Set(),
@@ -232,11 +233,12 @@ class Rolodex {
 	}
 
 	matches(person) {
-		const { church, status, group, position } = this.filters;
+		const { church, membership, status, group, position } = this.filters;
 		return (
 			this.matches_query(person) &&
 			(!church.size || church.has(person.church)) &&
-			(!status.size || status.has(person.membership_status || NO_STATUS)) &&
+			(!membership.size || membership.has(person.membership || NOT_SET)) &&
+			(!status.size || status.has(person.membership_status || NOT_SET)) &&
 			(!group.size || person.groups.some((name) => group.has(name))) &&
 			(!position.size || person.positions.some((name) => position.has(name)))
 		);
@@ -302,7 +304,7 @@ class Rolodex {
 
 	card_html(person) {
 		const e = frappe.utils.escape_html;
-		const sub = [person.family_title, person.membership_status]
+		const sub = [person.family_title, membership_text(person)]
 			.filter(Boolean)
 			.map(e)
 			.join(" · ");
@@ -336,7 +338,7 @@ class Rolodex {
 				__("Anniversary"),
 				person.anniversary && frappe.datetime.str_to_user(person.anniversary),
 			],
-			[__("Membership"), e(person.membership_status || "")],
+			[__("Membership"), e(membership_text(person))],
 			[__("Address"), e(person.address || "")],
 		].filter(([, value]) => value);
 		const body = facts.length
@@ -358,7 +360,7 @@ class Rolodex {
 		const rows = members.map((person) => this.member_html(person, matched.has(person.name)));
 		const details = members.map((person) => {
 			const facts = [
-				person.membership_status,
+				membership_text(person),
 				person.phone,
 				person.email,
 				...person.positions,
@@ -430,13 +432,18 @@ class Rolodex {
 
 	render_facets() {
 		const counts = this.count_values();
-		const status = [
-			...this.choices.status.map((name) => [name, name]),
-			[NO_STATUS, __("No status")],
+		const with_not_set = (names, label) => [
+			...names.map((name) => [name, name]),
+			[NOT_SET, label],
 		];
 		const facets = [
 			["church", __("Church"), this.choices.church],
-			["status", __("Membership"), status],
+			["membership", __("Membership"), with_not_set(this.choices.membership, __("Not set"))],
+			[
+				"status",
+				__("Membership Status"),
+				with_not_set(this.choices.status, __("No status")),
+			],
 			["group", __("Group"), this.choices.group],
 			["position", __("Position"), this.choices.position.map((name) => [name, name])],
 		].filter(([facet, , options]) => options.length > (facet === "church" ? 1 : 0));
@@ -471,11 +478,12 @@ class Rolodex {
 	}
 
 	count_values() {
-		const counts = { church: {}, status: {}, group: {}, position: {} };
+		const counts = { church: {}, membership: {}, status: {}, group: {}, position: {} };
 		const add = (facet, value) => (counts[facet][value] = (counts[facet][value] || 0) + 1);
 		for (const person of this.people) {
 			add("church", person.church);
-			add("status", person.membership_status || NO_STATUS);
+			add("membership", person.membership || NOT_SET);
+			add("status", person.membership_status || NOT_SET);
 			person.groups.forEach((name) => add("group", name));
 			person.positions.forEach((name) => add("position", name));
 		}
@@ -954,6 +962,12 @@ function open_link(doctype, name) {
 		data-name="${e(name)}">${icon("open")}<span>${__("Open")}</span></a>`;
 }
 
+// The status shows only when it is not the usual Active.
+function membership_text(person) {
+	const status = person.membership_status !== "Active" && person.membership_status;
+	return [person.membership, status].filter(Boolean).join(" · ");
+}
+
 function with_age(person) {
 	const born = frappe.datetime.str_to_user(person.birthday);
 	return person.age ? `${born} · ${__("age {0}", [person.age])}` : born;
@@ -963,7 +977,7 @@ function print_card(person) {
 	const e = frappe.utils.escape_html;
 	const lines = [
 		person.family_title,
-		person.membership_status,
+		membership_text(person),
 		person.phone,
 		person.email,
 		person.address,

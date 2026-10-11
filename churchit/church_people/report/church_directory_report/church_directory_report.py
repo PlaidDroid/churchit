@@ -11,6 +11,7 @@ from frappe.utils.weasyprint import import_weasyprint
 from markupsafe import Markup
 from pypika import Order
 
+from churchit.church_people.membership import is_active_member
 from churchit.church_people.report.church_directory_report.booklet import impose_booklet
 from churchit.church_scope import church_filter, is_feature_enabled, root_church, scoped
 from churchit.contacts import primary_address_query, primary_email_query, primary_phone_query
@@ -77,7 +78,7 @@ def get_individual_data(filters):
 		.orderby(Person.first_name)
 	)
 	if members_only:
-		query = query.where(Person.membership_status == "Active")
+		query = query.where(is_active_member(Person))
 
 	return scoped(with_home_address(listed(query, Person), Person), Person, filters).run(as_dict=True)
 
@@ -109,7 +110,7 @@ def get_data(filters):
 		.where(Person.family.isnotnull() & (Person.family != ""))
 	)
 	if members_only:
-		members_query = members_query.where(Person.membership_status == "Active")
+		members_query = members_query.where(is_active_member(Person))
 
 	all_members = scoped(listed(members_query, Person), Person, filters).run(as_dict=True)
 
@@ -213,7 +214,7 @@ def get_directory_html(
 			Person.last_name,
 			primary_phone_query(Person).as_("primary_phone"),
 			primary_email_query(Person).as_("email"),
-			Person.membership_status,
+			Person.membership,
 			Person.is_head_of_household,
 			Person.gender,
 			Person.spouse,
@@ -227,7 +228,7 @@ def get_directory_html(
 		.orderby(Person.first_name)
 	)
 	if members_only:
-		members_query = members_query.where(Person.membership_status == "Active")
+		members_query = members_query.where(is_active_member(Person))
 	if show_missionaries:
 		members_query = without_missionaries(members_query, Person, filters)
 
@@ -319,7 +320,7 @@ def get_directory_html(
 			Person.last_name,
 			primary_phone_query(Person).as_("primary_phone"),
 			primary_email_query(Person).as_("email"),
-			Person.membership_status,
+			Person.membership,
 			Person.photo,
 		)
 		.where(Person.family.isnull() | (Person.family == ""))
@@ -327,7 +328,7 @@ def get_directory_html(
 		.orderby(Person.first_name)
 	)
 	if members_only:
-		individuals_query = individuals_query.where(Person.membership_status == "Active")
+		individuals_query = individuals_query.where(is_active_member(Person))
 	if show_missionaries:
 		individuals_query = without_missionaries(individuals_query, Person, filters)
 
@@ -339,20 +340,7 @@ def get_directory_html(
 		p["positions"] = roles_by_person.get(p.person_name, [])
 		p["is_head_of_household"] = 0
 
-	# Resolve membership_status hashes to human-readable status labels
 	all_people = list(all_members) + list(individuals_raw)
-	status_names = list({p.membership_status for p in all_people if p.membership_status})
-	status_map = {}
-	if status_names:
-		for row in frappe.get_all(
-			"Member Status", filters=[["name", "in", status_names]], fields=["name", "status"]
-		):
-			status_map[row.name] = row.status
-	for p in all_people:
-		if p.membership_status:
-			p["membership_status"] = status_map.get(p.membership_status, p.membership_status)
-		else:
-			p["membership_status"] = "Non-Member"
 
 	# Build merged sorted entry list
 	all_entries = []
@@ -417,7 +405,7 @@ def get_directory_html(
 			.orderby(Person.first_name)
 		)
 		if members_only:
-			birthdays_query = birthdays_query.where(Person.membership_status == "Active")
+			birthdays_query = birthdays_query.where(is_active_member(Person))
 
 		raw_birthdays = scoped(listed(birthdays_query, Person), Person, filters).run(as_dict=True)
 		for row in raw_birthdays:
@@ -455,7 +443,7 @@ def get_directory_html(
 			.orderby(Person.first_name)
 		)
 		if members_only:
-			anniversaries_query = anniversaries_query.where(Person.membership_status == "Active")
+			anniversaries_query = anniversaries_query.where(is_active_member(Person))
 
 		raw_anniversaries = scoped(listed(anniversaries_query, Person), Person, filters).run(as_dict=True)
 		seen_persons = set()

@@ -4,6 +4,7 @@ from frappe.query_builder import Criterion
 from frappe.query_builder.functions import GroupConcat, Max
 from frappe.utils import nowdate
 
+from churchit.church_people.membership import is_active_member
 from churchit.church_scope import scoped
 from churchit.utils import set_report_link_titles
 
@@ -21,9 +22,16 @@ def get_columns():
 		{"fieldname": "family_name", "fieldtype": "Data", "label": _("Family"), "width": 150},
 		{"fieldname": "roles", "fieldtype": "Data", "label": _("Roles"), "width": 250},
 		{
+			"fieldname": "membership",
+			"fieldtype": "Link",
+			"label": _("Membership"),
+			"options": "Membership Type",
+			"width": 130,
+		},
+		{
 			"fieldname": "membership_status",
 			"fieldtype": "Link",
-			"label": _("Member Status"),
+			"label": _("Membership Status"),
 			"options": "Member Status",
 			"width": 120,
 		},
@@ -72,6 +80,7 @@ def get_data(filters=None):
 		.select(
 			Person.name,
 			Person.full_name,
+			Person.membership,
 			Person.membership_status,
 			Person.family,
 			Family.family_name,
@@ -86,7 +95,7 @@ def get_data(filters=None):
 	if filters.get("person_name"):
 		query = query.where(Person.full_name.like(f"%{filters['person_name']}%"))
 	if filters.get("is_member"):
-		query = query.where(Person.membership_status == "Active")
+		query = query.where(is_active_member(Person))
 	if filters.get("is_baptized"):
 		query = query.where(Person.name.isin(is_baptized_subq))
 	if filters.get("family"):

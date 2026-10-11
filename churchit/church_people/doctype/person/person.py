@@ -1,6 +1,8 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from collections import Counter
+
 import frappe
 from dateutil.relativedelta import relativedelta
 from frappe import _
@@ -9,6 +11,7 @@ from frappe.utils import cstr, get_link_to_form, getdate, nowdate
 
 from churchit.church_foundations import church_access
 from churchit.church_people.member_access import refuse_member_edits_beyond_personal_details
+from churchit.church_people.membership import INACTIVE, MEMBER
 from churchit.church_scope import is_multi_church
 from churchit.contacts import primary_email, validate_contact_tables
 
@@ -92,6 +95,7 @@ class Person(Document):
 		self.full_name = f"{self.first_name}" + ((" " + self.last_name) if self.last_name else "")
 		self.marriage_years = years_since(self.anniversary)
 		self._recompute_age()
+		self.update_membership_from_life_events()
 
 	def _recompute_age(self):
 		"""Set age from the Birth row in life_events. Cleared when no Birth event."""
@@ -100,6 +104,28 @@ class Person(Document):
 			None,
 		)
 		self.age = years_since(birth.date) if birth else None
+
+	def update_membership_from_life_events(self):
+		"""Make a person with a new Membership event a Member, and one with a new Death event Inactive.
+
+		Only an added row counts, so a former member keeps the type the office gives them.
+		"""
+		added = self.added_life_event_types
+		if "Membership" in added:
+			self.membership = MEMBER
+		if "Death" in added:
+			self.membership_status = INACTIVE
+			self.inactive_reason = self.inactive_reason or _("Deceased")
+		if self.membership_status != INACTIVE:
+			self.inactive_reason = None
+
+	@property
+	def added_life_event_types(self):
+		"""Life event types with more rows now than before this save."""
+		before = self.get_doc_before_save()
+		earlier = Counter(row.event_type for row in (before.life_events if before else []))
+		now = Counter(row.event_type for row in self.life_events or [])
+		return set(now - earlier)
 
 	def on_trash(self):
 		if self.spouse:

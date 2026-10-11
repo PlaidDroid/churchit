@@ -104,7 +104,7 @@ frappe.query_reports["Church Directory Report"] = {
 		},
 		{
 			fieldname: "show_membership",
-			label: __("Membership Status"),
+			label: __("Membership"),
 			fieldtype: "Check",
 			default: 1,
 			group: __("Show"),

@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from churchit.church_people.membership import CONTACT, INACTIVE
 from churchit.church_scope import CHURCH_FIELD, allowed_churches
 
 
@@ -41,9 +42,29 @@ class MemberTransfer(Document):
 	def on_update(self):
 		if self.is_confirming_move():
 			self.move_person()
+		elif self.is_confirming_departure():
+			self.mark_person_departed()
+
+	@property
+	def is_confirming(self):
+		return self.status == "Confirmed" and self.has_value_changed("status")
 
 	def is_confirming_move(self):
-		return bool(self.to_church) and self.status == "Confirmed" and self.has_value_changed("status")
+		return bool(self.to_church) and self.is_confirming
+
+	def is_confirming_departure(self):
+		return self.direction == "Out" and not self.to_church and self.is_confirming
+
+	def mark_person_departed(self):
+		"""A person who transfers out to another church is no longer a member here."""
+		person = frappe.get_doc("Person", self.person)
+		person.membership = CONTACT
+		person.membership_status = INACTIVE
+		if self.other_church:
+			person.inactive_reason = _("Transferred to {0}").format(self.other_church)
+		else:
+			person.inactive_reason = _("Transferred to another church")
+		person.save(ignore_permissions=True)
 
 	def move_person(self):
 		"""Move the person to the destination branch; their user permission follows."""

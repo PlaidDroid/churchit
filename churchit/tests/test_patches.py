@@ -29,6 +29,7 @@ from churchit.patches.v1_0 import (
 	scope_website_pages_to_church,
 	seed_naming_series_counters,
 	setup_bulletins,
+	split_membership_from_member_status,
 	update_default_navbar,
 )
 from churchit.patches.v1_0 import add_giving_statements_to_portal as portal_patch
@@ -36,7 +37,13 @@ from churchit.patches.v1_0 import migrate_contact_fields_to_child_tables as cont
 from churchit.patches.v1_0 import number_repeated_bible_translation_abbreviations as abbreviation_patch
 from churchit.patches.v1_0 import replace_bible_records_with_references as bible_patch
 from churchit.patches.v1_0 import set_statement_acknowledgment as acknowledgment_patch
-from churchit.tests.helpers import RollbackEachTest, make_address, make_function, make_person
+from churchit.tests.helpers import (
+	RollbackEachTest,
+	ensure,
+	make_address,
+	make_function,
+	make_person,
+)
 
 
 class TestUnsyncedDefaultRecords(FrappeTestCase):
@@ -102,6 +109,7 @@ class TestAfterInstall(FrappeTestCase):
 			for doctype in (
 				"Church",
 				"Member Status",
+				"Membership Type",
 				"Function Type",
 				"Function Attendance Type",
 				"Position Type",
@@ -712,3 +720,61 @@ class TestMoveToTheAppsScreenAndDock(RollbackEachTest):
 
 		self.assertTrue(frappe.db.exists("Sidebar", {"name": "People", "standard": 1}))
 		self.assertTrue(frappe.db.exists("Dock", "churchit"))
+
+
+class TestSplitMembershipFromMemberStatus(RollbackEachTest):
+	"""Old Membership Status values become a Membership and an Active or Inactive status."""
+
+	def setUp(self):
+		super().setUp()
+		for status in ("Active", "Inactive", "Visitor"):
+			ensure("Member Status", {"status": status})
+		ensure("Membership Type", {"type": "Visitor"})
+		ensure("Life Event Type", {"type": "Membership"})
+
+	def old_person(self, first_name, status=None, **values):
+		person = make_person(first_name, "_Test Split", **values)
+		frappe.db.set_value("Person", person.name, {"membership": None, "membership_status": status})
+		return person.name
+
+	def after_patch(self, name):
+		split_membership_from_member_status.execute()
+		return frappe.db.get_value("Person", name, ["membership", "membership_status"])
+
+	def test_a_person_with_a_membership_event_becomes_an_active_member(self):
+		name = self.old_person("Joined", life_events=[{"event_type": "Membership", "date": "2010-01-01"}])
+		self.assertEqual(self.after_patch(name), ("Member", "Active"))
+
+	def test_an_inactive_member_stays_inactive(self):
+		self.assertEqual(self.after_patch(self.old_person("Lapsed", "Inactive")), ("Member", "Inactive"))
+
+	def test_a_status_named_like_a_membership_type_moves_to_membership(self):
+		self.assertEqual(self.after_patch(self.old_person("Guest", "Visitor")), ("Visitor", "Active"))
+
+	def test_a_person_without_a_status_becomes_active_with_no_membership(self):
+		self.assertEqual(self.after_patch(self.old_person("Unknown")), (None, "Active"))
+
+	def test_a_copied_notification_gets_the_new_condition(self):
+		notification = frappe.get_doc(
+			{
+				"doctype": "Notification",
+				"name": "_Test Copied Welcome",
+				"subject": "Welcome",
+				"document_type": "Person",
+				"event": "Value Change",
+				"value_changed": "membership_status",
+				"condition": 'doc.membership_status == "Active" and doc.emails',
+				"channel": "System Notification",
+				"recipients": [{"receiver_by_role": "System Manager"}],
+				"enabled": 0,
+			}
+		).insert(ignore_permissions=True)
+
+		split_membership_from_member_status.execute()
+
+		notification.reload()
+		self.assertEqual(notification.value_changed, "membership")
+		self.assertEqual(
+			notification.condition,
+			'doc.membership == "Member" and doc.membership_status == "Active" and doc.emails',
+		)

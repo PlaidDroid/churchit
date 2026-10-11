@@ -4,6 +4,7 @@ from frappe.query_builder.functions import Coalesce, Max
 from frappe.utils import cint
 from pypika import Field, Order
 
+from churchit.church_people.membership import is_active_member
 from churchit.church_scope import scoped
 from churchit.contacts import primary_email_query, primary_phone_query
 from churchit.query import CurDate, DateDiff
@@ -66,7 +67,7 @@ def get_data(filters=None):
 			last_attended().as_("last_attended"),
 			DateDiff(CurDate(), Coalesce(last_attended(), membership_date())).as_("days_absent"),
 		)
-		.where(Person.membership_status == "Active")
+		.where(is_active_member(Person))
 		.having((Field("days_absent") > threshold_days) | Field("last_attended").isnull())
 		.orderby(Field("days_absent"), order=Order.desc)
 	)

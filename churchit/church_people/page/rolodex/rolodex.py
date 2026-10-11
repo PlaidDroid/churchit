@@ -21,6 +21,7 @@ PERSON_FIELDS = [
 	"photo",
 	"family",
 	"is_head_of_household",
+	"membership",
 	"membership_status",
 	"age",
 	"anniversary",
@@ -52,6 +53,7 @@ def get_directory():
 		"people": people,
 		"families": families,
 		"choices": {
+			"membership": frappe.get_all("Membership Type", pluck="name", order_by="name asc"),
 			"status": frappe.get_all("Member Status", pluck="name", order_by="name asc"),
 			"group": [[group.name, group.group_name or group.name] for group in groups],
 			"position": frappe.get_all("Position Type", pluck="name", order_by="name asc"),

@@ -15,7 +15,9 @@
   "full_name",
   "church",
   "gender",
+  "membership",
   "membership_status",
+  "inactive_reason",
   "column_break_agva",
   "photo",
   "age",
@@ -160,8 +162,20 @@
   },
   {
    "allow_in_quick_entry": 1,
-   "depends_on": "eval:doc.life_events && doc.life_events.some(le => le.event_type == \"Membership\")",
-   "description": "Visible once a Membership life event is added.",
+   "description": "How this person is connected to the church. A new Membership life event sets Member.",
+   "fieldname": "membership",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Membership",
+   "options": "Membership Type",
+   "search_index": 1
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "default": "Active",
+   "description": "Whether this person still takes part in the church. A Death life event sets Inactive.",
    "fieldname": "membership_status",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -170,6 +184,13 @@
    "label": "Membership Status",
    "options": "Member Status",
    "search_index": 1
+  },
+  {
+   "depends_on": "eval:doc.membership_status == \"Inactive\"",
+   "description": "For example: Moved away, Deceased, Transferred to another church.",
+   "fieldname": "inactive_reason",
+   "fieldtype": "Data",
+   "label": "Inactive Reason"
   },
   {
    "description": "Birth, baptism, marriage, death, salvation, etc.",
@@ -335,7 +356,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-09 16:03:10.254548",
+ "modified": "2026-10-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

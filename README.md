@@ -44,7 +44,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 
 ### People & Families
 - Comprehensive person profiles with contact info, photos, notes, etc.
-- Membership tracking with custom statuses and baptism records
+- Membership tracking: how each person is connected (Member, Regular Attender, Visitor, Contact), an Active or Inactive status with a reason, and baptism records
 - Family/household management with head-of-household relationship tracking
 - Spouse tracking with automatic bidirectional sync
 - Church position tracking

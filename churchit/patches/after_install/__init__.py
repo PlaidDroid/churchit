@@ -11,6 +11,8 @@ from pathlib import Path
 
 import frappe
 
+from churchit.church_people.membership import MEMBER_STATUSES, MEMBERSHIP_TYPES
+
 # We define this here so we can import it from sample_data
 DEFAULT_CHURCH_NAME = "My Church"
 WEBSITE_THEME = "Churchit"
@@ -25,6 +27,7 @@ def execute():
 	# Simple lookup types (no inter-dependencies)
 	_create_contact_types()
 	_create_member_statuses()
+	_create_membership_types()
 	_create_function_types()
 	_create_function_attendance_types()
 	_create_position_types()
@@ -194,8 +197,13 @@ def _create_default_church():
 
 
 def _create_member_statuses():
-	for status in ("Active", "Inactive"):
+	for status in MEMBER_STATUSES:
 		_insert_if_missing("Member Status", {"status": status}, status=status)
+
+
+def _create_membership_types():
+	for membership_type in MEMBERSHIP_TYPES:
+		_insert_if_missing("Membership Type", {"type": membership_type}, type=membership_type)
 
 
 def _create_function_types():

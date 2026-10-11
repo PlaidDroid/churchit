@@ -1,9 +1,10 @@
 import frappe
 from frappe import _
-from frappe.query_builder.functions import Count, Min
+from frappe.query_builder.functions import Coalesce, Count, Min
 from frappe.utils import cint
 from pypika import Interval, Order
 
+from churchit.church_people.membership import VISITOR
 from churchit.church_scope import scoped
 from churchit.contacts import primary_email_query, primary_phone_query
 from churchit.query import CurDate
@@ -65,7 +66,8 @@ def get_data(filters=None):
 			first_visit_date.as_("first_visit_date"),
 			visit_count.as_("visit_count"),
 		)
-		.where(Person.membership_status.isnull() & (Person.creation >= CurDate() - Interval(days=days)))
+		.where(Coalesce(Person.membership, "").isin(["", VISITOR]))
+		.where(Person.creation >= CurDate() - Interval(days=days))
 		.orderby(Person.creation, order=Order.desc)
 	)
 	return scoped(query, Person, filters).run(as_dict=True)

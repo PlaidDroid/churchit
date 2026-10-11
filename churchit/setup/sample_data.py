@@ -14,6 +14,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, get_last_day, getdate
 
+from churchit.church_people.membership import MEMBER, REGULAR_ATTENDER
 from churchit.patches.after_install import DEFAULT_CHURCH_NAME
 
 # Ordered deletion steps: (is_submittable, doctype, filters).
@@ -496,9 +497,6 @@ def _create_positions():
 
 def _create_people(position_refs):
 	"""Create sample people and return a dict mapping 'First Last' → name."""
-	# Look up hash name for "Active" membership status
-	active_status = frappe.db.get_value("Member Status", {"status": "Active"}, "name")
-
 	refs = {}
 	gender_counts = {"Male": 0, "Female": 0}
 	for (
@@ -555,7 +553,7 @@ def _create_people(position_refs):
 				"last_name": last,
 				"gender": gender,
 				"photo": photo,
-				"membership_status": active_status if is_member else None,
+				"membership": MEMBER if is_member else REGULAR_ATTENDER,
 				"alergies": allergies,
 				"positions": resolved_positions,
 				"life_events": life_events,
