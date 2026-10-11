@@ -20,6 +20,7 @@ from churchit.patches.v1_0 import (
 	add_churchit_website_theme,
 	add_default_address_template,
 	add_missionary_map_to_missions_page,
+	add_missionary_statuses,
 	add_unsynced_default_records,
 	list_missionary_people_in_a_table,
 	move_to_the_apps_screen_and_dock,
@@ -119,6 +120,7 @@ class TestAfterInstall(FrappeTestCase):
 				"Person Relation Type",
 				"Prayer Request Status",
 				"Prayer Request Type",
+				"Missionary Status",
 				"Missionary Support Frequency",
 				"Group Role",
 				"Group Status",
@@ -808,3 +810,22 @@ class TestSetChurchWebsite(RollbackEachTest):
 		frappe.db.set_value("Church", self.church, "website", "https://ours.example.org")
 		set_church_website.execute()
 		self.assertEqual(frappe.db.get_value("Church", self.church, "website"), "https://ours.example.org")
+
+
+class TestAddMissionaryStatuses(RollbackEachTest):
+	"""Existing missionaries get a Status from whether their support has ended."""
+
+	def test_ended_support_is_inactive_and_the_rest_active(self):
+		current = frappe.get_doc({"doctype": "Missionary", "title": "_Test Current Missionary"}).insert(
+			ignore_permissions=True
+		)
+		ended = frappe.get_doc(
+			{"doctype": "Missionary", "title": "_Test Ended Missionary", "support_end_date": "2020-01-01"}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Missionary", {"name": ("in", [current.name, ended.name])}, "status", None)
+
+		add_missionary_statuses.execute()
+
+		self.assertEqual(frappe.db.get_value("Missionary", current.name, "status"), "Active")
+		self.assertEqual(frappe.db.get_value("Missionary", ended.name, "status"), "Inactive")
+		self.assertTrue(frappe.db.exists("Missionary Status", "Pending"))

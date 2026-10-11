@@ -10,6 +10,7 @@
  "field_order": [
   "section_break_oyuw",
   "title",
+  "status",
   "church",
   "agency",
   "mission_statement",
@@ -107,6 +108,17 @@
    "label": "Title",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "default": "Active",
+   "description": "Inactive missionaries are left out of the Church Directory and the bulletin's Missionary of the Week.",
+   "fieldname": "status",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Missionary Status",
+   "search_index": 1
   },
   {
    "depends_on": "eval:!(frappe.boot.churchit && frappe.boot.churchit.single_church)",
@@ -259,7 +271,7 @@
  "image_field": "photo",
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-08 16:00:00",
+ "modified": "2026-10-11 16:00:00",
  "modified_by": "Administrator",
  "module": "Church Missions",
  "name": "Missionary",

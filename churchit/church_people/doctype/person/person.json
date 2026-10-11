@@ -181,7 +181,7 @@
    "in_list_view": 1,
    "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Membership Status",
+   "label": "Status",
    "options": "Member Status",
    "search_index": 1
   },
@@ -356,7 +356,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-11 12:00:00.000000",
+ "modified": "2026-10-11 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

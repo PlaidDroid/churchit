@@ -7,7 +7,7 @@
  "include_name_field": 0,
  "is_standard": 1,
  "list_name": "List",
- "modified": "2026-10-11 12:00:00.000000",
+ "modified": "2026-10-11 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
@@ -88,13 +88,13 @@
    "ui_tour": 0
   },
   {
-   "description": "`Membership Status` is `Active` for everyone who still takes part in the church. Set it to `Inactive` when someone leaves, and give the reason. A `Death` life event sets it for you.",
+   "description": "`Status` is `Active` for everyone who still takes part in the church. Set it to `Inactive` when someone leaves, and give the reason. A `Death` life event sets it for you.",
    "fieldname": "membership_status",
    "fieldtype": "Link",
    "has_next_condition": 1,
    "hide_buttons": 0,
    "is_table_field": 0,
-   "label": "Membership Status",
+   "label": "Status",
    "modal_trigger": 0,
    "next_on_click": 0,
    "next_step_condition": "eval:doc.membership_status;",
@@ -102,7 +102,7 @@
    "offset_y": 0,
    "popover_element": 0,
    "position": "Right",
-   "title": "Membership Status",
+   "title": "Status",
    "ui_tour": 0
   },
   {

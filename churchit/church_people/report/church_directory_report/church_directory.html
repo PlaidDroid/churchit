@@ -336,6 +336,12 @@ body {
     color: #1f3c88;
 }
 
+.missionary-people {
+    font-size: 10.5pt;
+    color: #1a1a2e;
+    margin-top: 2px;
+}
+
 .missionary-meta {
     font-size: 10pt;
     color: #555;
@@ -594,6 +600,7 @@ body {
             {% endif %}
             <div class="missionary-info">
                 <div class="missionary-title">{{ m.title }}</div>
+                {% if m.people %}<div class="missionary-people">{{ m.people | join(", ") }}</div>{% endif %}
                 {% if m.agency %}<div class="missionary-meta">{{ m.agency }}</div>{% endif %}
                 {% if m.country and not m.sensitive %}<div class="missionary-meta">{{ m.country }}</div>{% endif %}
                 {% if m.sensitive %}<span class="sensitive-badge">Sensitive</span>{% endif %}

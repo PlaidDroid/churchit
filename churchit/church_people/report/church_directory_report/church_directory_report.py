@@ -11,6 +11,7 @@ from frappe.utils.weasyprint import import_weasyprint
 from markupsafe import Markup
 from pypika import Order
 
+from churchit.church_missions.doctype.missionary_status.missionary_status import is_current_missionary
 from churchit.church_people.membership import ACTIVE, is_active_member
 from churchit.church_people.report.church_directory_report.booklet import impose_booklet
 from churchit.church_scope import church_filter, root_church, scoped
@@ -424,6 +425,7 @@ def get_directory_html(
 			)
 			.where(Person.anniversary.isnotnull() & (Person.is_married == 1))
 			.where(Coalesce(Spouse.hide_from_directory, 0) == 0)
+			.where(Spouse.name.isnull() | Spouse.name.notin(deceased_people()))
 			.orderby(Month(Person.anniversary))
 			.orderby(Day(Person.anniversary))
 			.orderby(Person.last_name)
@@ -463,6 +465,7 @@ def get_directory_html(
 		missionaries_query = (
 			frappe.qb.from_(Missionary)
 			.select(
+				Missionary.name,
 				Missionary.title,
 				Missionary.agency,
 				Missionary.country,
@@ -472,9 +475,13 @@ def get_directory_html(
 				Missionary.sensitive,
 				Missionary.mission_statement,
 			)
+			.where(is_current_missionary(Missionary))
 			.orderby(Missionary.title)
 		)
 		missionaries = scoped(missionaries_query, Missionary, filters).run(as_dict=True)
+		people = get_missionary_people([m.name for m in missionaries])
+		for m in missionaries:
+			m["people"] = people.get(m.name, [])
 		# Resolve agency hashes to human-readable agency names
 		agency_names = list({m.agency for m in missionaries if m.agency})
 		if agency_names:
@@ -519,7 +526,8 @@ def get_directory_html(
 		"website": website,
 		"church_verse": church_verse,
 		"generated_date": generated_date,
-		"footer": get_css_string(f"{church_name} Church Directory  ·  {generated_date}"),
+		# The footer prints the church and its date alone; the cover already names the document.
+		"footer": get_css_string("  ·  ".join(part for part in (church_name, generated_date) if part)),
 	}
 
 	# Load the shipped template through the Jinja filesystem loader (path-only, so
@@ -579,9 +587,9 @@ def with_home_address(query, Person):
 
 
 def listed(query, Person, filters):
-	"""*query* without the people who asked to be left out of the directory, or that *filters* leave out."""
+	"""*query* without the deceased, the people who asked to be left out of the directory, and those *filters* leave out."""
 	filters = filters or {}
-	query = query.where(Person.hide_from_directory == 0)
+	query = query.where((Person.hide_from_directory == 0) & Person.name.notin(deceased_people()))
 	if frappe.utils.cint(filters.get("members_only")):
 		query = query.where(is_active_member(Person))
 	if frappe.utils.cint(filters.get("hide_non_active")):
@@ -590,13 +598,25 @@ def listed(query, Person, filters):
 
 
 def get_families_with_hidden_head(hide_non_active=False):
-	"""Families whose head of household is left out of the directory, or is not Active when *hide_non_active*."""
-	hidden = {"hide_from_directory": 1}
+	"""Families whose head of household is hidden, deceased, or not Active when *hide_non_active*."""
+	Person = frappe.qb.DocType("Person")
+	is_hidden = (Person.hide_from_directory == 1) | Person.name.isin(deceased_people())
 	if hide_non_active:
-		hidden["membership_status"] = ["!=", ACTIVE]
+		is_hidden |= Coalesce(Person.membership_status, "") != ACTIVE
 	# church-scope: only used to shorten names of families the scoped queries already listed
-	return set(
-		frappe.get_all("Person", filters={"is_head_of_household": 1}, or_filters=hidden, pluck="family")
+	heads = (
+		frappe.qb.from_(Person).select(Person.family).where((Person.is_head_of_household == 1) & is_hidden)
+	)
+	return set(heads.run(pluck=True))
+
+
+def deceased_people():
+	"""Subquery of the people with a Death life event."""
+	LifeEvent = frappe.qb.DocType("Life Event")
+	return (
+		frappe.qb.from_(LifeEvent)
+		.select(LifeEvent.parent)
+		.where((LifeEvent.parenttype == "Person") & (LifeEvent.event_type == "Death"))
 	)
 
 
@@ -616,9 +636,36 @@ def without_missionaries(query, Person, filters):
 		.join(Missionary)
 		.on(Missionary.name == MissionaryPerson.parent)
 		.select(MissionaryPerson.person)
-		.where(MissionaryPerson.parenttype == "Missionary")
+		.where((MissionaryPerson.parenttype == "Missionary") & is_current_missionary(Missionary))
 	)
 	return query.where(Person.name.notin(scoped(missionary_people, Missionary, filters)))
+
+
+def get_missionary_people(missionaries):
+	"""{missionary: [full names]} of the people on each missionary, in form order, without hidden or deceased people."""
+	if not missionaries:
+		return {}
+	MissionaryPerson = frappe.qb.DocType("Missionary Person")
+	Person = frappe.qb.DocType("Person")
+	# church-scope: only the people of missionaries the scoped query already listed
+	rows = (
+		frappe.qb.from_(MissionaryPerson)
+		.join(Person)
+		.on(Person.name == MissionaryPerson.person)
+		.select(MissionaryPerson.parent, Person.full_name)
+		.where(
+			(MissionaryPerson.parenttype == "Missionary")
+			& MissionaryPerson.parent.isin(missionaries)
+			& (Person.hide_from_directory == 0)
+			& Person.name.notin(deceased_people())
+		)
+		.orderby(MissionaryPerson.idx)
+		.run(as_dict=True)
+	)
+	people = {}
+	for row in rows:
+		people.setdefault(row.parent, []).append(row.full_name)
+	return people
 
 
 def header_church(filters):

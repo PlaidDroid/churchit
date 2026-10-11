@@ -251,8 +251,69 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		self.assertIn("Directory Sent</", self.render())
 		html = self.render(show_missionaries="1")
 		self.assertIn("_Test Directory Sent Family", html)
-		self.assertNotIn("Directory Sent</", html)
+		self.assertEqual(html.count("Directory Sent</"), 1)
+		self.assertIn('<div class="missionary-people">_Test Directory Sent</div>', html)
 		self.assertIn("Directory Neighbor</", html)
+
+	def test_missionaries_list_their_people_and_leave_out_inactive_ones(self):
+		ensure("Missionary Status", {"status": "Inactive"})
+		sent = make_person("_Test Sent", "Kinley")
+		shy = make_person("_Test Shy", "Kinley", hide_from_directory=1)
+		frappe.get_doc(
+			{
+				"doctype": "Missionary",
+				"title": "_Test Kinley Family",
+				"people": [{"person": sent.name}, {"person": shy.name}],
+			}
+		).insert(ignore_permissions=True)
+		former = make_person("_Test Former", "Ashby")
+		frappe.get_doc(
+			{
+				"doctype": "Missionary",
+				"title": "_Test Ashby Family",
+				"status": "Inactive",
+				"people": [{"person": former.name}],
+			}
+		).insert(ignore_permissions=True)
+
+		html = self.render(show_missionaries="1")
+
+		self.assertIn('<div class="missionary-people">_Test Sent Kinley</div>', html)
+		self.assertNotIn("_Test Ashby Family", html)
+		self.assertIn(
+			"_Test Former Ashby</", html, "an inactive missionary's people are listed with everyone"
+		)
+
+	def test_deceased_people_are_left_out_everywhere(self):
+		for event_type in ("Birth", "Death"):
+			ensure("Life Event Type", {"type": event_type})
+		family = make_family("_Test Mourning - Walt", "_Test Mourning Street")
+		walt = make_person(
+			"_Test Walt",
+			"Mourning",
+			family=family.name,
+			is_head_of_household=1,
+			life_events=[
+				{"event_type": "Birth", "date": "1950-09-09"},
+				{"event_type": "Death", "date": "2024-01-01"},
+			],
+		)
+		make_person(
+			"_Test Rose",
+			"Mourning",
+			family=family.name,
+			spouse=walt.name,
+			is_married=1,
+			anniversary="1975-10-10",
+			life_events=[{"event_type": "Birth", "date": "1952-09-10"}],
+		)
+
+		options = {"show_birthdays": "1", "show_anniversaries": "1"}
+		grouped = self.render(**options)
+		self.assertIn("_Test Mourning Family", grouped)
+		for html in (grouped, self.render(group_by_family="0", **options)):
+			self.assertIn("_Test Rose Mourning", html)
+			self.assertNotIn("Walt", html)
 
 	def test_record_values_are_escaped(self):
 		self.set_church_value("church_name", 'Saint "Mary" </style><script>x()</script>')

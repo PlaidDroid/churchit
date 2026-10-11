@@ -4,6 +4,7 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from churchit.patches.v1_0 import add_fiance_relation_types
 from churchit.patches.v1_0 import add_step_in_law_and_cousin_relation_types as patch
 
 
@@ -17,3 +18,12 @@ class TestPersonRelationType(FrappeTestCase):
 
 		self.assertTrue(frappe.db.exists("Person Relation Type", "Stepson"))
 		self.assertEqual(frappe.db.get_value("Person Relation Type", "Cousin", "description"), "Ours")
+
+	def test_patch_adds_fiance_and_fiancee(self):
+		frappe.db.delete("Person Relation Type", {"name": "Fiancée"})
+
+		add_fiance_relation_types.execute()
+		add_fiance_relation_types.execute()
+
+		self.assertTrue(frappe.db.exists("Person Relation Type", "Fiancé"))
+		self.assertTrue(frappe.db.exists("Person Relation Type", "Fiancée"))
