@@ -519,7 +519,8 @@ def get_directory_html(
 		"website": website,
 		"church_verse": church_verse,
 		"generated_date": generated_date,
-		"footer": get_css_string(f"{church_name} Church Directory  ·  {generated_date}"),
+		# The footer prints the church and its date alone; the cover already names the document.
+		"footer": get_css_string("  ·  ".join(part for part in (church_name, generated_date) if part)),
 	}
 
 	# Load the shipped template through the Jinja filesystem loader (path-only, so
