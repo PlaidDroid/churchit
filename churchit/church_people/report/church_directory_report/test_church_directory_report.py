@@ -10,9 +10,10 @@ from pypdf import PdfReader
 from churchit.church_people.report.church_directory_report.booklet import SHEET_WIDTH, get_booklet_spreads
 from churchit.church_people.report.church_directory_report.church_directory_report import (
 	download_directory_pdf,
+	execute,
 	get_directory_html,
 )
-from churchit.tests.helpers import ensure_root_church, make_address, make_person, make_translation
+from churchit.tests.helpers import ensure, ensure_root_church, make_address, make_person, make_translation
 
 
 class TestChurchDirectoryReport(FrappeTestCase):
@@ -158,6 +159,40 @@ class TestChurchDirectoryReport(FrappeTestCase):
 			self.assertNotIn("Hal", html)
 			self.assertNotIn("_Test Solo", html)
 			self.assertNotIn("_Test Gus", html)
+
+	def test_people_who_are_not_active_are_left_out_only_when_ticked(self):
+		ensure("Member Status", {"status": "Inactive"})
+		ensure("Member Status", {"status": "_Test Homebound"})
+		family = make_family("_Test Lapsed - Ivy", "_Test Lapsed Street")
+		born = [{"event_type": "Birth", "date": "1980-07-07"}]
+		ivy = make_person(
+			"_Test Ivy",
+			"Lapsed",
+			family=family.name,
+			is_head_of_household=1,
+			membership_status="Inactive",
+			life_events=born,
+		)
+		make_person(
+			"_Test Abe",
+			"Lapsed",
+			family=family.name,
+			spouse=ivy.name,
+			is_married=1,
+			anniversary="2001-08-08",
+		)
+		make_person("_Test Solo", "Lapsed", membership_status="_Test Homebound")
+
+		options = {"show_birthdays": "1", "show_anniversaries": "1"}
+		self.assertIn("_Test Ivy", self.render(**options))
+		grouped = self.render(hide_non_active="1", **options)
+		self.assertIn("_Test Lapsed Family", grouped)
+		for html in (grouped, self.render(hide_non_active="1", group_by_family="0", **options)):
+			self.assertIn("_Test Abe Lapsed", html)
+			self.assertNotIn("Ivy", html, "an anniversary would name the inactive spouse")
+			self.assertNotIn("_Test Solo Lapsed", html)
+		people = [row["person"] for row in execute({"group_by_family": 0, "hide_non_active": 1})[1]]
+		self.assertNotIn(ivy.name, people)
 
 	def test_missionaries_are_listed_once_when_their_section_is_ticked(self):
 		make_person("_Test", "Directory Neighbor")

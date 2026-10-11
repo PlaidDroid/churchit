@@ -82,6 +82,13 @@ frappe.query_reports["Church Directory Report"] = {
 			group: __("People"),
 		},
 		{
+			fieldname: "hide_non_active",
+			label: __("Hide Non Active People"),
+			fieldtype: "Check",
+			default: 0,
+			group: __("People"),
+		},
+		{
 			fieldname: "group_by_family",
 			label: __("Group by Family"),
 			fieldtype: "Check",
