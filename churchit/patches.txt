@@ -33,3 +33,4 @@ churchit.patches.v1_0.list_missionary_people_in_a_table
 churchit.patches.v1_0.add_step_in_law_and_cousin_relation_types
 churchit.patches.v1_0.move_to_the_apps_screen_and_dock
 churchit.patches.v1_0.split_membership_from_member_status
+churchit.patches.v1_0.set_church_website

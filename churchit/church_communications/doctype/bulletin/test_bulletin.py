@@ -259,6 +259,13 @@ class TestBulletin(FrappeTestCase):
 
 		self.assertEqual((contact.phone, contact.email), ("555-0199", "office@branch.example.com"))
 
+	def test_contact_information_prints_the_churchs_website(self):
+		church = frappe.get_doc("Church", get_church().name)
+		church.website = "https://test-bulletin.example.org/"
+		church.save(ignore_permissions=True)
+
+		self.assertEqual(self.make_bulletin().contact_information.website, "test-bulletin.example.org")
+
 	def test_verse_of_the_week_is_printed_with_its_text_when_there_is_one(self):
 		translation = self.use_translation([("JHN", 3, 16, "For God so loved the world.")])
 		bulletin = self.make_bulletin(verse="jn 3:16")

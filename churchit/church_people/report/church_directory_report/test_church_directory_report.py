@@ -39,17 +39,17 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		translation = make_translation(self, "_TDV", [("JOS", 24, 15, "We will serve the LORD.")])
 		self.set_church_value("default_bible_translation", translation)
 		self.set_church_value("church_verse", "Joshua 24:15")
-		self.set_website_feature(1)
+		self.set_church_value("website", "https://test-church.example.org/")
 
 		html = self.render()
 
 		self.assertIn("We will serve the LORD.", html)
 		self.assertIn(f"Joshua 24:15 ({translation})", html)
-		website = frappe.utils.get_url().split("://", 1)[-1]
-		self.assertIn(f'<div class="cover-website">{website}</div>', html)
+		self.assertIn('<div class="cover-website">test-church.example.org</div>', html)
 
-	def test_cover_leaves_out_the_website_when_the_web_site_module_is_off(self):
-		self.set_website_feature(0)
+	def test_cover_leaves_out_the_website_when_the_church_has_none(self):
+		self.set_church_value("website", None)
+		self.set_website_feature(1)
 
 		self.assertNotIn('<div class="cover-website">', self.render())
 

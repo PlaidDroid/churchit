@@ -49,7 +49,7 @@ class BulletinSections:
 			address=address_line(address),
 			phone=contact.phone,
 			email=contact.email,
-			website=frappe.utils.get_url().split("://", 1)[-1],
+			website=church.printed_website if church else None,
 		)
 
 	@property

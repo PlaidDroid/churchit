@@ -28,6 +28,7 @@ from churchit.patches.v1_0 import (
 	rename_agency_logo_field,
 	scope_website_pages_to_church,
 	seed_naming_series_counters,
+	set_church_website,
 	setup_bulletins,
 	split_membership_from_member_status,
 	update_default_navbar,
@@ -40,6 +41,7 @@ from churchit.patches.v1_0 import set_statement_acknowledgment as acknowledgment
 from churchit.tests.helpers import (
 	RollbackEachTest,
 	ensure,
+	ensure_root_church,
 	make_address,
 	make_function,
 	make_person,
@@ -778,3 +780,31 @@ class TestSplitMembershipFromMemberStatus(RollbackEachTest):
 			notification.condition,
 			'doc.membership == "Member" and doc.membership_status == "Active" and doc.emails',
 		)
+
+
+class TestSetChurchWebsite(RollbackEachTest):
+	"""The directory cover keeps the site address it printed before the Website field."""
+
+	def setUp(self):
+		super().setUp()
+		self.church = ensure_root_church()
+		frappe.db.set_value("Church", self.church, "website", None)
+
+	def set_website_feature(self, enabled):
+		frappe.db.set_single_value("Church Features", "enable_website", enabled)
+
+	def test_the_site_address_fills_an_empty_website(self):
+		self.set_website_feature(1)
+		set_church_website.execute()
+		self.assertEqual(frappe.db.get_value("Church", self.church, "website"), frappe.utils.get_url())
+
+	def test_a_church_without_the_web_site_module_keeps_no_website(self):
+		self.set_website_feature(0)
+		set_church_website.execute()
+		self.assertIsNone(frappe.db.get_value("Church", self.church, "website"))
+
+	def test_a_website_the_church_set_is_kept(self):
+		self.set_website_feature(1)
+		frappe.db.set_value("Church", self.church, "website", "https://ours.example.org")
+		set_church_website.execute()
+		self.assertEqual(frappe.db.get_value("Church", self.church, "website"), "https://ours.example.org")

@@ -13,7 +13,7 @@ from pypika import Order
 
 from churchit.church_people.membership import ACTIVE, is_active_member
 from churchit.church_people.report.church_directory_report.booklet import impose_booklet
-from churchit.church_scope import church_filter, is_feature_enabled, root_church, scoped
+from churchit.church_scope import church_filter, root_church, scoped
 from churchit.contacts import primary_address_query, primary_email_query, primary_phone_query
 from churchit.query import Day, Month
 from churchit.scripture import get_printable_passage
@@ -180,7 +180,7 @@ def get_directory_html(
 	if church_doc and church_doc.address:
 		church_address = frappe.get_doc("Address", church_doc.address)
 	church_verse = get_printable_passage(church_doc.church_verse, church_doc.name) if church_doc else None
-	website = frappe.utils.get_url().split("://", 1)[-1] if is_feature_enabled("enable_website") else None
+	website = church_doc.printed_website if church_doc else None
 
 	Family = frappe.qb.DocType("Family")
 	Address = frappe.qb.DocType("Address")

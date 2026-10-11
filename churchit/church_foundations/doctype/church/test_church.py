@@ -113,6 +113,13 @@ class TestMultiChurch(FrappeTestCase):
 		frappe.db.set_value("Church", branch, "tax_id", "98-7654321")
 		self.assertEqual(inherited_value(branch, "tax_id"), "98-7654321")
 
+	def test_a_branch_prints_its_parents_website_until_it_has_its_own(self):
+		frappe.db.set_value("Church", self.root, "website", "https://main.example.org/")
+		branch = make_branch("_Test Website Branch", "WB")
+		self.assertEqual(frappe.get_doc("Church", branch).printed_website, "main.example.org")
+		frappe.db.set_value("Church", branch, "website", "http://branch.example.org")
+		self.assertEqual(frappe.get_doc("Church", branch).printed_website, "branch.example.org")
+
 
 class TestLetterhead(FrappeTestCase):
 	"""The shipped letterhead, rendered from the fixture rather than the site.
