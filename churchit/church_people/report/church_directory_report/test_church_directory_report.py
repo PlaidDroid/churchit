@@ -1,10 +1,12 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+import base64
 import io
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from PIL import Image
 from pypdf import PdfReader
 
 from churchit.church_people.report.church_directory_report.booklet import SHEET_WIDTH, get_booklet_spreads
@@ -12,6 +14,7 @@ from churchit.church_people.report.church_directory_report.church_directory_repo
 	download_directory_pdf,
 	execute,
 	get_directory_html,
+	get_paginated_directory,
 )
 from churchit.tests.helpers import ensure, ensure_root_church, make_address, make_person, make_translation
 
@@ -60,6 +63,22 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		self.assertIn(
 			'<img class="cover-image" src="/files/_test_church.png"', self.render(show_church_image="1")
 		)
+
+	def test_cover_image_fills_the_space_under_the_text_on_one_page(self):
+		for width, height in ((1600, 900), (600, 1200)):
+			self.set_church_value("image", make_png_data_uri(width, height))
+			for booklet in ("0", "1"):
+				with self.subTest(image=(width, height), booklet=booklet):
+					options = {"church": self.church, "show_church_image": "1", "booklet_printing": booklet}
+					html = get_directory_html(**options)
+					self.assertGreater(html.index('class="cover-image"'), html.index('class="cover-date"'))
+
+					pages = get_paginated_directory(options).pages
+					image = find_box(pages[0]._page_box, "img")
+					self.assertGreater(
+						image.height, MM_TO_PX * 100, "the image takes the space left on the cover"
+					)
+					self.assertIsNone(find_box(pages[1]._page_box, "img"), "the image stays on the cover")
 
 	def test_cover_leaves_out_the_mission_statement(self):
 		self.set_church_value("mission_statement", "_Test mission statement")
@@ -288,6 +307,26 @@ def make_family(family_name, street):
 			"addresses": [{"address": address, "is_primary": 1}],
 		}
 	).insert(ignore_permissions=True)
+
+
+MM_TO_PX = 96 / 25.4
+
+
+def make_png_data_uri(width, height):
+	"""A plain PNG of *width* by *height* pixels, inline so no file is left behind."""
+	output = io.BytesIO()
+	Image.new("RGB", (width, height), "steelblue").save(output, "PNG")
+	return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode()
+
+
+def find_box(box, tag):
+	"""The first laid-out box for an element named *tag* under *box*, or None."""
+	element = getattr(box, "element", None)
+	if element is not None and element.tag == tag:
+		return box
+	for child in getattr(box, "children", []):
+		if found := find_box(child, tag):
+			return found
 
 
 def get_positioned_words(page):
