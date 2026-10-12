@@ -219,6 +219,7 @@ def get_directory_html(
 		.where(Person.family.isnotnull() & (Person.family != ""))
 		.orderby(Person.family)
 		.orderby(Person.is_head_of_household, order=Order.desc)
+		.orderby(Person.spouse.isin(heads_of_household()), order=Order.desc)
 		.orderby(Person.last_name)
 		.orderby(Person.first_name)
 	)
@@ -618,6 +619,13 @@ def deceased_people():
 		.select(LifeEvent.parent)
 		.where((LifeEvent.parenttype == "Person") & (LifeEvent.event_type == "Death"))
 	)
+
+
+def heads_of_household():
+	"""Subquery of every head of household, hidden ones too, so a widowed spouse still leads the family."""
+	Person = frappe.qb.DocType("Person")
+	# church-scope: only orders the members the scoped query already listed
+	return frappe.qb.from_(Person).select(Person.name).where(Person.is_head_of_household == 1)
 
 
 def listed_family_name(family_name, is_head_hidden):

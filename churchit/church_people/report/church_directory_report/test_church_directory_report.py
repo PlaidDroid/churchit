@@ -203,6 +203,24 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		self.assertIn('<span class="member-relation">(Wife)</span>', html)
 		self.assertNotIn('class="member-relation"', self.render(show_hoh="0"))
 
+	def test_families_list_the_head_and_spouse_before_the_others(self):
+		family = make_family("_Test Order - Zed", "_Test Order Street")
+		zed = make_person("_Test Zed", "Order", family=family.name, is_head_of_household=1)
+		make_person("_Test Yara", "Order", family=family.name, spouse=zed.name, is_married=1)
+		make_person("_Test Abby", "Order", family=family.name)
+		unlisted_head = make_family("_Test Unlisted - Vic", "_Test Unlisted Street")
+		vic = make_person(
+			"_Test Vic", "Unlisted", family=unlisted_head.name, is_head_of_household=1, hide_from_directory=1
+		)
+		make_person("_Test Wren", "Unlisted", family=unlisted_head.name, spouse=vic.name, is_married=1)
+		make_person("_Test Ada", "Unlisted", family=unlisted_head.name)
+
+		html = self.render()
+
+		names = ("_Test Zed Order", "_Test Yara Order", "_Test Abby Order")
+		self.assertEqual([html.index(name) for name in names], sorted(html.index(name) for name in names))
+		self.assertLess(html.index("_Test Wren Unlisted"), html.index("_Test Ada Unlisted"))
+
 	def test_people_who_are_not_active_are_left_out_only_when_ticked(self):
 		ensure("Member Status", {"status": "Inactive"})
 		ensure("Member Status", {"status": "_Test Homebound"})
