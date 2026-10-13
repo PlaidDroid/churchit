@@ -5,7 +5,7 @@ from datetime import date, time, timedelta
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, getdate
+from frappe.utils import add_days, get_datetime, getdate
 
 from churchit.church_ministries.doctype.function.function import (
 	_as_time,
@@ -87,6 +87,39 @@ class TestFunction(FrappeTestCase):
 		self.assertEqual(_as_time(occurrence.start_time), time(10, 0))
 		self.assertFalse(occurrence.auto_repeat)
 		self.assertEqual(frappe.db.get_value("Function", occurrence.name, "description"), "Sunday service")
+
+	def test_apply_template_moves_the_schedule_to_the_new_start_date(self):
+		template = make_function("_Test Retreat Plan", start_date="2031-05-02", end_date="2031-05-04")
+		template.append("schedule", {"description": "Opening", "start": "2031-05-02 19:00:00"})
+		template.append(
+			"schedule", {"description": "Hike", "start": "2031-05-03 09:00:00", "end": "2031-05-03 12:00:00"}
+		)
+		template.save(ignore_permissions=True)
+
+		copied = apply_template(template.name, "2031-06-06")
+
+		self.assertEqual(
+			[(row["start"], row["end"]) for row in copied["schedule"]],
+			[
+				(get_datetime("2031-06-06 19:00:00"), None),
+				(get_datetime("2031-06-07 09:00:00"), get_datetime("2031-06-07 12:00:00")),
+			],
+		)
+
+	def test_scheduler_moves_the_schedule_to_the_occurrence_date(self):
+		start = add_days(getdate(), -10)
+		template = make_function(
+			"_Test Scheduled Plan",
+			start_date=start,
+			auto_repeat=1,
+			repeat_frequency="Daily",
+		)
+		template.append("schedule", {"description": "Welcome", "start": f"{start} 10:00:00"})
+		template.save(ignore_permissions=True)
+		create_scheduled_functions()
+
+		occurrence = frappe.get_doc("Function", {"source_template": template.name})
+		self.assertEqual(occurrence.schedule[0].start, get_datetime(f"{occurrence.start_date} 10:00:00"))
 
 	def test_scheduler_keeps_a_multi_day_functions_length(self):
 		start = add_days(getdate(), -10)

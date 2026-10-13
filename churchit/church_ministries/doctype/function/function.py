@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, add_months, add_years, date_diff, getdate, now_datetime
+from frappe.utils import add_days, add_months, add_years, date_diff, get_datetime, getdate, now_datetime
 
 WEEKDAY_INDEX = {
 	"Monday": 0,
@@ -39,8 +39,8 @@ class Function(Document):
 
 
 @frappe.whitelist()
-def apply_template(source_name: str):
-	"""The shape of a template function, to start a new one from.
+def apply_template(source_name: str, start_date: str | None = None):
+	"""The shape of a template function, to start a new one from on `start_date`.
 
 	Templates are shared configuration: a branch may apply the main church's, so
 	the source is not measured against the reader's church. It does have to be a
@@ -65,14 +65,20 @@ def apply_template(source_name: str):
 	include_child_tables = ["associations", "attendance", "schedule"]
 	for child_table in include_child_tables:
 		if template_dict.get(child_table):
-			copied_doc[child_table] = []
-			for child_row in template_dict[child_table]:
-				new_row = {}
-				for child_field in child_row:
-					new_row[child_field] = child_row[child_field]
-				copied_doc[child_table].append(new_row)
+			copied_doc[child_table] = [dict(child_row) for child_row in template_dict[child_table]]
 	copied_doc["attendance"] = readable_attendance(copied_doc.get("attendance"))
+
+	if start_date:
+		move_schedule(copied_doc.get("schedule", []), date_diff(start_date, template_dict.start_date))
 	return copied_doc
+
+
+def move_schedule(rows: list[dict], days: int) -> None:
+	"""Move each schedule row's start and end by `days`, so the schedule keeps to its function's date."""
+	for row in rows:
+		for field in ("start", "end"):
+			if row.get(field):
+				row[field] = add_days(get_datetime(row[field]), days)
 
 
 def refuse_a_source_that_is_not_a_template(source_name):
@@ -150,7 +156,7 @@ def _create_next_occurrence(template_name, today):
 	if template.repeat_until and next_date > getdate(template.repeat_until):
 		return
 
-	new_doc_data = apply_template(template_name)
+	new_doc_data = apply_template(template_name, str(next_date))
 	new_doc_data["doctype"] = "Function"
 	new_doc_data["function_name"] = template.function_name
 	new_doc_data["type"] = template.type

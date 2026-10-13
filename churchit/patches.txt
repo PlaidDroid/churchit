@@ -36,3 +36,4 @@ churchit.patches.v1_0.split_membership_from_member_status
 churchit.patches.v1_0.set_church_website
 churchit.patches.v1_0.add_fiance_relation_types
 churchit.patches.v1_0.add_missionary_statuses
+churchit.patches.v1_0.move_copied_function_schedules

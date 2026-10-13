@@ -32,11 +32,17 @@ frappe.ui.form.on("Function", {
 				if (!r.message?.template_function) return;
 				// Add 	Fill from Template` button if template exists
 				frm.add_custom_button(__("Fill from Template"), function () {
+					if (!frm.doc.start_date) {
+						frappe.msgprint(
+							__("Set the Start Date first, so the schedule moves to it.")
+						);
+						return;
+					}
 					frappe.call({
 						method: "churchit.church_ministries.doctype.function.function.apply_template",
 						args: {
 							source_name: r.message.template_function,
-							target_doc: frm.doc,
+							start_date: frm.doc.start_date,
 						},
 						callback: function (r) {
 							if (!r.message) return;

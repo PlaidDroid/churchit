@@ -23,6 +23,7 @@ from churchit.patches.v1_0 import (
 	add_missionary_statuses,
 	add_unsynced_default_records,
 	list_missionary_people_in_a_table,
+	move_copied_function_schedules,
 	move_to_the_apps_screen_and_dock,
 	redesign_home_page,
 	remove_knowledge_base,
@@ -535,6 +536,23 @@ class TestVersionedPatches(FrappeTestCase):
 		add_default_address_template.execute()
 		self.assertEqual(frappe.db.count("Address Template"), 1)
 		self.assertEqual(frappe.db.get_value("Address Template", country, "is_default"), 1)
+
+	def test_copied_function_schedules_move_to_their_own_dates_once(self):
+		template = make_function("_Test Patch Template", start_date="2031-05-04")
+		template.append("schedule", {"description": "Welcome", "start": "2031-05-04 10:00:00"})
+		template.save(ignore_permissions=True)
+		copy = make_function("_Test Patch Copy", start_date="2031-05-11", source_template=template.name)
+		copy.append("schedule", {"description": "Welcome", "start": "2031-05-04 10:00:00"})
+		copy.append("schedule", {"description": "Edited", "start": "2031-05-11 11:00:00"})
+		copy.save(ignore_permissions=True)
+
+		move_copied_function_schedules.execute()
+		move_copied_function_schedules.execute()
+
+		copy.reload()
+		self.assertEqual(
+			[str(row.start) for row in copy.schedule], ["2031-05-11 10:00:00", "2031-05-11 11:00:00"]
+		)
 
 
 class TestBibleReferencePatch(FrappeTestCase):
