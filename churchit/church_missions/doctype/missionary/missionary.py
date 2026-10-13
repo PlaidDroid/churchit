@@ -41,6 +41,18 @@ class Missionary(Document):
 					"auto-creating expenses."
 				)
 
+	@frappe.whitelist()
+	def add_family(self, family: str) -> list[str]:
+		"""Add the members of *family* not listed in People yet, and return them."""
+		family_doc = frappe.get_doc("Family", family)
+		family_doc.check_permission("read")
+
+		listed = {row.person for row in self.people}
+		added = [member.member for member in family_doc.members if member.member not in listed]
+		for person in added:
+			self.append("people", {"person": person})
+		return added
+
 
 @frappe.whitelist(methods=["GET"])
 def get_map_markers() -> list[dict]:
