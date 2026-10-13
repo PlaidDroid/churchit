@@ -26,6 +26,7 @@ from churchit.patches.v1_0 import (
 	add_unsynced_default_records,
 	list_missionary_people_in_a_table,
 	move_copied_function_schedules,
+	move_email_template_bodies_to_html,
 	move_to_the_apps_screen_and_dock,
 	redesign_home_page,
 	remove_knowledge_base,
@@ -556,6 +557,26 @@ class TestVersionedPatches(FrappeTestCase):
 		copy.reload()
 		self.assertEqual(
 			[str(row.start) for row in copy.schedule], ["2031-05-11 10:00:00", "2031-05-11 11:00:00"]
+		)
+
+	def test_starter_email_templates_get_the_html_body_they_were_sent_without(self):
+		add_unsynced_default_records.execute()
+		frappe.db.set_value(
+			"Email Template", "Birthday Greeting", {"response": "<p>Old body</p>", "response_html": ""}
+		)
+		frappe.db.set_value(
+			"Email Template",
+			"Visitor Follow-Up",
+			{"response": "<p>Old body</p>", "response_html": "<p>Ours</p>"},
+		)
+
+		move_email_template_bodies_to_html.execute()
+
+		self.assertEqual(
+			frappe.db.get_value("Email Template", "Birthday Greeting", "response_html"), "<p>Old body</p>"
+		)
+		self.assertEqual(
+			frappe.db.get_value("Email Template", "Visitor Follow-Up", "response_html"), "<p>Ours</p>"
 		)
 
 	def test_ministry_teams_reach_the_portal_menu_and_email_templates_once(self):

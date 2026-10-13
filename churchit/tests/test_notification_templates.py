@@ -52,3 +52,16 @@ class TestNotificationTemplates(FrappeTestCase):
 			rendered = frappe.render_template(template, context)
 			self.assertIn("_Test Notice Elder", rendered)
 			self.assertIn("_Test Notice Holder", rendered)
+
+
+class TestShippedEmailTemplates(FrappeTestCase):
+	def test_every_shipped_email_template_sends_a_body(self):
+		"""An HTML template sends its HTML body, so text left in the plain body goes out as nothing."""
+		folder = Path(frappe.get_app_path("churchit", "church_communications", "email_template"))
+		for source in sorted(folder.glob("*/*.json")):
+			template = frappe.get_doc(json.loads(source.read_text()))
+			with self.subTest(template.name):
+				message = template.get_formatted_email({"first_name": "_Test Reader", "assignments": []})[
+					"message"
+				]
+				self.assertIn("<p>", message)
