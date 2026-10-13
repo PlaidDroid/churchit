@@ -212,3 +212,29 @@ def assert_scoped(case, doctype, reader, mine, theirs, **list_args):
 		)
 	finally:
 		frappe.set_user("Administrator")
+
+
+def make_team_position(position_name, people, ministry_name="_Test Team Ministry", **values):
+	"""A Ministry Team Position on *ministry_name* that *people* can fill."""
+	ministry = ensure("Ministry", {"ministry_name": ministry_name})
+	return frappe.get_doc(
+		{
+			"doctype": "Ministry Team Position",
+			"position_name": position_name,
+			"ministry": ministry,
+			"people": [{"person": person} for person in people],
+			**values,
+		}
+	).insert(ignore_permissions=True)
+
+
+def make_team_assignment(function, position, person, **values):
+	return frappe.get_doc(
+		{
+			"doctype": "Ministry Team Assignment",
+			"function": function,
+			"position": position,
+			"person": person,
+			**values,
+		}
+	).insert(ignore_permissions=True)

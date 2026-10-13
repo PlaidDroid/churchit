@@ -20,6 +20,7 @@ from churchit.patches.v1_0 import (
 	add_churchit_website_theme,
 	add_default_address_template,
 	add_marital_statuses,
+	add_ministry_teams,
 	add_missionary_map_to_missions_page,
 	add_missionary_statuses,
 	add_unsynced_default_records,
@@ -555,6 +556,22 @@ class TestVersionedPatches(FrappeTestCase):
 		copy.reload()
 		self.assertEqual(
 			[str(row.start) for row in copy.schedule], ["2031-05-11 10:00:00", "2031-05-11 11:00:00"]
+		)
+
+	def test_ministry_teams_reach_the_portal_menu_and_email_templates_once(self):
+		frappe.delete_doc_if_exists("Email Template", "Ministry Team Reminder")
+		settings = frappe.get_doc("Portal Settings")
+		settings.menu = [row for row in settings.menu if row.route != add_ministry_teams.ROUTE]
+		settings.save(ignore_permissions=True)
+
+		add_ministry_teams.execute()
+		add_ministry_teams.execute()
+
+		routes = [row.route for row in frappe.get_doc("Portal Settings").menu]
+		self.assertEqual(routes.count(add_ministry_teams.ROUTE), 1)
+		self.assertIn(
+			"{{ response_link }}",
+			frappe.db.get_value("Email Template", "Ministry Team Reminder", "response_html"),
 		)
 
 

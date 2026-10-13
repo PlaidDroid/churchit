@@ -26,6 +26,8 @@
   "schedule",
   "section_break_qbbr",
   "table_cxhh",
+  "section_break_team",
+  "team_needs",
   "section_break_dlpa",
   "attendance",
   "section_break_recurrence",
@@ -304,6 +306,20 @@
   },
   {
    "collapsible": 1,
+   "collapsible_depends_on": "eval: doc.team_needs && doc.team_needs.length",
+   "fieldname": "section_break_team",
+   "fieldtype": "Section Break",
+   "label": "Ministry Team"
+  },
+  {
+   "description": "The Ministry Team Positions this function needs filled, and how many people each needs. Ask people with a Ministry Team Assignment.",
+   "fieldname": "team_needs",
+   "fieldtype": "Table",
+   "label": "Team Needs",
+   "options": "Function Team Need"
+  },
+  {
+   "collapsible": 1,
    "collapsible_depends_on": "eval: doc.auto_repeat",
    "fieldname": "section_break_recurrence",
    "fieldtype": "Section Break",
@@ -320,9 +336,13 @@
   {
    "link_doctype": "Function Check-In",
    "link_fieldname": "function"
+  },
+  {
+   "link_doctype": "Ministry Team Assignment",
+   "link_fieldname": "function"
   }
  ],
- "modified": "2026-09-28 13:00:00",
+ "modified": "2026-10-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church Ministries",
  "name": "Function",

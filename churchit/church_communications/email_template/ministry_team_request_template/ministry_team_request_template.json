@@ -1,0 +1,12 @@
+{
+ "creation": "2026-10-11 12:00:00.000000",
+ "doctype": "Email Template",
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "Ministry Team Request",
+ "owner": "Administrator",
+ "reference_doctype": "Ministry Team Assignment",
+ "response_html": "<p>Dear {{ first_name | e }},</p>\n\n<p>You are asked to serve on the ministry team. Please answer each request.</p>\n\n<ul>\n{% for request in assignments %}\n  <li><strong>{{ request.position | e }}</strong> ({{ request.ministry | e }}) at {{ request.function | e }}, {{ request.date }}{% if request.time %} at {{ request.time }}{% endif %}: <a href=\"{{ request.response_link }}\">Accept or decline</a></li>\n{% endfor %}\n</ul>\n\n<p>Thank you for serving!</p>",
+ "subject": "Will you serve on the ministry team?",
+ "use_html": 1
+}

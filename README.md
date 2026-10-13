@@ -69,6 +69,14 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Song tracking for worship services
 - Reports: attendance by function, attendance by person, function count by type
 
+### Ministry Teams
+- Ministry team positions (e.g. Greeter, Usher, Nursery Worker) with the people who can fill each one, and an optional background check rule
+- Team needs on each function, copied to recurring functions from their template
+- Assignments that ask one person to fill one position, with warnings for blocked dates, double booking, missing background checks and missing email addresses
+- Request and reminder emails with accept and decline links that work without signing in, and an email to the ministry's coordinator for each decline
+- A portal page where members answer their requests and block out the dates they cannot serve
+- Ministry Team Schedule report: what each function needs, who is asked, and which places are still open
+
 ### Sermons & Presentations
 - Sermon management with slides referencing any church document
 - Presentation mode with configurable field display per slide

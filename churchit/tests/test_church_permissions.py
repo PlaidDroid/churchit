@@ -3,6 +3,8 @@
 
 """The multi-church access model: Person-driven User Permissions and what they scope."""
 
+from unittest import mock
+
 import frappe
 from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
@@ -21,6 +23,7 @@ from churchit.church_foundations.church_access import (
 )
 from churchit.church_foundations.doctype.church.church import church_name
 from churchit.church_ministries.doctype.function.function import create_scheduled_functions
+from churchit.church_ministries.doctype.ministry_team_assignment import ministry_team_assignment
 from churchit.church_ministries.page.check_in import check_in as check_in_station
 from churchit.church_missions.doctype.missionary.missionary import create_missionary_expenses
 from churchit.church_people.group_api import joinable_public_groups
@@ -40,6 +43,7 @@ from churchit.tests.helpers import (
 	make_function,
 	make_person,
 	make_primary_contact,
+	make_team_assignment,
 	set_multi_church,
 	set_private_people,
 )
@@ -541,6 +545,75 @@ class TestChurchPermissions(FrappeTestCase):
 		frappe.set_user(self.manager_b)
 		self.assertIn(function.name, frappe.get_list("Function", pluck="name"))
 		self.assertIn(sign_up.name, frappe.get_list("Function Sign-Up", pluck="name"))
+
+	def test_ministry_team_records_stay_with_their_church(self):
+		"""Positions follow their ministry, assignments their function, and blocks their person."""
+		records = {}
+		for church, function in ((self.branch_a, self.function_a.name), (self.branch_b, None)):
+			volunteer = make_person("_Test Team Scope", church, church=church).name
+			ministry = ensure("Ministry", {"ministry_name": f"_Test Team Scope {church}", "church": church})
+			position = frappe.get_doc(
+				{
+					"doctype": "Ministry Team Position",
+					"position_name": "_Test Scope Greeter",
+					"ministry": ministry,
+					"people": [{"person": volunteer}],
+				}
+			).insert(ignore_permissions=True)
+			function = function or make_function("_Test Team Scope Function", church=church).name
+			assignment = make_team_assignment(function, position.name, volunteer)
+			block = frappe.get_doc(
+				{
+					"doctype": "Ministry Team Block",
+					"person": volunteer,
+					"from_date": "2033-01-01",
+					"to_date": "2033-01-02",
+				}
+			).insert(ignore_permissions=True)
+			records[church] = (position.name, assignment.name, block.name, volunteer)
+
+		for doctype, index in (
+			("Ministry Team Position", 0),
+			("Ministry Team Assignment", 1),
+			("Ministry Team Block", 2),
+		):
+			assert_scoped(
+				self, doctype, self.manager_a, records[self.branch_a][index], records[self.branch_b][index]
+			)
+
+		position_b, _assignment, _block, volunteer_b = records[self.branch_b]
+		with self.assertRaisesRegex(frappe.PermissionError, "belongs to another church"):
+			make_team_assignment(self.function_a.name, position_b, volunteer_b)
+
+	def test_send_team_emails_now_covers_only_the_users_churches(self):
+		"""The daily job, as Administrator, still covers every church."""
+		assignments = {}
+		for church in (self.branch_a, self.branch_b):
+			volunteer = make_person("_Test Team Send", church, church=church).name
+			ministry = ensure("Ministry", {"ministry_name": f"_Test Team Send {church}", "church": church})
+			position = frappe.get_doc(
+				{
+					"doctype": "Ministry Team Position",
+					"position_name": "_Test Send Greeter",
+					"ministry": ministry,
+					"people": [{"person": volunteer}],
+				}
+			).insert(ignore_permissions=True)
+			function = make_function("_Test Team Send Function", church=church)
+			assignments[church] = make_team_assignment(function.name, position.name, volunteer).name
+
+		def requested(church):
+			return frappe.db.get_value("Ministry Team Assignment", assignments[church], "requested_on")
+
+		with mock.patch.object(ministry_team_assignment, "can_send_email", return_value=True):
+			frappe.set_user(self.manager_a)
+			ministry_team_assignment.send_team_emails_now()
+			self.assertIsNotNone(requested(self.branch_a))
+			self.assertIsNone(requested(self.branch_b), "another church's request went out")
+
+			frappe.set_user("Administrator")
+			ministry_team_assignment.send_team_emails()
+			self.assertIsNotNone(requested(self.branch_b))
 
 	def test_shared_minutes_reach_every_church(self):
 		minutes = frappe.get_doc(

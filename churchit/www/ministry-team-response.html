@@ -1,0 +1,57 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("Ministry Team Request") }}{% endblock %}
+
+{% block page_content %}
+<div class="my-account-container" style="max-width: 36rem;">
+	<h3 class="mb-4">{{ _("Ministry Team Request") }}</h3>
+
+	<p>{{ _("{0}, will you serve at this function?").format(request.first_name | e) }}</p>
+	<dl>
+		<dt>{{ _("Position") }}</dt>
+		<dd>{{ request.position | e }} ({{ request.ministry | e }})</dd>
+		<dt>{{ _("Function") }}</dt>
+		<dd>{{ request.function | e }}</dd>
+		<dt>{{ _("When") }}</dt>
+		<dd>{{ request.date }}{% if request.time %}, {{ request.time }}{% endif %}</dd>
+	</dl>
+
+	{% if request.status != "Pending" %}
+		<p><b>{{ _("You accepted.") if request.status == "Accepted" else _("You declined.") }}</b></p>
+	{% endif %}
+
+	{% if has_started %}
+		<p class="text-muted">{{ _("This function has already started, so the answer can no longer change.") }}</p>
+	{% else %}
+		<div class="d-flex flex-wrap align-items-center" style="gap: 8px;">
+			{% if request.status != "Accepted" %}
+				<button class="btn btn-primary team-answer" data-status="Accepted">{{ _("Accept") }}</button>
+			{% endif %}
+			{% if request.status != "Declined" %}
+				<input class="form-control" style="flex: 1 1 12rem;" type="text" id="team-reason" maxlength="140"
+					placeholder="{{ _('Reason (optional)') }}" aria-label="{{ _('Reason for declining') }}">
+				<button class="btn btn-default team-answer" data-status="Declined">{{ _("Decline") }}</button>
+			{% endif %}
+		</div>
+	{% endif %}
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+frappe.ready(function () {
+	document.querySelectorAll(".team-answer").forEach(function (button) {
+		button.addEventListener("click", function () {
+			var reason = document.getElementById("team-reason");
+			button.disabled = true;
+			frappe.call({
+				method: "churchit.church_ministries.member_ministry_team.answer_by_key",
+				args: { key: "{{ key }}", status: button.dataset.status, reason: reason ? reason.value : null },
+				callback: function () { window.location.reload(); },
+				error: function () { button.disabled = false; },
+			});
+		});
+	});
+});
+</script>
+{% endblock %}

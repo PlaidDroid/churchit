@@ -2,7 +2,7 @@
 # and is licensed under MIT No Attribution (MIT-0).
 
 from calendar import monthrange
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 import frappe
 from frappe import _
@@ -62,7 +62,7 @@ def apply_template(source_name: str, start_date: str | None = None):
 			copied_doc[field] = template_dict[field]
 
 	# Copy child tables
-	include_child_tables = ["associations", "attendance", "schedule"]
+	include_child_tables = ["associations", "attendance", "schedule", "team_needs"]
 	for child_table in include_child_tables:
 		if template_dict.get(child_table):
 			copied_doc[child_table] = [dict(child_row) for child_row in template_dict[child_table]]
@@ -79,6 +79,17 @@ def move_schedule(rows: list[dict], days: int) -> None:
 		for field in ("start", "end"):
 			if row.get(field):
 				row[field] = add_days(get_datetime(row[field]), days)
+
+
+def get_time_window(function) -> tuple[datetime, datetime]:
+	"""When *function* starts and ends. An all-day function, or a missing time, takes the whole day."""
+	start_date = getdate(function.start_date)
+	end_date = getdate(function.end_date or function.start_date)
+	if function.all_day or not function.start_time:
+		return datetime.combine(start_date, time.min), datetime.combine(end_date, time.max)
+
+	end_time = _as_time(function.end_time) if function.end_time else time.max
+	return datetime.combine(start_date, _as_time(function.start_time)), datetime.combine(end_date, end_time)
 
 
 def refuse_a_source_that_is_not_a_template(source_name):

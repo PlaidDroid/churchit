@@ -15,7 +15,7 @@ from churchit.church_ministries.doctype.function.function import (
 	apply_template,
 	create_scheduled_functions,
 )
-from churchit.tests.helpers import ensure, make_function, make_person
+from churchit.tests.helpers import ensure, make_function, make_person, make_team_position
 
 
 class TestFunction(FrappeTestCase):
@@ -104,6 +104,18 @@ class TestFunction(FrappeTestCase):
 				(get_datetime("2031-06-06 19:00:00"), None),
 				(get_datetime("2031-06-07 09:00:00"), get_datetime("2031-06-07 12:00:00")),
 			],
+		)
+
+	def test_apply_template_copies_the_team_needs(self):
+		position = make_team_position("_Test Template Greeter", [self.person])
+		template = make_function(
+			"_Test Team Template", team_needs=[{"position": position.name, "quantity": 3}]
+		)
+
+		copied = apply_template(template.name)
+
+		self.assertEqual(
+			[(row["position"], row["quantity"]) for row in copied["team_needs"]], [(position.name, 3)]
 		)
 
 	def test_scheduler_moves_the_schedule_to_the_occurrence_date(self):

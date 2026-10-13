@@ -124,6 +124,12 @@ frappe.ui.form.on("Function", {
 				},
 				__("Create")
 			);
+
+			frm.add_custom_button(__("Ministry Team Schedule"), function () {
+				frappe.set_route("query-report", "Ministry Team Schedule", {
+					function: frm.doc.name,
+				});
+			});
 		}
 
 		// Add Sign Ups buttons if sign-ups are enabled, there are items, or there are linked sign-ups

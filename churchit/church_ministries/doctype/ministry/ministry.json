@@ -22,6 +22,10 @@
   "mission_statement",
   "section_break_mission",
   "description",
+  "section_break_team",
+  "team_coordinator",
+  "column_break_team",
+  "team_reminder_days",
   "section_break_recurring",
   "recurring_functions",
   "create_recurring_function"
@@ -114,6 +118,31 @@
    "label": "Description"
   },
   {
+   "description": "The ministry's team positions are listed under Connections.",
+   "fieldname": "section_break_team",
+   "fieldtype": "Section Break",
+   "label": "Ministry Team"
+  },
+  {
+   "description": "Gets an email when someone declines a Ministry Team Assignment.",
+   "fieldname": "team_coordinator",
+   "fieldtype": "Link",
+   "label": "Team Coordinator",
+   "options": "Person"
+  },
+  {
+   "fieldname": "column_break_team",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "2",
+   "description": "How many days before a function to remind the people serving at it. 0 sends no reminders.",
+   "fieldname": "team_reminder_days",
+   "fieldtype": "Int",
+   "label": "Remind Days Before",
+   "non_negative": 1
+  },
+  {
    "default": "0",
    "description": "Check this to show this ministry on the public website.",
    "fieldname": "publish",
@@ -158,9 +187,13 @@
   {
    "link_doctype": "Function",
    "link_fieldname": "associated_ministry"
+  },
+  {
+   "link_doctype": "Ministry Team Position",
+   "link_fieldname": "ministry"
   }
  ],
- "modified": "2026-09-28 13:00:00",
+ "modified": "2026-10-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church Ministries",
  "name": "Ministry",
