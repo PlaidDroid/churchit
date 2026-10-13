@@ -221,7 +221,7 @@ own default over an inherited blank.
 
 Two shapes that are neither, and how they are handled today:
 
-- **Family** follows its head of household's church (`Family.follow_head_of_households_church`),
+- **Family** follows its primary contact's church (`Family.follow_primary_contacts_church`),
   because a household can span branches. The directory therefore lists a family under every branch
   that has one of its members, rather than filtering on the family's own church.
 - **Function Type** templates are shared configuration, so `template_function` carries

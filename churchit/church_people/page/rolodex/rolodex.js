@@ -211,7 +211,7 @@ class Rolodex {
 			if (person.family) (this.members_of[person.family] ||= []).push(person);
 		}
 		for (const members of Object.values(this.members_of)) {
-			members.sort((a, b) => b.is_head_of_household - a.is_head_of_household);
+			members.sort((a, b) => b.is_primary_contact - a.is_primary_contact);
 		}
 	}
 
@@ -355,8 +355,8 @@ class Rolodex {
 	household_html({ family, members, matched }) {
 		const e = frappe.utils.escape_html;
 		const all_saved = members.every((person) => this.saved_set.has(person.name));
-		const head = members.find((person) => person.is_head_of_household) || members[0];
-		const contact = family.phone || family.email || family.address ? family : head;
+		const primary = members.find((person) => person.is_primary_contact) || members[0];
+		const contact = family.phone || family.email || family.address ? family : primary;
 		const rows = members.map((person) => this.member_html(person, matched.has(person.name)));
 		const details = members.map((person) => {
 			const facts = [
@@ -390,14 +390,14 @@ class Rolodex {
 	member_html(person, matched) {
 		const e = frappe.utils.escape_html;
 		const saved = this.saved_set.has(person.name);
-		const head = person.is_head_of_household
-			? `<span class="rolodex-head" title="${__("Head of household")}">★</span>`
+		const primary = person.is_primary_contact
+			? `<span class="rolodex-primary-contact" title="${__("Primary contact")}">★</span>`
 			: "";
 		return `<li class="${matched ? "" : "is-muted"}${
 			saved ? " is-saved" : ""
 		}" data-person="${e(person.name)}">
 			${frappe.get_avatar("avatar-small", person.full_name, person.photo)}
-			<span class="rolodex-member-name">${e(person.full_name)}${head}</span>
+			<span class="rolodex-member-name">${e(person.full_name)}${primary}</span>
 			${save_button("data-save", person.name, saved, "rolodex-save-small")}
 		</li>`;
 	}

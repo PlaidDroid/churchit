@@ -46,7 +46,7 @@ def refuse_member_edits_beyond_personal_details(person):
 	"""A member edits their own Person through the Personal Details form, so only its fields may change.
 
 	The form sets nothing else, so anything more came straight through the API:
-	a membership status, a family or a head of household set by the member.
+	a membership status, a family or a spouse set by the member.
 	"""
 	if not is_portal_member() or person.is_new():
 		return

@@ -41,6 +41,7 @@ GLOBAL_DOCTYPES = {
 		"Group Role",
 		"Group Status",
 		"Life Event Type",
+		"Marital Status",
 		"Member Status",
 		"Membership Type",
 		"Missionary Status",

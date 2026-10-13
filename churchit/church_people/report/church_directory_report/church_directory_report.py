@@ -12,6 +12,8 @@ from markupsafe import Markup
 from pypika import Order
 
 from churchit.church_missions.doctype.missionary_status.missionary_status import is_current_missionary
+from churchit.church_people.doctype.family.family import primary_contacts
+from churchit.church_people.doctype.marital_status.marital_status import MARRIED
 from churchit.church_people.membership import ACTIVE, is_active_member
 from churchit.church_people.report.church_directory_report.booklet import impose_booklet
 from churchit.church_scope import church_filter, root_church, scoped
@@ -39,9 +41,9 @@ def get_columns():
 	return [
 		{"fieldname": "family", "fieldtype": "Link", "label": _("Family"), "options": "Family", "width": 200},
 		{
-			"fieldname": "head_of_household",
+			"fieldname": "primary_contact",
 			"fieldtype": "Link",
-			"label": _("Head of Household"),
+			"label": _("Primary Contact"),
 			"options": "Person",
 			"width": 180,
 		},
@@ -94,6 +96,7 @@ def get_data(filters):
 		.select(
 			Family.name.as_("family_id"),
 			Family.family_name,
+			Family.primary_contact,
 			Coalesce(Address.city, "").as_("city"),
 			Coalesce(Address.state, "").as_("state"),
 		)
@@ -103,7 +106,7 @@ def get_data(filters):
 
 	members_query = (
 		frappe.qb.from_(Person)
-		.select(Person.name, Person.full_name, Person.family, Person.is_head_of_household)
+		.select(Person.name, Person.full_name, Person.family)
 		.where(Person.family.isnotnull() & (Person.family != ""))
 	)
 
@@ -115,14 +118,12 @@ def get_data(filters):
 
 	result = []
 	for family in families:
-		members = members_by_family.get(family.family_id, [])
-		head = next((m.name for m in members if m.is_head_of_household), None)
-		if not head and members:
-			head = members[0].name
+		members = [m.name for m in members_by_family.get(family.family_id, [])]
+		contact = family.primary_contact if family.primary_contact in members else next(iter(members), "")
 		result.append(
 			{
 				"family": family.family_id,
-				"head_of_household": head or "",
+				"primary_contact": contact,
 				"city": family.city,
 				"state": family.state,
 				"member_count": len(members),
@@ -140,7 +141,7 @@ def get_directory_html(
 	show_photos: bool = 0,
 	show_roles: bool = 0,
 	show_membership: bool = 1,
-	show_hoh: bool = 1,
+	show_relationships: bool = 1,
 	show_phone: bool = 1,
 	show_email: bool = 1,
 	show_address: bool = 1,
@@ -161,7 +162,7 @@ def get_directory_html(
 	show_photos = frappe.utils.cint(show_photos)
 	show_roles = frappe.utils.cint(show_roles)
 	show_membership = frappe.utils.cint(show_membership)
-	show_hoh = frappe.utils.cint(show_hoh)
+	show_relationships = frappe.utils.cint(show_relationships)
 	show_phone = frappe.utils.cint(show_phone)
 	show_email = frappe.utils.cint(show_email)
 	show_address = frappe.utils.cint(show_address)
@@ -184,6 +185,7 @@ def get_directory_html(
 	website = church_doc.printed_website if church_doc else None
 
 	Family = frappe.qb.DocType("Family")
+	FamilyMember = frappe.qb.DocType("Family Members")
 	Address = frappe.qb.DocType("Address")
 	Person = frappe.qb.DocType("Person")
 
@@ -203,6 +205,12 @@ def get_directory_html(
 
 	members_query = (
 		frappe.qb.from_(Person)
+		.left_join(FamilyMember)
+		.on(
+			(FamilyMember.parenttype == "Family")
+			& (FamilyMember.parent == Person.family)
+			& (FamilyMember.member == Person.name)
+		)
 		.select(
 			Person.name.as_("person_name"),
 			Person.full_name,
@@ -210,16 +218,14 @@ def get_directory_html(
 			primary_phone_query(Person).as_("primary_phone"),
 			primary_email_query(Person).as_("email"),
 			Person.membership,
-			Person.is_head_of_household,
-			Person.gender,
-			Person.spouse,
+			FamilyMember.relationship_to_primary_contact.as_("relationship"),
 			Person.photo,
 			Person.family,
 		)
 		.where(Person.family.isnotnull() & (Person.family != ""))
 		.orderby(Person.family)
-		.orderby(Person.is_head_of_household, order=Order.desc)
-		.orderby(Person.spouse.isin(heads_of_household()), order=Order.desc)
+		.orderby(Person.name.isin(primary_contacts()), order=Order.desc)
+		.orderby(Person.spouse.isin(primary_contacts()), order=Order.desc)
 		.orderby(Person.last_name)
 		.orderby(Person.first_name)
 	)
@@ -266,46 +272,6 @@ def get_directory_html(
 	for m in all_members:
 		members_by_family.setdefault(m.family, []).append(m)
 
-	# Compute each non-HoH member's relation to the head of household. Uses
-	# the spouse field for husband/wife, then falls back to the Person
-	# Relation child table (children, parents, siblings, etc.).
-	hoh_by_family = {}
-	for family_id, members in members_by_family.items():
-		hoh = next((m for m in members if m.is_head_of_household), None) or (members[0] if members else None)
-		if hoh:
-			hoh_by_family[family_id] = hoh
-
-	hoh_names = [h.person_name for h in hoh_by_family.values()]
-	hoh_relations = {}
-	if hoh_names:
-		Relation = frappe.qb.DocType("Person Relation")
-		for row in (
-			frappe.qb.from_(Relation)
-			.select(
-				Relation.parent.as_("hoh"),
-				Relation.person.as_("other"),
-				Relation.type.as_("relation_type"),
-			)
-			.where((Relation.parenttype == "Person") & Relation.parent.isin(hoh_names))
-			.run(as_dict=True)
-		):
-			hoh_relations[(row.hoh, row.other)] = row.relation_type
-
-	for family_id, members in members_by_family.items():
-		hoh = hoh_by_family.get(family_id)
-		if not hoh:
-			continue
-		for m in members:
-			if m.person_name == hoh.person_name:
-				m["relation_to_hoh"] = ""
-				continue
-			if hoh.spouse and m.person_name == hoh.spouse:
-				m["relation_to_hoh"] = (
-					"Wife" if m.gender == "Female" else "Husband" if m.gender == "Male" else "Spouse"
-				)
-			else:
-				m["relation_to_hoh"] = hoh_relations.get((hoh.person_name, m.person_name), "")
-
 	individuals_query = (
 		frappe.qb.from_(Person)
 		.select(
@@ -330,17 +296,18 @@ def get_directory_html(
 
 	for p in individuals_raw:
 		p["positions"] = roles_by_person.get(p.person_name, [])
-		p["is_head_of_household"] = 0
 
 	all_people = list(all_members) + list(individuals_raw)
 
 	# Build merged sorted entry list
 	all_entries = []
 
-	hidden_head_families = get_families_with_hidden_head(frappe.utils.cint(hide_non_active))
+	families_with_hidden_contact = get_families_with_hidden_contact(frappe.utils.cint(hide_non_active))
 	if group_by_family:
 		for family in families:
-			family_name = listed_family_name(family.family_name, family.family_id in hidden_head_families)
+			family_name = listed_family_name(
+				family.family_name, family.family_id in families_with_hidden_contact
+			)
 			members = members_by_family.get(family.family_id, [])
 			for member in members:
 				member["has_own_address"] = any(member[field] != family[field] for field in ADDRESS_FIELDS)
@@ -424,7 +391,7 @@ def get_directory_html(
 				Month(Person.anniversary).as_("ann_month"),
 				Day(Person.anniversary).as_("ann_day"),
 			)
-			.where(Person.anniversary.isnotnull() & (Person.is_married == 1))
+			.where(Person.anniversary.isnotnull() & (Person.marital_status == MARRIED))
 			.where(Coalesce(Spouse.hide_from_directory, 0) == 0)
 			.where(Spouse.name.isnull() | Spouse.name.notin(deceased_people()))
 			.orderby(Month(Person.anniversary))
@@ -508,7 +475,7 @@ def get_directory_html(
 		"show_photos": show_photos,
 		"show_roles": show_roles,
 		"show_membership": show_membership,
-		"show_hoh": show_hoh,
+		"show_relationships": show_relationships,
 		"show_phone": show_phone,
 		"show_email": show_email,
 		"show_address": show_address,
@@ -598,17 +565,22 @@ def listed(query, Person, filters):
 	return query
 
 
-def get_families_with_hidden_head(hide_non_active=False):
-	"""Families whose head of household is hidden, deceased, or not Active when *hide_non_active*."""
+def get_families_with_hidden_contact(hide_non_active=False):
+	"""Families whose primary contact is hidden, deceased, or not Active when *hide_non_active*."""
+	Family = frappe.qb.DocType("Family")
 	Person = frappe.qb.DocType("Person")
 	is_hidden = (Person.hide_from_directory == 1) | Person.name.isin(deceased_people())
 	if hide_non_active:
 		is_hidden |= Coalesce(Person.membership_status, "") != ACTIVE
 	# church-scope: only used to shorten names of families the scoped queries already listed
-	heads = (
-		frappe.qb.from_(Person).select(Person.family).where((Person.is_head_of_household == 1) & is_hidden)
+	families = (
+		frappe.qb.from_(Family)
+		.join(Person)
+		.on(Person.name == Family.primary_contact)
+		.select(Family.name)
+		.where(is_hidden)
 	)
-	return set(heads.run(pluck=True))
+	return set(families.run(pluck=True))
 
 
 def deceased_people():
@@ -621,16 +593,9 @@ def deceased_people():
 	)
 
 
-def heads_of_household():
-	"""Subquery of every head of household, hidden ones too, so a widowed spouse still leads the family."""
-	Person = frappe.qb.DocType("Person")
-	# church-scope: only orders the members the scoped query already listed
-	return frappe.qb.from_(Person).select(Person.name).where(Person.is_head_of_household == 1)
-
-
-def listed_family_name(family_name, is_head_hidden):
-	"""*family_name*, cut to the surname when the head it is named after is hidden ("Doe - John" to "Doe")."""
-	if not is_head_hidden:
+def listed_family_name(family_name, is_contact_hidden):
+	"""*family_name*, cut to the surname when the primary contact it is named after is hidden ("Doe - John" to "Doe")."""
+	if not is_contact_hidden:
 		return family_name
 	return family_name.rpartition(" - ")[0].strip() or family_name
 
@@ -685,7 +650,7 @@ def header_church(filters):
 def scoped_families(query, Family, Person, filters):
 	"""Families with at least one member the user may see.
 
-	A family belongs to its head of household's church, so a member who moved
+	A family belongs to its primary contact's church, so a member who moved
 	to a branch would otherwise vanish from that branch's directory.
 	"""
 	churches = church_filter(filters)

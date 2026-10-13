@@ -39,6 +39,7 @@ from churchit.tests.helpers import (
 	make_branch,
 	make_function,
 	make_person,
+	make_primary_contact,
 	set_multi_church,
 	set_private_people,
 )
@@ -344,12 +345,12 @@ class TestChurchPermissions(FrappeTestCase):
 		self.assertIn(group_a, names)
 		self.assertNotIn(group_b, names)
 
-	def test_a_family_follows_its_head_of_household(self):
+	def test_a_family_follows_its_primary_contact(self):
 		family = frappe.get_doc(
 			{"doctype": "Family", "family_name": "_Test Mover Family", "church": self.branch_a}
 		).insert(ignore_permissions=True)
-		head = make_person(
-			"_Test Head", "Mover", church=self.branch_a, family=family.name, is_head_of_household=1
+		head = make_primary_contact(
+			make_person("_Test Head", "Mover", church=self.branch_a, family=family.name)
 		)
 		self.assertEqual(frappe.db.get_value("Family", family.name, "church"), self.branch_a)
 
@@ -365,7 +366,7 @@ class TestChurchPermissions(FrappeTestCase):
 		family = frappe.get_doc(
 			{"doctype": "Family", "family_name": "_Test Split Family", "church": self.root}
 		).insert(ignore_permissions=True)
-		make_person("_Test Staying", "Head", church=self.root, family=family.name, is_head_of_household=1)
+		make_primary_contact(make_person("_Test Staying", "Head", church=self.root, family=family.name))
 		moved = make_person("_Test Moved", "Member", church=self.branch_a, family=family.name)
 		self.assertEqual(frappe.db.get_value("Family", family.name, "church"), self.root)
 

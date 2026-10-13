@@ -1,6 +1,7 @@
 import frappe
 from frappe.query_builder.functions import Count
 
+from churchit.church_people.doctype.family.family import primary_contacts
 from churchit.church_scope import scoped
 from churchit.query import falls_this_week
 
@@ -16,7 +17,7 @@ def get_count():
 		.where(
 			Person.anniversary.isnotnull()
 			& falls_this_week(Person.anniversary)
-			& (Person.is_head_of_household == 1)
+			& Person.name.isin(primary_contacts())
 		)
 	)
 	return scoped(query, Person, {}).run()[0][0]

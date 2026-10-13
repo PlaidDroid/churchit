@@ -19,6 +19,7 @@ from churchit.patches.v1_0 import (
 	add_attendance_to_portal,
 	add_churchit_website_theme,
 	add_default_address_template,
+	add_marital_statuses,
 	add_missionary_map_to_missions_page,
 	add_missionary_statuses,
 	add_unsynced_default_records,
@@ -39,6 +40,7 @@ from churchit.patches.v1_0 import add_giving_statements_to_portal as portal_patc
 from churchit.patches.v1_0 import migrate_contact_fields_to_child_tables as contact_patch
 from churchit.patches.v1_0 import number_repeated_bible_translation_abbreviations as abbreviation_patch
 from churchit.patches.v1_0 import replace_bible_records_with_references as bible_patch
+from churchit.patches.v1_0 import replace_head_of_household_with_primary_contact as primary_contact_patch
 from churchit.patches.v1_0 import set_statement_acknowledgment as acknowledgment_patch
 from churchit.tests.helpers import (
 	RollbackEachTest,
@@ -113,6 +115,7 @@ class TestAfterInstall(FrappeTestCase):
 			for doctype in (
 				"Church",
 				"Member Status",
+				"Marital Status",
 				"Membership Type",
 				"Function Type",
 				"Function Attendance Type",
@@ -847,3 +850,88 @@ class TestAddMissionaryStatuses(RollbackEachTest):
 		self.assertEqual(frappe.db.get_value("Missionary", current.name, "status"), "Active")
 		self.assertEqual(frappe.db.get_value("Missionary", ended.name, "status"), "Inactive")
 		self.assertTrue(frappe.db.exists("Missionary Status", "Pending"))
+
+
+class TestAddMaritalStatuses(RollbackEachTest):
+	"""Everyone ticked Is Married becomes Married, and nobody else gets a status."""
+
+	def test_ticked_people_become_married(self):
+		if not frappe.db.has_column("Person", "is_married"):
+			self.skipTest("this site never had the Is Married column")
+		married = make_person("_Test Patch", "Ticked")
+		unticked = make_person("_Test Patch", "Unticked")
+		Person = frappe.qb.DocType("Person")
+		frappe.qb.update(Person).set(Person.is_married, 1).where(Person.name == married.name).run()
+
+		add_marital_statuses.execute()
+		add_marital_statuses.execute()
+
+		self.assertEqual(frappe.db.get_value("Person", married.name, "marital_status"), "Married")
+		self.assertIsNone(frappe.db.get_value("Person", unticked.name, "marital_status"))
+		self.assertTrue(frappe.db.exists("Marital Status", "Widowed"))
+
+
+class TestReplaceHeadOfHouseholdWithPrimaryContact(RollbackEachTest):
+	"""The head of household becomes the Primary Contact, and Relations rows fill blank relationships."""
+
+	def setUp(self):
+		super().setUp()
+		if not frappe.db.has_column("Person", "is_head_of_household") or not frappe.db.table_exists(
+			"Person Relation"
+		):
+			self.skipTest("this site never had heads of household or the Relations table")
+
+	def add_relation(self, person, other, relation_type):
+		Relation = frappe.qb.DocType("Person Relation")
+		frappe.qb.into(Relation).columns(
+			Relation.name,
+			Relation.parent,
+			Relation.parenttype,
+			Relation.parentfield,
+			Relation.person,
+			Relation.type,
+		).insert(frappe.generate_hash(length=10), person, "Person", "relations", other, relation_type).run()
+
+	def test_the_head_becomes_primary_contact_and_relations_fill_blank_relationships(self):
+		family = frappe.get_doc({"doctype": "Family", "family_name": "_Test Patch - Pat"}).insert(
+			ignore_permissions=True
+		)
+		pat = make_person("_Test Pat", "Patch", gender="Male", family=family.name)
+		pam = make_person(
+			"_Test Pam",
+			"Patch",
+			gender="Female",
+			family=family.name,
+			spouse=pat.name,
+			marital_status="Married",
+		)
+		sid = make_person("_Test Sid", "Patch", gender="Male", family=family.name)
+		meg = make_person("_Test Meg", "Patch", gender="Female", family=family.name)
+		cousin = make_person("_Test Cy", "Elsewhere", gender="Male")
+		Person = frappe.qb.DocType("Person")
+		frappe.qb.update(Person).set(Person.is_head_of_household, 1).where(Person.name == pat.name).run()
+		self.add_relation(pat.name, sid.name, "Son")
+		self.add_relation(meg.name, pat.name, "Son")
+		self.add_relation(pat.name, cousin.name, "Cousin")
+
+		primary_contact_patch.execute()
+		primary_contact_patch.execute()
+
+		self.assertEqual(frappe.db.get_value("Family", family.name, "primary_contact"), pat.name)
+		labels = {
+			member.member: member.relationship_to_primary_contact
+			for member in frappe.get_doc("Family", family.name).members
+		}
+		self.assertEqual(labels, {pat.name: "Husband", pam.name: "Wife", sid.name: "Son", meg.name: "Mother"})
+
+	def test_copied_notifications_read_the_primary_contact(self):
+		frappe.db.set_value(
+			"Notification", "Anniversary Greeting", "condition", "doc.emails and doc.is_head_of_household"
+		)
+
+		primary_contact_patch.execute()
+
+		self.assertEqual(
+			frappe.db.get_value("Notification", "Anniversary Greeting", "condition"),
+			"doc.emails and doc.is_primary_contact",
+		)

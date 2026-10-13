@@ -514,7 +514,7 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
-.rolodex-head {
+.rolodex-primary-contact {
 	margin-left: 4px;
 	color: var(--rolodex-accent);
 }

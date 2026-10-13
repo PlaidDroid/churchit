@@ -9,7 +9,14 @@ from churchit.church_finances.doctype.giving_statement.giving_statement import (
 	get_statement_recipients,
 	statement_header,
 )
-from churchit.tests.helpers import ensure, ensure_root_church, make_branch, make_person, set_multi_church
+from churchit.tests.helpers import (
+	ensure,
+	ensure_root_church,
+	make_branch,
+	make_person,
+	make_primary_contact,
+	set_multi_church,
+)
 
 PERIOD = ("2029-01-01", "2029-12-31")
 
@@ -110,7 +117,7 @@ class TestStatementGeneration(FrappeTestCase):
 		family = frappe.get_doc({"doctype": "Family", "family_name": "_Test Gen Household"}).insert(
 			ignore_permissions=True
 		)
-		head = make_person("_Test Gen", "Head", family=family.name, is_head_of_household=1)
+		head = make_primary_contact(make_person("_Test Gen", "Head", family=family.name))
 		spouse = make_person("_Test Gen", "Spouse", family=family.name)
 		make_collection("2029-02-02", [(head.name, 10), (spouse.name, 20)])
 
@@ -118,7 +125,7 @@ class TestStatementGeneration(FrappeTestCase):
 		ours = [r for r in recipients if r["family"] == family.name]
 
 		self.assertEqual(len(ours), 1)
-		self.assertEqual(ours[0]["person"], head.name, "addressed to the head of household")
+		self.assertEqual(ours[0]["person"], head.name, "addressed to the primary contact")
 
 	def test_person_grouping_issues_one_statement_each(self):
 		frappe.db.set_single_value("Giving Settings", "statement_grouping", "Person")

@@ -140,8 +140,8 @@ def get_statement_recipients(from_date, to_date):
 	"""Map every giver in the period onto the record their statement belongs to.
 
 	Returns ``[{"person", "family"}]``, one entry per statement to issue. When
-	Giving Settings groups by household, everyone in a Family collapses onto the
-	head of household, or the first member when no head is marked.
+	Giving Settings groups by household, everyone in a Family collapses onto its
+	primary contact, or onto the first giver found when it has none.
 	"""
 	givers = get_givers(from_date, to_date)
 	if not givers:
@@ -164,11 +164,7 @@ def get_statement_recipients(from_date, to_date):
 
 def household_recipient(family, fallback):
 	"""The person a household statement is addressed to."""
-	# church-scope: the head of one family, and the families come from get_givers
-	head = frappe.get_all(
-		"Person", filters={"family": family, "is_head_of_household": 1}, pluck="name", limit=1
-	)
-	return head[0] if head else fallback
+	return frappe.db.get_value("Family", family, "primary_contact") or fallback
 
 
 @frappe.whitelist()

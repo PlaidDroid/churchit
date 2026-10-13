@@ -5,6 +5,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_years, getdate, nowdate
 
+from churchit.tests.helpers import make_primary_contact
+
 
 def _ensure(doctype, filters, values):
 	name = frappe.db.exists(doctype, filters)
@@ -46,18 +48,19 @@ class TestPerson(FrappeTestCase):
 		members = [m.member for m in family.members]
 		self.assertIn(person.name, members)
 
-	def test_removing_family_clears_head_of_household(self):
-		family = frappe.get_doc({"doctype": "Family", "family_name": "Head Household"}).insert(
+	def test_leaving_the_family_clears_its_primary_contact(self):
+		family = frappe.get_doc({"doctype": "Family", "family_name": "Contact Household"}).insert(
 			ignore_permissions=True
 		)
-		person = self._make_person(
-			first_name="Head", last_name="Honcho", family=family.name, is_head_of_household=1
+		person = make_primary_contact(
+			self._make_person(first_name="Head", last_name="Honcho", family=family.name)
 		)
-		self.assertTrue(person.is_head_of_household)
+		self.assertTrue(person.is_primary_contact)
 
 		person.family = None
 		person.save(ignore_permissions=True)
-		self.assertFalse(person.is_head_of_household)
+		self.assertFalse(person.is_primary_contact)
+		self.assertIsNone(frappe.db.get_value("Family", family.name, "primary_contact"))
 
 	def test_moving_to_another_family_leaves_the_old_one(self):
 		old = frappe.get_doc({"doctype": "Family", "family_name": "Left Household"}).insert(
@@ -102,74 +105,91 @@ class TestPerson(FrappeTestCase):
 
 		self.assertFalse(frappe.db.exists("Person", person.name))
 
-	def _spouse_relations(self, person_name):
-		rows = frappe.get_all(
-			"Person Relation",
-			filters={"parent": person_name, "parenttype": "Person", "type": ["in", ["Husband", "Wife"]]},
-			fields=["type", "person"],
-		)
-		return [(row.type, row.person) for row in rows]
-
 	def test_spouse_link_is_reciprocated(self):
 		wife = self._make_person(first_name="Jane", last_name="Doe", gender="Female")
 		husband = self._make_person(first_name="John", last_name="Doe", gender="Male")
 
 		husband.spouse = wife.name
-		husband.is_married = 1
+		husband.marital_status = "Married"
 		husband.save(ignore_permissions=True)
 
-		# The controller links the relationship back on the spouse record.
 		self.assertEqual(frappe.db.get_value("Person", wife.name, "spouse"), husband.name)
-		self.assertTrue(frappe.db.get_value("Person", wife.name, "is_married"))
-		# ...and mirrors a Husband/Wife row in both Relations tables.
-		self.assertEqual(self._spouse_relations(husband.name), [("Wife", wife.name)])
-		self.assertEqual(self._spouse_relations(wife.name), [("Husband", husband.name)])
+		self.assertEqual(frappe.db.get_value("Person", wife.name, "marital_status"), "Married")
 
 	def test_anniversary_and_marriage_years_shared_with_spouse(self):
 		wife = self._make_person(first_name="Amy", last_name="Years", anniversary=add_years(nowdate(), -10))
-		husband = self._make_person(first_name="Al", last_name="Years", spouse=wife.name, is_married=1)
+		husband = self._make_person(
+			first_name="Al", last_name="Years", spouse=wife.name, marital_status="Married"
+		)
 
 		# The husband had no anniversary, so he takes the wife's.
 		self.assertEqual(getdate(husband.anniversary), getdate(wife.anniversary))
 		self.assertEqual(husband.marriage_years, 10)
 		self.assertEqual(frappe.db.get_value("Person", wife.name, "marriage_years"), 10)
 
-	def test_unlinking_spouse_clears_both_sides(self):
+	def test_divorce_ends_the_marriage_on_both_sides(self):
 		wife = self._make_person(first_name="Ann", last_name="Split", gender="Female")
 		husband = self._make_person(
-			first_name="Bob", last_name="Split", gender="Male", spouse=wife.name, is_married=1
+			first_name="Bob",
+			last_name="Split",
+			gender="Male",
+			spouse=wife.name,
+			marital_status="Married",
+			anniversary="2001-01-01",
 		)
 
-		husband.is_married = 0
+		husband.marital_status = "Divorced"
 		husband.save(ignore_permissions=True)
 
 		self.assertIsNone(husband.spouse)
-		self.assertIsNone(frappe.db.get_value("Person", wife.name, "spouse"))
-		self.assertFalse(frappe.db.get_value("Person", wife.name, "is_married"))
-		self.assertEqual(self._spouse_relations(husband.name), [])
-		self.assertEqual(self._spouse_relations(wife.name), [])
+		self.assertIsNone(husband.anniversary)
+		wife_values = frappe.db.get_value("Person", wife.name, ["spouse", "marital_status", "anniversary"])
+		self.assertEqual(wife_values, (None, "Divorced", None))
+
+	def test_a_widow_keeps_the_spouse_and_anniversary(self):
+		wife = self._make_person(first_name="Wanda", gender="Female")
+		husband = self._make_person(
+			first_name="Walt",
+			gender="Male",
+			spouse=wife.name,
+			marital_status="Married",
+			anniversary="1980-05-05",
+		)
+		wife = frappe.get_doc("Person", wife.name)
+
+		wife.marital_status = "Widowed"
+		wife.save(ignore_permissions=True)
+		husband.reload()
+		husband.notes = "Saving the late husband leaves the widow alone."
+		husband.save(ignore_permissions=True)
+
+		self.assertEqual(wife.spouse, husband.name)
+		self.assertEqual(str(wife.anniversary), "1980-05-05")
+		self.assertEqual(frappe.db.get_value("Person", wife.name, "marital_status"), "Widowed")
+		self.assertEqual(frappe.db.get_value("Person", husband.name, "spouse"), wife.name)
 
 	def test_changing_spouse_unlinks_the_previous_one(self):
 		first = self._make_person(first_name="First", last_name="Wife", gender="Female")
 		second = self._make_person(first_name="Second", last_name="Wife", gender="Female")
-		husband = self._make_person(first_name="Fickle", gender="Male", spouse=first.name, is_married=1)
+		husband = self._make_person(
+			first_name="Fickle", gender="Male", spouse=first.name, marital_status="Married"
+		)
 
 		husband.spouse = second.name
 		husband.save(ignore_permissions=True)
 
 		self.assertIsNone(frappe.db.get_value("Person", first.name, "spouse"))
-		self.assertEqual(self._spouse_relations(first.name), [])
 		self.assertEqual(frappe.db.get_value("Person", second.name, "spouse"), husband.name)
-		self.assertEqual(self._spouse_relations(husband.name), [("Wife", second.name)])
 
 	def test_deleting_a_person_unlinks_their_spouse(self):
 		wife = self._make_person(first_name="Widow", gender="Female")
-		husband = self._make_person(first_name="Late", gender="Male", spouse=wife.name, is_married=1)
+		husband = self._make_person(
+			first_name="Late", gender="Male", spouse=wife.name, marital_status="Married"
+		)
 
 		husband.delete()
 
 		self.assertIsNone(frappe.db.get_value("Person", wife.name, "spouse"))
-		self.assertEqual(self._spouse_relations(wife.name), [])
 
 	def _members(self, family_name):
 		return {m.member for m in frappe.get_doc("Family", family_name).members}
@@ -177,11 +197,11 @@ class TestPerson(FrappeTestCase):
 	def test_marrying_without_a_family_starts_one(self):
 		wife = self._make_person(first_name="Nora", last_name="Newlywed", gender="Female")
 		husband = self._make_person(
-			first_name="Ned", last_name="Newlywed", gender="Male", spouse=wife.name, is_married=1
+			first_name="Ned", last_name="Newlywed", gender="Male", spouse=wife.name, marital_status="Married"
 		)
 
 		self.assertEqual(frappe.db.get_value("Family", husband.family, "family_name"), "Newlywed - Ned")
-		self.assertTrue(husband.is_head_of_household)
+		self.assertTrue(husband.is_primary_contact)
 		self.assertEqual(frappe.db.get_value("Person", wife.name, "family"), husband.family)
 		self.assertEqual(self._members(husband.family), {husband.name, wife.name})
 
@@ -189,28 +209,31 @@ class TestPerson(FrappeTestCase):
 		family = frappe.get_doc({"doctype": "Family", "family_name": "Joining - Jo"}).insert(
 			ignore_permissions=True
 		)
-		wife = self._make_person(first_name="Jo", gender="Female", family=family.name, is_head_of_household=1)
-		husband = self._make_person(first_name="Jim", gender="Male", spouse=wife.name, is_married=1)
+		wife = make_primary_contact(self._make_person(first_name="Jo", gender="Female", family=family.name))
+		husband = self._make_person(
+			first_name="Jim", gender="Male", spouse=wife.name, marital_status="Married"
+		)
 
 		self.assertEqual(husband.family, family.name)
-		self.assertFalse(husband.is_head_of_household)
+		self.assertFalse(husband.is_primary_contact)
 		self.assertEqual(self._members(family.name), {husband.name, wife.name})
 
 	def test_marrying_brings_a_spouse_without_a_family_in(self):
 		family = frappe.get_doc({"doctype": "Family", "family_name": "Bringing - Bo"}).insert(
 			ignore_permissions=True
 		)
-		husband = self._make_person(
-			first_name="Bo", gender="Male", family=family.name, is_head_of_household=1
-		)
+		husband = make_primary_contact(self._make_person(first_name="Bo", gender="Male", family=family.name))
 		wife = self._make_person(first_name="Bea", gender="Female")
+		husband.reload()
 		husband.spouse = wife.name
-		husband.is_married = 1
+		husband.marital_status = "Married"
 		husband.save(ignore_permissions=True)
 
 		self.assertEqual(frappe.db.get_value("Person", wife.name, "family"), family.name)
-		labels = {m.member: m.relationship_to_head for m in frappe.get_doc("Family", family.name).members}
-		self.assertEqual(labels[wife.name], "Wife")
+		labels = {
+			m.member: m.relationship_to_primary_contact for m in frappe.get_doc("Family", family.name).members
+		}
+		self.assertEqual(labels, {husband.name: "Husband", wife.name: "Wife"})
 
 	def test_marrying_across_two_families_moves_no_one(self):
 		his = frappe.get_doc({"doctype": "Family", "family_name": "His"}).insert(ignore_permissions=True)
@@ -218,38 +241,19 @@ class TestPerson(FrappeTestCase):
 		wife = self._make_person(first_name="Her", gender="Female", family=hers.name)
 		husband = self._make_person(first_name="Him", gender="Male", family=his.name)
 		husband.spouse = wife.name
-		husband.is_married = 1
+		husband.marital_status = "Married"
 		husband.save(ignore_permissions=True)
 
 		self.assertEqual(frappe.db.get_value("Person", wife.name, "family"), hers.name)
 		self.assertEqual(self._members(his.name), {husband.name})
 
-	def test_new_head_of_household_demotes_the_old_one_and_renames_family(self):
-		family = frappe.get_doc({"doctype": "Family", "family_name": "Swap - Old"}).insert(
-			ignore_permissions=True
-		)
-		old_head = self._make_person(first_name="Old", family=family.name, is_head_of_household=1)
-		self._make_person(first_name="New", family=family.name, is_head_of_household=1)
-
-		self.assertFalse(frappe.db.get_value("Person", old_head.name, "is_head_of_household"))
-		self.assertEqual(frappe.db.get_value("Family", family.name, "family_name"), "Swap - New")
-
-	def test_new_head_of_household_renames_a_family_without_a_dash(self):
-		family = frappe.get_doc({"doctype": "Family", "family_name": "Plainname"}).insert(
-			ignore_permissions=True
-		)
-		self._make_person(first_name="Old", family=family.name, is_head_of_household=1)
-		self._make_person(first_name="New", family=family.name, is_head_of_household=1)
-
-		self.assertEqual(frappe.db.get_value("Family", family.name, "family_name"), "Plainname - New")
-
-	def test_new_family_from_person_creates_and_heads_a_family(self):
+	def test_new_family_from_person_makes_them_its_primary_contact(self):
 		person = self._make_person(first_name="Founder", last_name="Fam")
 		person.new_family_from_person()
 
 		person.reload()
 		self.assertTrue(person.family)
-		self.assertTrue(person.is_head_of_household)
+		self.assertTrue(person.is_primary_contact)
 		self.assertEqual(frappe.db.get_value("Family", person.family, "family_name"), "Fam - Founder")
 
 	def test_new_family_from_person_joins_an_existing_family_of_the_same_name(self):
@@ -262,7 +266,7 @@ class TestPerson(FrappeTestCase):
 
 		person.reload()
 		self.assertEqual(person.family, existing.name)
-		self.assertFalse(person.is_head_of_household)
+		self.assertFalse(person.is_primary_contact)
 		messages = " ".join(str(message) for message in frappe.local.message_log)
 		self.assertIn(f"/family/{existing.name}", messages)
 
@@ -323,6 +327,25 @@ class TestPersonMembership(FrappeTestCase):
 		person.membership = "Contact"
 		person.save()
 		self.assertEqual(person.membership, "Contact")
+
+	def test_a_death_event_widows_the_spouse(self):
+		wife = frappe.get_doc(
+			{"doctype": "Person", "first_name": "_Test Survivor", "gender": "Female"}
+		).insert()
+		husband = frappe.get_doc(
+			{
+				"doctype": "Person",
+				"first_name": "_Test Late",
+				"spouse": wife.name,
+				"marital_status": "Married",
+			}
+		).insert()
+
+		husband.append("life_events", {"event_type": "Death", "date": nowdate()})
+		husband.save()
+
+		self.assertEqual(frappe.db.get_value("Person", wife.name, "marital_status"), "Widowed")
+		self.assertEqual(frappe.db.get_value("Person", wife.name, "spouse"), husband.name)
 
 	def test_a_death_event_makes_the_person_inactive(self):
 		person = frappe.get_doc({"doctype": "Person", "first_name": "_Test Departed"}).insert()

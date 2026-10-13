@@ -3,7 +3,7 @@
  "allow_import": 1,
  "autoname": "FAM-.####",
  "creation": "2025-08-22 00:15:20.425153",
- "description": "A family of people ('Person's) that are considered to be part of the same household. One 'Person' can be set to be the Head of Household for a family. ",
+ "description": "A household of people ('Person's). The family is named after its Primary Contact, and each member's relationship is to that person.",
  "doctype": "DocType",
  "documentation": "/app/manual%3A-people",
  "engine": "InnoDB",
@@ -11,7 +11,7 @@
   "section_break_acrr",
   "family_name",
   "church",
-  "head_of_household",
+  "primary_contact",
   "photo",
   "column_break_pmch",
   "members",
@@ -69,13 +69,12 @@
    "options": "Church"
   },
   {
-   "allow_in_quick_entry": 1,
-   "fieldname": "head_of_household",
+   "description": "The family member the family is named after. Every other member's relationship is to this person.",
+   "fieldname": "primary_contact",
    "fieldtype": "Link",
    "in_preview": 1,
    "in_standard_filter": 1,
-   "is_virtual": 1,
-   "label": "Head of Household",
+   "label": "Primary Contact",
    "options": "Person"
   },
   {
@@ -108,7 +107,7 @@
    "link_fieldname": "recipient"
   }
  ],
- "modified": "2026-09-28 13:00:00",
+ "modified": "2026-10-12 00:10:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Family",

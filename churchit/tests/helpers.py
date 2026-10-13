@@ -56,6 +56,14 @@ def make_person(first_name, last_name=None, **values):
 	).insert(ignore_permissions=True)
 
 
+def make_primary_contact(person):
+	"""Make *person* the primary contact of the family they are in, and return them."""
+	family = frappe.get_doc("Family", person.family)
+	family.primary_contact = person.name
+	family.save(ignore_permissions=True)
+	return person
+
+
 def make_function(function_name, **values):
 	function_type = ensure("Function Type", {"type": "_Test Function Type"})
 	return frappe.get_doc(

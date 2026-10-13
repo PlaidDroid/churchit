@@ -15,15 +15,22 @@
   "full_name",
   "church",
   "gender",
+  "age",
+  "column_break_agva",
   "membership",
   "membership_status",
   "inactive_reason",
-  "column_break_agva",
   "photo",
-  "age",
   "alergies",
   "user",
   "hide_from_directory",
+  "family_section",
+  "family",
+  "column_break_gwhd",
+  "marital_status",
+  "spouse",
+  "anniversary",
+  "marriage_years",
   "life_events_section",
   "life_events",
   "section_break_osjz",
@@ -35,16 +42,6 @@
   "addresses",
   "section_break_eqre",
   "letters",
-  "family_tab",
-  "column_break_gwhd",
-  "family",
-  "is_head_of_household",
-  "is_married",
-  "spouse",
-  "anniversary",
-  "marriage_years",
-  "column_break_fkwj",
-  "relations",
   "notes_tab",
   "notes"
  ],
@@ -134,17 +131,6 @@
    "search_index": 1
   },
   {
-   "allow_in_quick_entry": 1,
-   "default": "0",
-   "depends_on": "eval:doc.family;",
-   "description": "Is this person 'Head of Household\" for their Family?",
-   "fieldname": "is_head_of_household",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Is Head of Household",
-   "print_hide": 1
-  },
-  {
    "fieldname": "photo",
    "fieldtype": "Attach Image",
    "label": "Photo"
@@ -219,19 +205,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "family_tab",
-   "fieldtype": "Tab Break",
-   "label": "Family"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_married",
-   "fieldtype": "Check",
-   "label": "Is Married",
-   "print_hide": 1
-  },
-  {
-   "depends_on": "eval:doc.is_married;",
+   "depends_on": "eval:[\"Married\", \"Widowed\"].includes(doc.marital_status)",
    "fieldname": "anniversary",
    "fieldtype": "Date",
    "label": "Anniversary"
@@ -244,24 +218,13 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.is_married;",
+   "depends_on": "eval:[\"Married\", \"Widowed\"].includes(doc.marital_status)",
    "fieldname": "spouse",
    "fieldtype": "Link",
    "in_preview": 1,
    "label": "Spouse",
    "link_filters": "[[\"Person\",\"name\",\"!=\",\"eval:doc.name\"],[\"Person\",\"gender\",\"!=\",\"eval:doc.gender\"]]",
    "options": "Person"
-  },
-  {
-   "fieldname": "column_break_fkwj",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Family relationships: children, parents, siblings and so on. The Husband/Wife row follows the Spouse field, and From Family rows follow each member's Relationship to Head on the Family.",
-   "fieldname": "relations",
-   "fieldtype": "Table",
-   "label": "Relations",
-   "options": "Person Relation"
   },
   {
    "fieldname": "notes_tab",
@@ -309,6 +272,18 @@
    "fieldtype": "Link",
    "label": "Portal User",
    "options": "User"
+  },
+  {
+   "fieldname": "family_section",
+   "fieldtype": "Section Break",
+   "label": "Family"
+  },
+  {
+   "description": "A married or widowed person keeps a spouse and an anniversary.",
+   "fieldname": "marital_status",
+   "fieldtype": "Link",
+   "label": "Marital Status",
+   "options": "Marital Status"
   }
  ],
  "grid_page_length": 50,
@@ -356,7 +331,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-11 15:00:00.000000",
+ "modified": "2026-10-12 00:10:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
