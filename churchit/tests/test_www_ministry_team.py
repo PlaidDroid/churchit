@@ -72,6 +72,29 @@ class TestMinistryTeamPages(RollbackEachTest):
 		listed = {row.name: row.has_started for row in self.context(ministry_team).assignments}
 		self.assertEqual(listed, {running.name: True, self.mine.name: False})
 
+	def test_a_member_sees_the_schedule_of_each_function_they_serve_at(self):
+		song = frappe.get_doc({"doctype": "Song", "title": "_Test Team Page Hymn"}).insert(
+			ignore_permissions=True
+		)
+		start = f"{add_days(getdate(), 6)} 10:00:00"
+		function = make_function(
+			"_Test Team Page Schedule",
+			start_date=add_days(getdate(), 6),
+			schedule=[
+				{"start": start, "description": "Welcome"},
+				{"start": start, "item_type": "Song", "item": song.name, "description": "Everyone stands"},
+			],
+		)
+		make_team_assignment(function.name, self.position.name, self.member.name)
+
+		frappe.set_user(self.email)
+		schedules = self.context(ministry_team).schedules
+		self.assertEqual(
+			[(row.time, row.title, row.detail) for row in schedules[function.name]],
+			[("10:00 AM", "Welcome", None), ("10:00 AM", "_Test Team Page Hymn", "Everyone stands")],
+		)
+		self.assertEqual(schedules[self.mine.function], [])
+
 	def test_a_member_answers_their_own_assignment_and_no_one_elses(self):
 		frappe.set_user(self.email)
 		answer_own_assignment(self.mine.name, "Declined", "Away")

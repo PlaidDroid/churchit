@@ -9,8 +9,7 @@ from frappe.query_builder.functions import Coalesce
 from frappe.rate_limiter import rate_limit
 from frappe.utils import format_time, getdate, now_datetime, nowdate, sbool
 
-from churchit.church_ministries.doctype.function.function import get_time_window
-from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import TIME_FORMAT
+from churchit.church_ministries.doctype.function.function import TIME_FORMAT, get_time_window
 from churchit.church_scope import session_person
 
 
@@ -30,6 +29,7 @@ def get_own_assignments(person: str) -> list[frappe._dict]:
 			Assignment.name,
 			Assignment.status,
 			Assignment.decline_reason,
+			Assignment.function,
 			Function.function_name,
 			Function.start_date,
 			Function.start_time,

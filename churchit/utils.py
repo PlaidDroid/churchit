@@ -1,6 +1,12 @@
 import frappe
 
 
+def link_title(doctype, name):
+	"""The record's title, or its name for doctypes without a title field."""
+	title_field = frappe.get_meta(doctype).title_field
+	return (frappe.db.get_value(doctype, name, title_field) if title_field else None) or name
+
+
 def set_report_link_titles(columns, data):
 	"""Pre-fetch titles for Link/Dynamic Link columns and attach them to each row.
 

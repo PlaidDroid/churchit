@@ -16,6 +16,11 @@
 	.team-list .status { font-weight: 600; white-space: nowrap; }
 	.decline-form { display: none; flex: 1 1 100%; gap: 8px; }
 	.decline-form.open { display: flex; }
+	.team-schedule { flex: 1 1 100%; }
+	.team-schedule summary { color: var(--text-muted, #6b7280); cursor: pointer; }
+	.team-schedule div { display: flex; gap: 16px; padding: 4px 0; }
+	.team-schedule .time { flex: 0 0 5rem; color: var(--text-muted, #6b7280); white-space: nowrap; }
+	.team-schedule small { display: block; color: var(--text-muted, #6b7280); }
 	.block-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 8px 16px;
 		align-items: end; }
 </style>
@@ -60,6 +65,17 @@
 						placeholder="{{ _('Reason (optional)') }}" aria-label="{{ _('Reason for declining') }}">
 					<button class="btn btn-sm btn-danger team-answer" data-assignment="{{ row.name | e }}" data-status="Declined">{{ _("Decline") }}</button>
 				</span>
+				{% endif %}
+				{% if schedules[row.function] %}
+				<details class="team-schedule">
+					<summary>{{ _("Schedule") }}</summary>
+					{% for item in schedules[row.function] %}
+					<div>
+						<span class="time">{{ item.time or "" }}</span>
+						<span>{{ (item.title or "") | e }}{% if item.detail %}<small>{{ item.detail | e }}</small>{% endif %}</span>
+					</div>
+					{% endfor %}
+				</details>
 				{% endif %}
 			</li>
 			{% endfor %}

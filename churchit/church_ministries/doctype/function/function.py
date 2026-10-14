@@ -7,7 +7,20 @@ from datetime import date, datetime, time, timedelta
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_days, add_months, add_years, date_diff, get_datetime, getdate, now_datetime
+from frappe.utils import (
+	add_days,
+	add_months,
+	add_years,
+	date_diff,
+	format_datetime,
+	get_datetime,
+	getdate,
+	now_datetime,
+)
+
+from churchit.utils import link_title
+
+TIME_FORMAT = "h:mm a"
 
 WEEKDAY_INDEX = {
 	"Monday": 0,
@@ -90,6 +103,21 @@ def get_time_window(function) -> tuple[datetime, datetime]:
 
 	end_time = _as_time(function.end_time) if function.end_time else time.max
 	return datetime.combine(start_date, _as_time(function.start_time)), datetime.combine(end_date, end_time)
+
+
+def get_schedule_rows(function) -> list[frappe._dict]:
+	"""*function*'s schedule as (time, title, detail) rows: a linked item's title, else the description."""
+	rows = []
+	for item in function.schedule:
+		title = link_title(item.item_type, item.item) if item.item else None
+		rows.append(
+			frappe._dict(
+				time=format_datetime(item.start, TIME_FORMAT) if item.start else None,
+				title=title or item.description,
+				detail=(item.description or item.item_type) if title else None,
+			)
+		)
+	return rows
 
 
 def refuse_a_source_that_is_not_a_template(source_name):

@@ -10,7 +10,7 @@ from frappe.model.document import Document
 from frappe.query_builder.functions import Coalesce
 from frappe.utils import format_date, format_time, get_url, get_url_to_form, getdate, now_datetime, nowdate
 
-from churchit.church_ministries.doctype.function.function import get_time_window
+from churchit.church_ministries.doctype.function.function import TIME_FORMAT, get_time_window
 from churchit.church_ministries.doctype.ministry_team_block.ministry_team_block import get_blocks_covering
 from churchit.church_people.doctype.background_check.background_check import is_cleared
 from churchit.church_scope import refuse_another_churches_record, scoped
@@ -24,7 +24,6 @@ ANSWERS = (ACCEPTED, DECLINED)
 REQUEST_TEMPLATE = "Ministry Team Request"
 REMINDER_TEMPLATE = "Ministry Team Reminder"
 DECLINE_TEMPLATE = "Ministry Team Decline"
-TIME_FORMAT = "h:mm a"
 
 
 class MinistryTeamAssignment(Document):

@@ -74,7 +74,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Team needs on each function, copied to recurring functions from their template
 - Assignments that ask one person to fill one position, with warnings for blocked dates, double booking, missing background checks and missing email addresses
 - Request and reminder emails with accept and decline links that work without signing in, and an email to the ministry's coordinator for each decline
-- A portal page where members answer their requests and block out the dates they cannot serve
+- A portal page where members answer their requests, see the schedule of each function they serve at, and block out the dates they cannot serve
 - Ministry Team Schedule report: what each function needs, who is asked, and which places are still open
 
 ### Sermons & Presentations
