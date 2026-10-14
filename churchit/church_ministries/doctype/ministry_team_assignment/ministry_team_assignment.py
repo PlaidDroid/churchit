@@ -14,7 +14,7 @@ from churchit.church_ministries.doctype.function.function import TIME_FORMAT, ge
 from churchit.church_ministries.doctype.ministry_team_block.ministry_team_block import get_blocks_covering
 from churchit.church_people.doctype.background_check.background_check import is_cleared
 from churchit.church_scope import refuse_another_churches_record, scoped
-from churchit.contacts import get_primary_email
+from churchit.contacts import get_primary_email, get_primary_emails
 
 PENDING = "Pending"
 ACCEPTED = "Accepted"
@@ -206,6 +206,24 @@ def send_team_emails_now() -> int:
 	if not can_send_email():
 		frappe.throw(_("Set up an outgoing Email Account first."))
 	return send_team_emails()
+
+
+@frappe.whitelist()
+def get_team_emails(function: str) -> frappe._dict:
+	"""Email addresses of the people asked to serve at *function* who did not decline, and who has none."""
+	frappe.has_permission("Function", doc=function, throw=True)
+	assignments = frappe.get_list(
+		"Ministry Team Assignment",
+		filters={"function": function, "status": ("!=", DECLINED)},
+		fields=["person", "person_name"],
+		order_by="person_name asc",
+	)
+	people = {row.person: row.person_name for row in assignments}
+	emails = get_primary_emails("Person", list(people))
+	return frappe._dict(
+		emails=[emails[person] for person in people if person in emails],
+		without_email=[name for person, name in people.items() if person not in emails],
+	)
 
 
 def get_upcoming_assignments() -> list[frappe._dict]:

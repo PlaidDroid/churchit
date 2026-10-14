@@ -7,6 +7,7 @@ import frappe
 from frappe.utils import add_days, getdate, now_datetime
 
 from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import (
+	get_team_emails,
 	is_due_for_a_reminder,
 	send_team_emails,
 	send_team_emails_now,
@@ -248,3 +249,23 @@ class TestMinistryTeamAssignment(RollbackEachTest):
 		frappe.set_user(ensure_user("_test_team_member@example.com", "Member"))
 		with self.assertRaises(frappe.PermissionError):
 			send_team_emails_now()
+
+	def test_email_the_team_reaches_everyone_asked_who_did_not_decline(self):
+		usher = make_team_position("_Test Usher", [self.alice.name])
+		make_team_assignment(self.sunday.name, self.greeter.name, self.alice.name)
+		make_team_assignment(self.sunday.name, usher.name, self.alice.name)
+		make_team_assignment(self.sunday.name, self.greeter.name, self.bob.name)
+		carol = make_person("_Test Team", "Carol", emails=[{"email_address": "_test_team_carol@example.com"}])
+		self.greeter.append("people", {"person": carol.name})
+		self.greeter.save(ignore_permissions=True)
+		make_team_assignment(self.sunday.name, self.greeter.name, carol.name, status="Declined")
+
+		team = get_team_emails(self.sunday.name)
+
+		self.assertEqual(team.emails, ["_test_team_alice@example.com"])
+		self.assertEqual(team.without_email, ["_Test Team Bob"])
+
+	def test_email_the_team_is_for_those_who_may_see_the_function(self):
+		frappe.set_user(ensure_user("_test_team_member@example.com", "Member"))
+		with self.assertRaises(frappe.PermissionError):
+			get_team_emails(self.sunday.name)
