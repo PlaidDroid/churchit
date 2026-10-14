@@ -170,7 +170,10 @@ def church_filter(filters):
 	A requested church narrows the way a list filter does, unless the user
 	turned on branch expansion, in which case its branches come along too.
 	Leaving the filter blank shows every church the user has in scope.
+	A single-church site saves records without a church, so it never narrows.
 	"""
+	if not is_multi_church():
+		return None
 	requested = (filters or {}).get(CHURCH_FIELD)
 	allowed = allowed_churches()
 	if not requested:
