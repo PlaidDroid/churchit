@@ -14,21 +14,22 @@ from churchit.tests.helpers import (
 
 
 class TestMinistryTeamSchedule(RollbackEachTest):
-	def setUp(self):
-		super().setUp()
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		people = [make_person("_Test Schedule", name).name for name in ("Ann", "Ben", "Cal")]
-		self.greeter = make_team_position("_Test Schedule Greeter", people)
-		self.usher = make_team_position("_Test Schedule Usher", people)
-		self.function = make_function(
+		cls.greeter = make_team_position("_Test Schedule Greeter", people)
+		cls.usher = make_team_position("_Test Schedule Usher", people)
+		cls.function = make_function(
 			"_Test Schedule Sunday",
 			start_date=add_days(getdate(), 3),
 			team_needs=[
-				{"position": self.greeter.name, "quantity": 2},
-				{"position": self.usher.name, "quantity": 1},
+				{"position": cls.greeter.name, "quantity": 2},
+				{"position": cls.usher.name, "quantity": 1},
 			],
 		)
 		for person, status in zip(people, ("Accepted", "Pending", "Declined"), strict=True):
-			make_team_assignment(self.function.name, self.greeter.name, person, status=status)
+			make_team_assignment(cls.function.name, cls.greeter.name, person, status=status)
 
 	def rows(self, **filters):
 		_columns, data = execute({"function": self.function.name, **filters})

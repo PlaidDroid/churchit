@@ -136,9 +136,11 @@ class TestTextFiles(FrappeTestCase):
 
 
 class TestReading(FrappeTestCase):
-	def setUp(self):
-		self.free = make_translation(self, "_TSF", JOHN + PSALM, free=True)
-		self.imported = make_translation(self, "_TSI", JOHN)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.free = make_translation(cls, "_TSF", JOHN + PSALM, free=True)
+		cls.imported = make_translation(cls, "_TSI", JOHN)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -201,7 +203,9 @@ class TestReading(FrappeTestCase):
 		self.assertTrue(scripture.get_chapter("JHN", 3, self.imported))
 
 	def test_a_translation_without_its_text_cannot_be_read(self):
+		original = frappe.db.get_value("Bible Translation", self.free, "status")
 		frappe.db.set_value("Bible Translation", self.free, "status", "Downloading")
+		self.addCleanup(frappe.db.set_value, "Bible Translation", self.free, "status", original)
 		self.assertFalse(scripture.is_readable(self.free))
 		self.assertFalse(scripture.is_readable(None))
 		with self.assertRaises(frappe.PermissionError):
@@ -223,7 +227,9 @@ class TestReading(FrappeTestCase):
 
 	def test_a_named_church_answers_with_its_own_default(self):
 		root = ensure_root_church()
+		original = frappe.db.get_value("Church", root, "default_bible_translation")
 		frappe.db.set_value("Church", root, "default_bible_translation", self.free)
+		self.addCleanup(frappe.db.set_value, "Church", root, "default_bible_translation", original)
 		self.assertEqual(scripture.get_default_translation(root), self.free)
 
 	def seeded_translation(self, abbreviation):

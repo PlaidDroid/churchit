@@ -25,18 +25,22 @@ MODULE = "churchit.church_ministries.doctype.ministry_team_assignment.ministry_t
 
 
 class TestMinistryTeamAssignment(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.alice = make_person(
+			"_Test Team", "Alice", emails=[{"email_address": "_test_team_alice@example.com"}]
+		)
+		cls.bob = make_person("_Test Team", "Bob")
+		cls.greeter = make_team_position("_Test Greeter", [cls.alice.name, cls.bob.name])
+		cls.sunday = make_function(
+			"_Test Team Sunday", start_date=add_days(getdate(), 7), start_time="10:00:00", end_time="11:00:00"
+		)
+
 	def setUp(self):
 		super().setUp()
 		self.sendmail = self.start(mock.patch("frappe.sendmail"))
 		self.start(mock.patch(f"{MODULE}.can_send_email", return_value=True))
-		self.alice = make_person(
-			"_Test Team", "Alice", emails=[{"email_address": "_test_team_alice@example.com"}]
-		)
-		self.bob = make_person("_Test Team", "Bob")
-		self.greeter = make_team_position("_Test Greeter", [self.alice.name, self.bob.name])
-		self.sunday = make_function(
-			"_Test Team Sunday", start_date=add_days(getdate(), 7), start_time="10:00:00", end_time="11:00:00"
-		)
 
 	def start(self, patcher):
 		self.addCleanup(patcher.stop)

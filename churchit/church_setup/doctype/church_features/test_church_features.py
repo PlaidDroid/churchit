@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+from frappe.desk.doctype.dock.dock import drop_dock_caches
 from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import now
@@ -30,14 +31,18 @@ def dock_flags(user=""):
 
 
 class TestChurchFeatures(RollbackEachTest):
-	def setUp(self):
-		super().setUp()
-		# Runs after the rollback, so no cached dock layer outlives its rows.
-		self.addCleanup(frappe.clear_cache)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		features = frappe.get_single("Church Features")
 		for field in MODULE_FIELDS:
 			features.set(field, 1)
 		features.save()
+
+	def setUp(self):
+		super().setUp()
+		# Runs after the rollback, so no cached dock layer outlives its rows.
+		self.addCleanup(drop_dock_caches, None)
 
 	def set_module(self, field, enabled):
 		features = frappe.get_single("Church Features")
@@ -51,6 +56,20 @@ class TestChurchFeatures(RollbackEachTest):
 		self.assertEqual(frappe.db.get_value("Workspace", "Manual: Missions", "is_hidden"), 1)
 		self.assertEqual(dock_flags()["Missions"], 1)
 		self.assertEqual(dock_flags()["People"], 0)
+
+	def test_a_save_drops_the_desk_and_page_caches_and_keeps_doctype_metadata(self):
+		"""A full cache clear on every save made each doctype rebuild its metadata afterwards."""
+		frappe.cache.hset("bootinfo", "Administrator", {"modules": "stale"})
+		frappe.cache.hset("desktop_icons", "Administrator", [])
+		frappe.cache.set_value("website_page::locations", {"en": "stale"})
+		song = frappe.get_meta("Song")
+
+		self.set_module("enable_missions", 0)
+
+		self.assertIsNone(frappe.cache.hget("bootinfo", "Administrator"))
+		self.assertIsNone(frappe.cache.hget("desktop_icons", "Administrator"))
+		self.assertIsNone(frappe.cache.get_value("website_page::locations"))
+		self.assertIs(frappe.get_meta("Song"), song)
 
 	def test_re_enabling_restores_what_was_hidden(self):
 		self.set_module("enable_missions", 0)

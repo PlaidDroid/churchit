@@ -73,11 +73,15 @@ class TestSermonPresentationHelpers(FrappeTestCase):
 
 
 class TestSermonPresentationPage(FrappeTestCase):
-	def setUp(self):
-		self.preacher = make_person("_Test Preaching", "Pastor")
-		self.song = frappe.get_doc({"doctype": "Song", "title": "_Test Hymn", "ccli": "12345"}).insert(
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.preacher = make_person("_Test Preaching", "Pastor")
+		cls.song = frappe.get_doc({"doctype": "Song", "title": "_Test Hymn", "ccli": "12345"}).insert(
 			ignore_permissions=True
 		)
+
+	def setUp(self):
 		frappe.local.form_dict = frappe._dict()
 
 	def tearDown(self):

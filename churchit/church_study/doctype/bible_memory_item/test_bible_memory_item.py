@@ -19,10 +19,14 @@ REFERENCE = "John 1:1"
 
 
 class TestBibleMemoryItem(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.translation = make_translation(cls, "_TMB", [("JHN", 1, 1, "In the beginning was the Word.")])
+		cls.user = ensure_user("_test_memorizer@example.com", "_Test Memorizer")
+		cls.other_user = ensure_user("_test_other_memorizer@example.com", "_Test Other Memorizer")
+
 	def setUp(self):
-		self.translation = make_translation(self, "_TMB", [("JHN", 1, 1, "In the beginning was the Word.")])
-		self.user = ensure_user("_test_memorizer@example.com", "_Test Memorizer")
-		self.other_user = ensure_user("_test_other_memorizer@example.com", "_Test Other Memorizer")
 		frappe.db.delete("Bible Memory Item", {"bible_reference": REFERENCE})
 		frappe.set_user(self.user)
 
@@ -137,11 +141,15 @@ class TestBibleMemoryItem(FrappeTestCase):
 
 
 class TestAssignMemory(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.translation = make_translation(cls, "_TAM", [("PSA", 23, 1, "The LORD is my shepherd.")])
+		cls.learner = ensure_user("_test_learner@example.com", "_Test Learner")
+		cls.linked = make_person("_Test Assign", "Linked", user=cls.learner).name
+		cls.unlinked = make_person("_Test Assign", "Unlinked").name
+
 	def setUp(self):
-		self.translation = make_translation(self, "_TAM", [("PSA", 23, 1, "The LORD is my shepherd.")])
-		self.learner = ensure_user("_test_learner@example.com", "_Test Learner")
-		self.linked = make_person("_Test Assign", "Linked", user=self.learner).name
-		self.unlinked = make_person("_Test Assign", "Unlinked").name
 		frappe.db.delete("Bible Memory Item", {"translation": self.translation})
 
 	def tearDown(self):

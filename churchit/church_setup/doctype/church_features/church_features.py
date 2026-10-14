@@ -5,9 +5,11 @@ import json
 
 import frappe
 from frappe import _
+from frappe.desk.doctype.desktop_icon.desktop_icon import clear_every_users_desktop_icons
 from frappe.desk.doctype.dock.dock import get_app_dock
 from frappe.model.document import Document
 from frappe.utils import cint
+from frappe.website.utils import clear_website_cache
 
 from churchit.church_foundations import church_access
 from churchit.church_scope import root_church
@@ -62,7 +64,10 @@ class ChurchFeatures(Document):
 		multi_church.apply_people_privacy(cint(self.private_people))
 
 		self.db_set("managed_records", json.dumps(managed, indent=1), update_modified=False)
-		frappe.clear_cache()
+		# Not frappe.clear_cache(): that also drops the metadata of every doctype,
+		# and the field setters above already clear the doctypes they change.
+		clear_every_users_desktop_icons()
+		clear_website_cache()
 
 	def start_multi_church(self):
 		"""One-time move to multi-church: stamp the root on every record, scope every user to it.

@@ -15,17 +15,28 @@ import io
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import CallbackManager
 
 
 class RollbackEachTest(FrappeTestCase):
-	"""Undoes each test's writes, so the next setUp starts from the same state."""
+	"""Undoes each test's writes, so the next setUp starts from the same state.
+
+	A rollback to a savepoint skips Frappe's after_rollback callbacks, which drop
+	the cached documents and doctypes a test changed. Each test collects its own
+	and runs them after its rollback, so records made in setUpClass stay safe to share.
+	"""
 
 	def setUp(self):
 		frappe.db.savepoint("rollback_each_test")
+		self.class_after_rollback = frappe.db.after_rollback
+		frappe.db.after_rollback = CallbackManager()
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		frappe.db.rollback(save_point="rollback_each_test")
+		test_after_rollback = frappe.db.after_rollback
+		frappe.db.after_rollback = self.class_after_rollback
+		test_after_rollback.run()
 
 
 def ensure(doctype, filters, values=None):
@@ -82,10 +93,11 @@ def make_translation(case, abbreviation, rows, free=False):
 
 	The text is a real private CSV file, read by the same code as a church's own import. A free
 	one is marked free straight in the database, so no download is queued. The file on disk and
-	the cached text are removed when *case* finishes.
+	the cached text are removed when *case* finishes: a test, or a test class from setUpClass.
 	"""
 	from churchit import scripture
 
+	add_cleanup = case.addClassCleanup if isinstance(case, type) else case.addCleanup
 	content = io.StringIO()
 	csv.writer(content).writerows([scripture.CSV_COLUMNS, *rows])
 	file = frappe.get_doc(
@@ -96,8 +108,8 @@ def make_translation(case, abbreviation, rows, free=False):
 			"is_private": 1,
 		}
 	).insert(ignore_permissions=True)
-	case.addCleanup(frappe.delete_doc, "File", file.name, force=True, ignore_permissions=True)
-	case.addCleanup(scripture.clear_cache, abbreviation)
+	add_cleanup(frappe.delete_doc, "File", file.name, force=True, ignore_permissions=True)
+	add_cleanup(scripture.clear_cache, abbreviation)
 	if frappe.db.exists("Bible Translation", abbreviation):
 		frappe.delete_doc("Bible Translation", abbreviation, force=True, ignore_permissions=True)
 	frappe.get_doc(
@@ -149,7 +161,6 @@ def set_multi_church(enabled):
 		return
 	features.enable_multi_church = int(bool(enabled))
 	features.save()
-	frappe.clear_cache()
 
 
 def set_private_people(private):
@@ -159,7 +170,6 @@ def set_private_people(private):
 		return
 	features.private_people = int(bool(private))
 	features.save()
-	frappe.clear_cache()
 
 
 def force_single_church():
@@ -170,7 +180,6 @@ def force_single_church():
 	features.enable_multi_church = 0
 	features.flags.ignore_validate = True
 	features.save()
-	frappe.clear_cache()
 
 
 def make_branch(church_name, abbreviation, parent=None, **values):

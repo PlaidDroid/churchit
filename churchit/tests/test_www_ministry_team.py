@@ -24,16 +24,20 @@ from churchit.www import ministry_team, ministry_team_response
 
 
 class TestMinistryTeamPages(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.email = ensure_user("_test_team_member@example.com", "Team")
+		cls.member = make_person("_Test Team Page", "Member", user=cls.email)
+		cls.stranger = make_person("_Test Team Page", "Stranger")
+		cls.position = make_team_position("_Test Page Greeter", [cls.member.name, cls.stranger.name])
+		function = make_function("_Test Team Page Sunday", start_date=add_days(getdate(), 5))
+		cls.mine = make_team_assignment(function.name, cls.position.name, cls.member.name)
+		cls.theirs = make_team_assignment(function.name, cls.position.name, cls.stranger.name)
+
 	def setUp(self):
 		super().setUp()
 		frappe.local.form_dict = frappe._dict()
-		self.email = ensure_user("_test_team_member@example.com", "Team")
-		self.member = make_person("_Test Team Page", "Member", user=self.email)
-		self.stranger = make_person("_Test Team Page", "Stranger")
-		self.position = make_team_position("_Test Page Greeter", [self.member.name, self.stranger.name])
-		function = make_function("_Test Team Page Sunday", start_date=add_days(getdate(), 5))
-		self.mine = make_team_assignment(function.name, self.position.name, self.member.name)
-		self.theirs = make_team_assignment(function.name, self.position.name, self.stranger.name)
 
 	def context(self, page):
 		context = frappe._dict()

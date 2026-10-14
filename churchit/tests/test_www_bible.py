@@ -20,9 +20,13 @@ TEXT = [
 
 
 class TestBiblePage(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.free = make_translation(cls, "_TBF", TEXT, free=True)
+		cls.imported = make_translation(cls, "_TBI", TEXT)
+
 	def setUp(self):
-		self.free = make_translation(self, "_TBF", TEXT, free=True)
-		self.imported = make_translation(self, "_TBI", TEXT)
 		frappe.local.form_dict = frappe._dict()
 
 	def tearDown(self):

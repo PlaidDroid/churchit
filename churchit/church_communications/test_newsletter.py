@@ -25,15 +25,16 @@ from churchit.tests.helpers import (
 
 
 class TestNewsletter(RollbackEachTest):
-	def setUp(self):
-		super().setUp()
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		force_single_church()
 		ensure("Email Group", {"title": MEMBER_EMAIL_GROUP})
-		self.user = ensure_user("_test_subscriber@example.com", "_Test Subscriber")
-		self.person = make_person("_Test Newsletter", "Member", user=self.user)
-		self.person.append("emails", {"email_address": "_test_work@example.com"})
-		self.person.append("emails", {"email_address": "_test_home@example.com", "is_primary": 1})
-		self.person.save(ignore_permissions=True)
+		cls.user = ensure_user("_test_subscriber@example.com", "_Test Subscriber")
+		cls.person = make_person("_Test Newsletter", "Member", user=cls.user)
+		cls.person.append("emails", {"email_address": "_test_work@example.com"})
+		cls.person.append("emails", {"email_address": "_test_home@example.com", "is_primary": 1})
+		cls.person.save(ignore_permissions=True)
 		frappe.db.delete("Email Group Member", {"email": ["like", "_test_%@example.com"]})
 
 	def _member(self, email):
