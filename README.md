@@ -66,7 +66,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Recurring functions: Functions are automatically created based on a given frequency.
 - Calendar view (Private & Public)
 - Attendance types (Confirmed, Assumed, Absent, etc.)
-- Song tracking for worship services
+- Song tracking for worship services, and a Song Usage report with CCLI numbers for CCLI reporting
 - Reports: attendance by function, attendance by person, function count by type
 
 ### Ministry Teams
