@@ -21,6 +21,8 @@
 	.team-schedule div { display: flex; gap: 16px; padding: 4px 0; }
 	.team-schedule .time { flex: 0 0 5rem; color: var(--text-muted, #6b7280); white-space: nowrap; }
 	.team-schedule small { display: block; color: var(--text-muted, #6b7280); }
+	.calendar-link { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+	.calendar-link input { flex: 1 1 16rem; min-width: 0; }
 	.block-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 8px 16px;
 		align-items: end; }
 </style>
@@ -105,6 +107,25 @@
 			</label>
 			<button class="btn btn-default" type="submit">{{ _("Add") }}</button>
 		</form>
+
+		<h5 class="mt-5">{{ _("Your calendar") }}</h5>
+		<p class="text-muted">
+			{{ _("See the functions you accepted in the calendar on your phone or computer. It keeps itself up to date.") }}
+		</p>
+		{% if calendar %}
+		<div class="calendar-link">
+			<a class="btn btn-primary" href="{{ calendar.webcal | e }}">{{ _("Subscribe") }}</a>
+			<input class="form-control" type="text" readonly value="{{ calendar.url | e }}" id="team-calendar-url"
+				aria-label="{{ _('Calendar link') }}">
+			<button class="btn btn-default" type="button" id="team-calendar-copy">{{ _("Copy") }}</button>
+		</div>
+		<p class="text-muted small">
+			{{ _("In Google Calendar, add the copied link under Other calendars, From URL. Anyone with the link can see where you serve.") }}
+		</p>
+		<button class="btn btn-default btn-sm team-calendar-key" type="button">{{ _("Stop this link and make a new one") }}</button>
+		{% else %}
+		<button class="btn btn-default team-calendar-key" type="button">{{ _("Make a calendar link") }}</button>
+		{% endif %}
 	{% endif %}
 </div>
 {% endblock %}
@@ -147,6 +168,26 @@ frappe.ready(function () {
 			send("remove_own_block", { block: button.dataset.block }, button);
 		});
 	});
+
+	document.querySelectorAll(".team-calendar-key").forEach(function (button) {
+		button.addEventListener("click", function () {
+			send("make_own_calendar_key", {}, button);
+		});
+	});
+
+	var copyButton = document.getElementById("team-calendar-copy");
+	if (copyButton) {
+		copyButton.addEventListener("click", function () {
+			var input = document.getElementById("team-calendar-url");
+			input.select();
+			// The clipboard API needs https; elsewhere the link stays selected to copy by hand.
+			if (navigator.clipboard) {
+				navigator.clipboard.writeText(input.value).then(function () {
+					copyButton.textContent = __("Copied");
+				});
+			}
+		});
+	}
 
 	var blockForm = document.getElementById("team-block-form");
 	if (blockForm) {

@@ -28,6 +28,7 @@
   "alergies",
   "user",
   "hide_from_directory",
+  "team_calendar_key",
   "age",
   "life_events_section",
   "life_events",
@@ -241,6 +242,17 @@
    "print_hide": 1
   },
   {
+   "description": "The secret part of this person's Ministry Team calendar link. Members make a new one on the Ministry Team page of the portal.",
+   "fieldname": "team_calendar_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Team Calendar Key",
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1,
+   "unique": 1
+  },
+  {
    "allow_in_quick_entry": 1,
    "default": "Unknown",
    "fieldname": "gender",
@@ -320,7 +332,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-12 23:39:24.398879",
+ "modified": "2026-10-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

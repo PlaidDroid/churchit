@@ -3,13 +3,20 @@
 
 """The /ministry-team portal page and the /ministry-team-response page a request email links to."""
 
+from datetime import UTC, datetime, time
+from zoneinfo import ZoneInfo
+
 import frappe
-from frappe.utils import add_days, getdate
+from frappe.utils import add_days, get_system_timezone, getdate
 
 from churchit.church_ministries.member_ministry_team import (
 	add_own_block,
 	answer_by_key,
 	answer_own_assignment,
+	calendar_text,
+	calendar_times,
+	get_team_calendar,
+	make_own_calendar_key,
 	remove_own_block,
 )
 from churchit.tests.helpers import (
@@ -132,6 +139,53 @@ class TestMinistryTeamPages(RollbackEachTest):
 
 		remove_own_block(block.name)
 		self.assertEqual(self.context(ministry_team).blocks, [])
+
+	def calendar(self, key):
+		frappe.set_user("Guest")
+		get_team_calendar(key)
+		self.assertEqual(frappe.response.content_type, "text/calendar")
+		return frappe.response.filecontent
+
+	def test_a_member_subscribes_to_a_calendar_of_what_they_accepted(self):
+		day = add_days(getdate(), 8)
+		accepted = make_function(
+			"_Test Team Page Accepted", start_date=day, start_time="09:30:00", end_time="11:00:00"
+		)
+		make_team_assignment(accepted.name, self.position.name, self.member.name, status="Accepted")
+
+		frappe.set_user(self.email)
+		self.assertIsNone(self.context(ministry_team).calendar)
+		make_own_calendar_key()
+		calendar = self.context(ministry_team).calendar
+		key = calendar.url.partition("key=")[2]
+		self.assertTrue(calendar.webcal.startswith("webcal://"))
+
+		feed = self.calendar(key)
+		start = datetime.combine(day, time(9, 30))
+		utc_start = start.replace(tzinfo=ZoneInfo(get_system_timezone())).astimezone(UTC)
+		self.assertIn(f"DTSTART:{utc_start:%Y%m%dT%H%M%SZ}", feed)
+		self.assertIn("SUMMARY:_Test Page Greeter (_Test Team Ministry) at _Test Team Page Accepted", feed)
+		self.assertNotIn("_Test Team Page Sunday", feed, "a pending assignment is not on the calendar")
+
+	def test_a_new_calendar_link_stops_the_old_one(self):
+		frappe.set_user(self.email)
+		make_own_calendar_key()
+		old_key = frappe.db.get_value("Person", self.member.name, "team_calendar_key")
+		make_own_calendar_key()
+
+		with self.assertRaises(frappe.PermissionError):
+			self.calendar(old_key)
+		with self.assertRaises(frappe.PermissionError):
+			self.calendar("")
+
+	def test_an_all_day_function_fills_whole_days_and_text_is_escaped(self):
+		retreat = frappe._dict(start_date="2031-05-02", end_date="2031-05-04", all_day=1)
+		self.assertEqual(
+			calendar_times(retreat), ["DTSTART;VALUE=DATE:20310502", "DTEND;VALUE=DATE:20310505"]
+		)
+		self.assertEqual(
+			calendar_text("Ushers, Greeters; Doors\\Halls\nTwo"), "Ushers\\, Greeters\\; Doors\\\\Halls\\nTwo"
+		)
 
 	def test_a_member_cannot_remove_someone_elses_block(self):
 		theirs = frappe.get_doc(

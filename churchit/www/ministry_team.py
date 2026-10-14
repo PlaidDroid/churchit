@@ -4,7 +4,11 @@
 import frappe
 
 from churchit.church_ministries.doctype.function.function import get_schedule_rows
-from churchit.church_ministries.member_ministry_team import get_own_assignments, get_own_blocks
+from churchit.church_ministries.member_ministry_team import (
+	get_calendar_links,
+	get_own_assignments,
+	get_own_blocks,
+)
 from churchit.church_scope import session_person
 
 no_cache = 1
@@ -21,6 +25,7 @@ def get_context(context):
 	context.person = session_person()
 	context.assignments = get_own_assignments(context.person) if context.person else []
 	context.blocks = get_own_blocks(context.person) if context.person else []
+	context.calendar = get_calendar_links(context.person) if context.person else None
 	context.schedules = {
 		function: get_schedule_rows(frappe.get_doc("Function", function))
 		for function in {row.function for row in context.assignments}
