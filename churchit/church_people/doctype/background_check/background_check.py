@@ -40,3 +40,12 @@ def expire_background_checks():
 	)
 	for name in expired:
 		frappe.db.set_value("Background Check", name, "status", "Expired")
+
+
+def is_cleared(person: str, on_date) -> bool:
+	"""True when *person* has a cleared check that has not expired by *on_date*."""
+	# church-scope: answers yes or no about the one person being placed, wherever their church is
+	expiries = frappe.get_all(
+		"Background Check", filters={"person": person, "status": "Cleared"}, pluck="expires_on"
+	)
+	return any(not expiry or getdate(expiry) >= getdate(on_date) for expiry in expiries)

@@ -221,7 +221,7 @@ own default over an inherited blank.
 
 Two shapes that are neither, and how they are handled today:
 
-- **Family** follows its head of household's church (`Family.follow_head_of_households_church`),
+- **Family** follows its primary contact's church (`Family.follow_primary_contacts_church`),
   because a household can span branches. The directory therefore lists a family under every branch
   that has one of its members, rather than filtering on the family's own church.
 - **Function Type** templates are shared configuration, so `template_function` carries
@@ -423,6 +423,13 @@ Run the whole suite before committing anything broad: `bench --site <site> run-t
 - Use `churchit/tests/helpers.py`: `ensure_root_church`, `make_branch`, `set_multi_church` and
   `force_single_church` put the site into a known mode inside the test transaction. Never look up the
   church with `frappe.db.get_value("Church", {}, ...)`; a site may hold branches.
+- Make the records that a class shares once, in `setUpClass`. When its tests change them, extend
+  `RollbackEachTest`: it rolls each test back to a savepoint and drops the caches the test changed. Do
+  not use it for a test that writes a file, because the rollback removes the File record and leaves
+  the file on disk.
+- Call `frappe.clear_cache()` at most once per test class, never per test or in code that runs on every
+  save. It drops the metadata of every doctype, and rebuilding that metadata took almost half of the
+  suite's time. Clear only the doctype or document that changed.
 - `churchit/tests/test_church_permissions.py` is where scoping behaviour is proved. Add to it when
   you add a surface that reads church data. `make_two_churches()` and `assert_scoped()` in
   `churchit/tests/helpers.py` make that two lines:

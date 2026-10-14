@@ -36,3 +36,8 @@ churchit.patches.v1_0.split_membership_from_member_status
 churchit.patches.v1_0.set_church_website
 churchit.patches.v1_0.add_fiance_relation_types
 churchit.patches.v1_0.add_missionary_statuses
+churchit.patches.v1_0.move_copied_function_schedules
+churchit.patches.v1_0.add_marital_statuses
+churchit.patches.v1_0.replace_head_of_household_with_primary_contact
+churchit.patches.v1_0.add_ministry_teams
+churchit.patches.v1_0.move_email_template_bodies_to_html

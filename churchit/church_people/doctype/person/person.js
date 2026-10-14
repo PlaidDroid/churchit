@@ -24,10 +24,10 @@ frappe.ui.form.on("Person", {
 			frm.refresh_field("marriage_years");
 		}
 
-		// Add 'New Family From Person' button if Last Name is populated and person does not already head a family
-		if (frm.doc.last_name && !(frm.doc.family && frm.doc.is_head_of_household)) {
+		// Add 'New Family From Person' button if Last Name is populated and person is not already a family's primary contact
+		if (frm.doc.last_name && !frm.doc.__onload?.is_primary_contact) {
 			frm.add_custom_button(__("New Family From Person"), function () {
-				frm.call("new_family_from_person");
+				frm.call("new_family_from_person").then(() => frm.reload_doc());
 			});
 		}
 
@@ -41,7 +41,6 @@ frappe.ui.form.on("Person", {
 
 		if (!frm.is_new()) {
 			show_background_check_status(frm);
-			show_family_members_without_relation(frm);
 		}
 
 		// Add 'Person Tour' button
@@ -50,29 +49,6 @@ frappe.ui.form.on("Person", {
 		});
 	},
 });
-
-// Name the family members the Family's 'Relationship to Head' labels could not relate to this person.
-function show_family_members_without_relation(frm) {
-	if (!frm.doc.family) return;
-	frappe.db
-		.get_list("Person", {
-			filters: { family: frm.doc.family, name: ["!=", frm.doc.name] },
-			fields: ["name", "full_name"],
-		})
-		.then((members) => {
-			const related = new Set((frm.doc.relations || []).map((row) => row.person));
-			const missing = members.filter((member) => !related.has(member.name));
-			if (!missing.length) return;
-			const names = missing.map((member) => member.full_name).join(", ");
-			frm.dashboard.set_headline_alert(
-				__(
-					"No relation could be worked out for {0}. Set their Relationship to Head on the Family, or add a Relations row on the Family tab.",
-					[frappe.utils.escape_html(names)]
-				),
-				"yellow"
-			);
-		});
-}
 
 // Show the most recent background check on the form dashboard so leaders can
 // see at a glance whether this person is cleared to serve.

@@ -20,6 +20,23 @@ frappe.ui.form.on("Missionary", {
 		} else if (frm.doc.publish) {
 			frm.set_intro("🌐 This missionary is published to the public website", "blue");
 		}
+
+		const grid = frm.fields_dict.people.grid;
+		// Frappe prepends custom buttons; append so "Add row" stays first.
+		grid.add_custom_button(__("Add Family"), () => {
+			frappe.prompt(
+				{
+					fieldtype: "Link",
+					fieldname: "family",
+					label: __("Family"),
+					options: "Family",
+					reqd: 1,
+				},
+				(values) => add_family(frm, values.family),
+				__("Add Family"),
+				__("Add")
+			);
+		}).appendTo(grid.grid_buttons);
 	},
 
 	// Same nominatim geocoding pattern as Location.address (church_operations/doctype/location/location.js).
@@ -52,3 +69,20 @@ frappe.ui.form.on("Missionary", {
 			});
 	},
 });
+
+function add_family(frm, family) {
+	frm.call("add_family", { family }).then(async (r) => {
+		const added = r.message || [];
+		// Rows from the server carry Person IDs; fetch titles so the grid shows names.
+		await Promise.all(added.map((person) => frappe.utils.fetch_link_title("Person", person)));
+		frm.refresh_field("people");
+		// Syncing the server's copy leaves a saved form looking unchanged.
+		if (added.length) frm.dirty();
+		frappe.show_alert({
+			message: added.length
+				? __("{0} family member(s) added", [added.length])
+				: __("Everyone in this family is already listed"),
+			indicator: added.length ? "green" : "blue",
+		});
+	});
+}

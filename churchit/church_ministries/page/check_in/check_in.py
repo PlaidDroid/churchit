@@ -144,15 +144,16 @@ def group_by_family(matched, scope):
 			"age",
 			"photo",
 			"family",
-			"is_head_of_household",
 		],
-		order_by="is_head_of_household desc, age desc, first_name asc",
+		order_by="age desc, first_name asc",
 	)
-	family_names = dict(
-		frappe.get_all(
-			"Family", filters={"name": ["in", families]}, fields=["name", "family_name"], as_list=True
-		)
+	family_rows = frappe.get_all(
+		"Family", filters={"name": ["in", families]}, fields=["name", "family_name", "primary_contact"]
 	)
+	family_names = {family.name: family.family_name for family in family_rows}
+	primary_contacts = {family.primary_contact for family in family_rows}
+	# The primary contact leads each family, then the rest from oldest to youngest
+	people.sort(key=lambda row: row.name not in primary_contacts)
 	groups = {}
 	for row in people:
 		row.matched = row.name in matched

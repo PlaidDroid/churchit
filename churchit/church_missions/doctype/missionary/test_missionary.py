@@ -10,6 +10,7 @@ from churchit.church_missions.doctype.missionary.missionary import (
 	get_map_markers,
 	get_public_map_markers,
 )
+from churchit.tests.helpers import ensure_user
 
 TEST_POINT_GEOJSON = (
 	'{"type":"FeatureCollection","features":[{"type":"Feature",'
@@ -20,6 +21,7 @@ TEST_FUND = "Test Missions Fund"
 TEST_EXPENSE_TYPE = "Test Missionary Support"
 TEST_PERSON_NAME = "Test Missionary Person"
 TEST_MISSIONARY_TITLE = "Test Missionary"
+TEST_FAMILY_NAME = "Test Missionary Family"
 
 
 def _ensure(doctype, filters, values):
@@ -159,3 +161,38 @@ class TestMissionary(FrappeTestCase):
 			m for m in result["markers"] if m["title"] == f"{TEST_MISSIONARY_TITLE} Published"
 		)
 		self.assertNotIn("name", published_marker)
+
+	def _ensure_family(self):
+		"""A family of self.person and two more people, so one member is already listed."""
+		members = [self.person] + [
+			_ensure("Person", {"first_name": name}, {"first_name": name})
+			for name in ("Test Missionary Spouse", "Test Missionary Child")
+		]
+		family = _ensure(
+			"Family",
+			{"family_name": TEST_FAMILY_NAME},
+			{"family_name": TEST_FAMILY_NAME, "members": [{"member": member} for member in members]},
+		)
+		return family, members
+
+	def test_add_family_lists_members_not_listed_yet(self):
+		family, members = self._ensure_family()
+		missionary = frappe.get_doc(
+			{"doctype": "Missionary", "title": TEST_MISSIONARY_TITLE, "people": [{"person": self.person}]}
+		)
+
+		self.assertEqual(missionary.add_family(family), members[1:])
+		self.assertEqual([row.person for row in missionary.people], members)
+		self.assertEqual(missionary.add_family(family), [])
+
+	def test_add_family_needs_read_on_the_family(self):
+		family, _members = self._ensure_family()
+		missionary = frappe.get_doc({"doctype": "Missionary", "title": TEST_MISSIONARY_TITLE})
+		outsider = ensure_user("test-missionary-outsider@example.com", "Outsider", roles=())
+
+		frappe.set_user(outsider)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				missionary.add_family(family)
+		finally:
+			frappe.set_user("Administrator")

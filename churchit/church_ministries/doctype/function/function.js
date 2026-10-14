@@ -32,11 +32,17 @@ frappe.ui.form.on("Function", {
 				if (!r.message?.template_function) return;
 				// Add 	Fill from Template` button if template exists
 				frm.add_custom_button(__("Fill from Template"), function () {
+					if (!frm.doc.start_date) {
+						frappe.msgprint(
+							__("Set the Start Date first, so the schedule moves to it.")
+						);
+						return;
+					}
 					frappe.call({
 						method: "churchit.church_ministries.doctype.function.function.apply_template",
 						args: {
 							source_name: r.message.template_function,
-							target_doc: frm.doc,
+							start_date: frm.doc.start_date,
 						},
 						callback: function (r) {
 							if (!r.message) return;
@@ -118,6 +124,22 @@ frappe.ui.form.on("Function", {
 				},
 				__("Create")
 			);
+
+			frm.add_custom_button(
+				__("Schedule"),
+				function () {
+					frappe.set_route("query-report", "Ministry Team Schedule", {
+						function: frm.doc.name,
+					});
+				},
+				__("Ministry Team")
+			);
+
+			frm.add_custom_button(
+				__("Email the Team"),
+				() => email_the_team(frm),
+				__("Ministry Team")
+			);
 		}
 
 		// Add Sign Ups buttons if sign-ups are enabled, there are items, or there are linked sign-ups
@@ -172,6 +194,40 @@ frappe.ui.form.on("Function Attendance", {
 			});
 	},
 });
+
+function email_the_team(frm) {
+	frappe
+		.xcall(
+			"churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment.get_team_emails",
+			{ function: frm.doc.name }
+		)
+		.then(({ emails, without_email }) => {
+			if (without_email.length) {
+				frappe.show_alert(
+					{
+						message: __("No email address for {0}", [without_email.join(", ")]),
+						indicator: "orange",
+					},
+					10
+				);
+			}
+			if (!emails.length) {
+				frappe.msgprint(
+					__("No one asked to serve at this function has an email address.")
+				);
+				return;
+			}
+			// The team goes in BCC, so no one sees the others' addresses.
+			const composer = new frappe.views.CommunicationComposer({
+				doc: frm.doc,
+				frm: frm,
+				subject: frm.doc.title,
+				recipients: frappe.session.user_email,
+				bcc: emails.join(", "),
+			});
+			composer.$composer?.find('.email-composer-toggle[data-target="bcc"]').trigger("click");
+		});
+}
 
 function populate_signed_up_totals(frm) {
 	if (frm.is_new() || !frm.doc.name || !(frm.doc.table_cxhh || []).length) return;

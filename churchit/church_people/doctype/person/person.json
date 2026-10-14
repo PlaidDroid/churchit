@@ -15,15 +15,21 @@
   "full_name",
   "church",
   "gender",
+  "family",
+  "marital_status",
+  "spouse",
+  "anniversary",
+  "marriage_years",
+  "column_break_agva",
   "membership",
   "membership_status",
   "inactive_reason",
-  "column_break_agva",
   "photo",
-  "age",
   "alergies",
   "user",
   "hide_from_directory",
+  "team_calendar_key",
+  "age",
   "life_events_section",
   "life_events",
   "section_break_osjz",
@@ -35,16 +41,6 @@
   "addresses",
   "section_break_eqre",
   "letters",
-  "family_tab",
-  "column_break_gwhd",
-  "family",
-  "is_head_of_household",
-  "is_married",
-  "spouse",
-  "anniversary",
-  "marriage_years",
-  "column_break_fkwj",
-  "relations",
   "notes_tab",
   "notes"
  ],
@@ -82,10 +78,6 @@
    "label": "Church",
    "options": "Church",
    "search_index": 1
-  },
-  {
-   "fieldname": "column_break_gwhd",
-   "fieldtype": "Column Break"
   },
   {
    "description": "Calculated from the Birth event in Life Events.",
@@ -132,17 +124,6 @@
    "options": "Family",
    "print_hide": 1,
    "search_index": 1
-  },
-  {
-   "allow_in_quick_entry": 1,
-   "default": "0",
-   "depends_on": "eval:doc.family;",
-   "description": "Is this person 'Head of Household\" for their Family?",
-   "fieldname": "is_head_of_household",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Is Head of Household",
-   "print_hide": 1
   },
   {
    "fieldname": "photo",
@@ -219,19 +200,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "family_tab",
-   "fieldtype": "Tab Break",
-   "label": "Family"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_married",
-   "fieldtype": "Check",
-   "label": "Is Married",
-   "print_hide": 1
-  },
-  {
-   "depends_on": "eval:doc.is_married;",
+   "depends_on": "eval:[\"Married\", \"Widowed\"].includes(doc.marital_status)",
    "fieldname": "anniversary",
    "fieldtype": "Date",
    "label": "Anniversary"
@@ -244,24 +213,13 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.is_married;",
+   "depends_on": "eval:[\"Married\", \"Widowed\"].includes(doc.marital_status)",
    "fieldname": "spouse",
    "fieldtype": "Link",
    "in_preview": 1,
    "label": "Spouse",
    "link_filters": "[[\"Person\",\"name\",\"!=\",\"eval:doc.name\"],[\"Person\",\"gender\",\"!=\",\"eval:doc.gender\"]]",
    "options": "Person"
-  },
-  {
-   "fieldname": "column_break_fkwj",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Family relationships: children, parents, siblings and so on. The Husband/Wife row follows the Spouse field, and From Family rows follow each member's Relationship to Head on the Family.",
-   "fieldname": "relations",
-   "fieldtype": "Table",
-   "label": "Relations",
-   "options": "Person Relation"
   },
   {
    "fieldname": "notes_tab",
@@ -282,6 +240,17 @@
    "fieldtype": "Check",
    "label": "Hide from Directory and Bulletin",
    "print_hide": 1
+  },
+  {
+   "description": "The secret part of this person's Ministry Team calendar link. Members make a new one on the Ministry Team page of the portal.",
+   "fieldname": "team_calendar_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Team Calendar Key",
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1,
+   "unique": 1
   },
   {
    "allow_in_quick_entry": 1,
@@ -309,6 +278,13 @@
    "fieldtype": "Link",
    "label": "Portal User",
    "options": "User"
+  },
+  {
+   "description": "A married or widowed person keeps a spouse and an anniversary.",
+   "fieldname": "marital_status",
+   "fieldtype": "Link",
+   "label": "Marital Status",
+   "options": "Marital Status"
   }
  ],
  "grid_page_length": 50,
@@ -356,7 +332,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-11 15:00:00.000000",
+ "modified": "2026-10-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

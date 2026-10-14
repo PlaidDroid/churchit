@@ -3,26 +3,28 @@
 
 import frappe
 from frappe.exceptions import ValidationError
-from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_people.group_api import join_group, joinable_public_groups
-from churchit.tests.helpers import ensure, ensure_user, make_person
+from churchit.tests.helpers import RollbackEachTest, ensure, ensure_user, make_person
 
 
-class TestGroupApi(FrappeTestCase):
-	def setUp(self):
+class TestGroupApi(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		ensure("Group Role", {"role": "Member"})
-		self.user = ensure_user("_test_joiner@example.com", "_Test Joiner")
-		self.person = make_person("_Test Group", "Joiner", user=self.user).name
-		self.open_group = self._group("_Test Open Group", public=1, show_in_portal=1)
-		self.hidden_group = self._group("_Test Hidden Group", public=1, show_in_portal=0)
-		self.closed_group = self._group("_Test Closed Group", public=0, show_in_portal=1)
+		cls.user = ensure_user("_test_joiner@example.com", "_Test Joiner")
+		cls.person = make_person("_Test Group", "Joiner", user=cls.user).name
+		cls.open_group = cls._group("_Test Open Group", public=1, show_in_portal=1)
+		cls.hidden_group = cls._group("_Test Hidden Group", public=1, show_in_portal=0)
+		cls.closed_group = cls._group("_Test Closed Group", public=0, show_in_portal=1)
+
+	def setUp(self):
+		super().setUp()
 		frappe.set_user(self.user)
 
-	def tearDown(self):
-		frappe.set_user("Administrator")
-
-	def _group(self, name, **values):
+	@staticmethod
+	def _group(name, **values):
 		return frappe.get_doc({"doctype": "Group", "group_name": name, **values}).insert(
 			ignore_permissions=True
 		)

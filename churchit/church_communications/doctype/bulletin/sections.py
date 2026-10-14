@@ -4,7 +4,7 @@
 """What the automatic sections of a Bulletin print, read from the rest of the app."""
 
 import frappe
-from frappe.utils import add_days, format_datetime, format_time, formatdate, getdate
+from frappe.utils import add_days, format_time, formatdate, getdate
 
 from churchit.church_foundations.doctype.church.church import (
 	ADDRESS_FIELDS,
@@ -12,11 +12,11 @@ from churchit.church_foundations.doctype.church.church import (
 	church_contact_details,
 	get_church,
 )
+from churchit.church_ministries.doctype.function.function import TIME_FORMAT, get_schedule_rows
 from churchit.church_people import celebrations
 from churchit.church_scope import church_filters
 from churchit.scripture import get_printable_passage
-
-TIME_FORMAT = "h:mm a"
+from churchit.utils import link_title
 
 
 class BulletinSections:
@@ -55,17 +55,7 @@ class BulletinSections:
 	@property
 	def order_of_worship(self):
 		"""The function's schedule as (time, title, detail) rows."""
-		rows = []
-		for item in self.function_doc.schedule:
-			title = link_title(item.item_type, item.item) if item.item else None
-			rows.append(
-				frappe._dict(
-					time=format_datetime(item.start, TIME_FORMAT) if item.start else None,
-					title=title or item.description,
-					detail=(item.description or item.item_type) if title else None,
-				)
-			)
-		return rows
+		return get_schedule_rows(self.function_doc)
 
 	@property
 	def church_roles(self):
@@ -203,9 +193,3 @@ def position_holders(position_type, on_date, church=None):
 	if church:
 		query = query.where(Person.church == church)
 	return query.run(pluck=True)
-
-
-def link_title(doctype, name):
-	"""The record's title, or its name for doctypes without a title field."""
-	title_field = frappe.get_meta(doctype).title_field
-	return (frappe.db.get_value(doctype, name, title_field) if title_field else None) or name

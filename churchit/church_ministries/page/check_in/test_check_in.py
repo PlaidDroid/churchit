@@ -12,7 +12,7 @@ from churchit.church_ministries.page.check_in.check_in import (
 	search_people,
 	undo_check_in,
 )
-from churchit.tests.helpers import make_function, make_person
+from churchit.tests.helpers import make_function, make_person, make_primary_contact
 
 
 class TestCheckInStation(FrappeTestCase):
@@ -23,12 +23,13 @@ class TestCheckInStation(FrappeTestCase):
 		cls.family = frappe.get_doc({"doctype": "Family", "family_name": "_Test Zebrastripe"}).insert(
 			ignore_permissions=True
 		)
-		cls.parent = make_person(
-			"Zed",
-			"Zebrastripe",
-			family=cls.family.name,
-			is_head_of_household=1,
-			phones=[{"phone_number": "(555) 010-9876", "is_primary": 1}],
+		cls.parent = make_primary_contact(
+			make_person(
+				"Zed",
+				"Zebrastripe",
+				family=cls.family.name,
+				phones=[{"phone_number": "(555) 010-9876", "is_primary": 1}],
+			)
 		)
 		cls.child = make_person("Zoe", "Zebrastripe", family=cls.family.name, photo="/files/zoe.jpg")
 		cls.loner = make_person("Zack", "Zebraless")

@@ -8,14 +8,15 @@ from churchit.tests.helpers import RollbackEachTest, ensure_user, make_person
 
 
 class TestGroup(RollbackEachTest):
-	def setUp(self):
-		super().setUp()
-		self.member = make_person("_Test Group", "Member")
-		self.member.append("emails", {"email_address": "_test_group_member@example.com"})
-		self.member.save(ignore_permissions=True)
-		self.outsider = make_person("_Test Group", "Outsider")
-		self.user = ensure_user("_test_group_member@example.com", "_Test Group Member")
-		frappe.db.set_value("Person", self.member.name, "user", self.user)
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.member = make_person("_Test Group", "Member")
+		cls.member.append("emails", {"email_address": "_test_group_member@example.com"})
+		cls.member.save(ignore_permissions=True)
+		cls.outsider = make_person("_Test Group", "Outsider")
+		cls.user = ensure_user("_test_group_member@example.com", "_Test Group Member")
+		frappe.db.set_value("Person", cls.member.name, "user", cls.user)
 
 	def _make_group(self, name, members=(), **values):
 		group = frappe.get_doc({"doctype": "Group", "group_name": name, **values})

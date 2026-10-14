@@ -4,6 +4,8 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from churchit.tests.helpers import make_primary_contact
+
 
 class TestFamily(FrappeTestCase):
 	def _make_person(self, first_name, **values):
@@ -11,18 +13,32 @@ class TestFamily(FrappeTestCase):
 			ignore_permissions=True
 		)
 
-	def test_head_of_household_spouse_is_labelled_in_members(self):
+	def _labels(self, family_name):
+		return {
+			member.member: member.relationship_to_primary_contact
+			for member in frappe.get_doc("Family", family_name).members
+		}
+
+	def test_primary_contact_and_spouse_are_labelled_in_members(self):
 		family = frappe.get_doc({"doctype": "Family", "family_name": "Labelled Household"}).insert(
 			ignore_permissions=True
 		)
-		head = self._make_person("Head", gender="Male", family=family.name, is_head_of_household=1)
+		head = make_primary_contact(self._make_person("Head", gender="Male", family=family.name))
 		wife = self._make_person("Wife", gender="Female", family=family.name)
+		head.reload()
 		head.spouse = wife.name
-		head.is_married = 1
+		head.marital_status = "Married"
 		head.save(ignore_permissions=True)
 
-		labels = {m.member: m.relationship_to_head for m in frappe.get_doc("Family", family.name).members}
-		self.assertEqual(labels, {head.name: None, wife.name: "Wife"})
+		self.assertEqual(self._labels(family.name), {head.name: "Husband", wife.name: "Wife"})
+
+	def test_primary_contact_must_be_a_member(self):
+		outsider = self._make_person("Outsider")
+		family = frappe.get_doc(
+			{"doctype": "Family", "family_name": "Closed Household", "primary_contact": outsider.name}
+		)
+
+		self.assertRaises(frappe.ValidationError, family.insert, ignore_permissions=True)
 
 	def test_adding_member_sets_person_family(self):
 		person = self._make_person("Linked")
@@ -45,172 +61,101 @@ class TestFamily(FrappeTestCase):
 		self.assertIsNone(frappe.db.get_value("Person", person.name, "family"))
 
 	def _make_household(self, family_name):
-		"""A father as head, his linked wife, and two sons labelled on the Family."""
+		"""A father as primary contact, his linked wife, his mother and two sons labelled on the Family."""
 		family = frappe.get_doc({"doctype": "Family", "family_name": family_name}).insert(
 			ignore_permissions=True
 		)
-		head = self._make_person("Dad", gender="Male", family=family.name, is_head_of_household=1)
-		mom = self._make_person("Mom", gender="Female", family=family.name, is_married=1, spouse=head.name)
+		dad = make_primary_contact(self._make_person("Dad", gender="Male", family=family.name))
+		mom = self._make_person(
+			"Mom", gender="Female", family=family.name, marital_status="Married", spouse=dad.name
+		)
+		gran = self._make_person("Gran", gender="Female", family=family.name)
 		bob = self._make_person("Bob", gender="Male", family=family.name)
 		bill = self._make_person("Bill", gender="Male", family=family.name)
 		family.reload()
+		labels = {gran.name: "Mother", bob.name: "Son", bill.name: "Son"}
 		for member in family.members:
-			if member.member in (bob.name, bill.name):
-				member.relationship_to_head = "Son"
-		family.save(ignore_permissions=True)
-		return family, head, mom, bob, bill
-
-	def _relations(self, person):
-		return {
-			row.person: (row.type, row.from_family) for row in frappe.get_doc("Person", person.name).relations
-		}
-
-	def test_family_labels_fill_in_relations(self):
-		_family, head, mom, bob, bill = self._make_household("Relations Household")
-
-		self.assertEqual(
-			self._relations(bob),
-			{head.name: ("Father", 1), mom.name: ("Mother", 1), bill.name: ("Brother", 1)},
-		)
-		self.assertEqual(
-			self._relations(head), {mom.name: ("Wife", 0), bob.name: ("Son", 1), bill.name: ("Son", 1)}
-		)
-		self.assertEqual(
-			self._relations(mom), {head.name: ("Husband", 0), bob.name: ("Son", 1), bill.name: ("Son", 1)}
-		)
-
-	def test_relation_entered_by_hand_wins(self):
-		_family, _head, _mom, bob, bill = self._make_household("Hand Household")
-		bob = frappe.get_doc("Person", bob.name)
-		bob.relations = [row for row in bob.relations if row.person != bill.name]
-		bob.append("relations", {"person": bill.name, "type": "Stepbrother"})
-		bob.save(ignore_permissions=True)
-
-		self.assertEqual(self._relations(bob)[bill.name], ("Stepbrother", 0))
-
-	def test_unticking_from_family_keeps_one_row(self):
-		_family, _head, _mom, bob, bill = self._make_household("Untick Household")
-		bob = frappe.get_doc("Person", bob.name)
-		row = next(row for row in bob.relations if row.person == bill.name)
-		row.from_family = 0
-		row.type = "Stepbrother"
-		bob.save(ignore_permissions=True)
-
-		rows = [row for row in frappe.get_doc("Person", bob.name).relations if row.person == bill.name]
-		self.assertEqual([(row.type, row.from_family) for row in rows], [("Stepbrother", 0)])
-		self.assertEqual(self._relations(bill)[bob.name], ("Stepbrother", 1))
-
-	def _correct_by_hand(self, person, other, relation_type):
-		person = frappe.get_doc("Person", person.name)
-		row = next(row for row in person.relations if row.person == other.name)
-		row.from_family = 0
-		row.type = relation_type
-		person.save(ignore_permissions=True)
-
-	def test_stepfather_gives_the_other_side_stepson(self):
-		_family, head, _mom, bob, _bill = self._make_household("Step Household")
-		self._correct_by_hand(bob, head, "Stepfather")
-
-		self.assertEqual(self._relations(head)[bob.name], ("Stepson", 1))
-
-	def test_fiancee_gives_the_other_side_fiance(self):
-		family, _head, _mom, bob, _bill = self._make_household("Engaged Household")
-		for relation_type in ("Fiancé", "Fiancée"):
-			if not frappe.db.exists("Person Relation Type", relation_type):
-				frappe.get_doc({"doctype": "Person Relation Type", "type": relation_type}).insert(
-					ignore_permissions=True
-				)
-		fay = self._make_person("Fay", gender="Female", family=family.name)
-		bob = frappe.get_doc("Person", bob.name)
-		bob.append("relations", {"person": fay.name, "type": "Fiancée"})
-		bob.save(ignore_permissions=True)
-
-		self.assertEqual(self._relations(fay)[bob.name], ("Fiancé", 1))
-
-	def test_relation_with_no_reverse_type_leaves_the_other_side_blank(self):
-		_family, head, _mom, bob, _bill = self._make_household("Reverse Household")
-		if not frappe.db.exists("Person Relation Type", "Godfather"):
-			frappe.get_doc({"doctype": "Person Relation Type", "type": "Godfather"}).insert(
-				ignore_permissions=True
+			member.relationship_to_primary_contact = labels.get(
+				member.member, member.relationship_to_primary_contact
 			)
-		self._correct_by_hand(bob, head, "Godfather")
+		family.save(ignore_permissions=True)
+		return family, dad, mom, gran, bob, bill
 
-		self.assertNotIn(bob.name, self._relations(head))
+	def test_changing_primary_contact_relates_members_to_them_and_renames_the_family(self):
+		family, dad, mom, gran, bob, bill = self._make_household("Doe - Dad")
+		family.reload()
+		family.primary_contact = mom.name
+		frappe.local.message_log = []
+		family.save(ignore_permissions=True)
 
-	def test_sons_wife_is_labelled_and_related_as_an_in_law(self):
-		family, head, mom, bob, bill = self._make_household("In-law Household")
-		jane = self._make_person("Jane", gender="Female")
-		bob = frappe.get_doc("Person", bob.name)
-		bob.is_married = 1
-		bob.spouse = jane.name
-		bob.save(ignore_permissions=True)
-
-		labels = {m.member: m.relationship_to_head for m in frappe.get_doc("Family", family.name).members}
-		self.assertEqual(labels[jane.name], "Daughter-in-law")
-		self.assertEqual(self._relations(head)[jane.name], ("Daughter-in-law", 1))
-		self.assertEqual(self._relations(mom)[jane.name], ("Daughter-in-law", 1))
-		self.assertEqual(self._relations(bill)[jane.name], ("Sister-in-law", 1))
 		self.assertEqual(
-			self._relations(jane),
+			self._labels(family.name),
 			{
-				bob.name: ("Husband", 0),
-				head.name: ("Father-in-law", 1),
-				mom.name: ("Mother-in-law", 1),
-				bill.name: ("Brother-in-law", 1),
+				dad.name: "Husband",
+				mom.name: "Wife",
+				gran.name: "Mother-in-law",
+				bob.name: "Son",
+				bill.name: "Son",
+			},
+		)
+		self.assertEqual(family.family_name, "Doe - Mom")
+		self.assertIn("Doe - Mom", str(frappe.local.message_log))
+
+	def test_a_son_as_primary_contact_relates_his_parents_grandmother_and_brother(self):
+		family, dad, mom, gran, bob, bill = self._make_household("Son - Dad")
+		family.reload()
+		family.primary_contact = bob.name
+		family.save(ignore_permissions=True)
+
+		self.assertEqual(
+			self._labels(family.name),
+			{
+				dad.name: "Father",
+				mom.name: "Mother",
+				gran.name: "Grandmother",
+				bob.name: None,
+				bill.name: "Brother",
 			},
 		)
 
-	def test_leaving_family_keeps_its_relations_as_hand_entered(self):
-		_family, head, mom, bob, bill = self._make_household("Leaving Household")
-		bill = frappe.get_doc("Person", bill.name)
-		bill.family = None
-		bill.save(ignore_permissions=True)
+	def test_a_relationship_that_cannot_be_worked_out_is_cleared_and_named(self):
+		family, _dad, mom, _gran, _bob, _bill = self._make_household("Cousin - Dad")
+		cal = self._make_person("Cal", gender="Male", family=family.name)
+		family.reload()
+		for member in family.members:
+			if member.member == cal.name:
+				member.relationship_to_primary_contact = "Cousin"
+		family.primary_contact = mom.name
+		frappe.local.message_log = []
+		family.save(ignore_permissions=True)
 
-		self.assertEqual(
-			self._relations(bill),
-			{head.name: ("Father", 0), mom.name: ("Mother", 0), bob.name: ("Brother", 0)},
-		)
-		self.assertEqual(self._relations(bob)[bill.name], ("Brother", 0))
-		self.assertEqual(self._relations(head)[bill.name], ("Son", 0))
+		self.assertIsNone(self._labels(family.name)[cal.name])
+		self.assertIn("Set the relationship by hand for: Cal.", str(frappe.local.message_log))
 
-	def test_deleting_a_member_removes_the_rows_about_them(self):
-		_family, head, _mom, bob, bill = self._make_household("Deleting Household")
-		frappe.delete_doc("Person", bill.name, ignore_permissions=True)
+	def test_sons_wife_is_labelled_as_an_in_law(self):
+		family, _dad, _mom, _gran, bob, _bill = self._make_household("In-law Household")
+		jane = self._make_person("Jane", gender="Female")
+		bob = frappe.get_doc("Person", bob.name)
+		bob.marital_status = "Married"
+		bob.spouse = jane.name
+		bob.save(ignore_permissions=True)
 
-		self.assertNotIn(bill.name, self._relations(bob))
-		self.assertNotIn(bill.name, self._relations(head))
+		self.assertEqual(self._labels(family.name)[jane.name], "Daughter-in-law")
 
 	def test_married_son_starts_his_own_family_with_his_wife(self):
-		family, head, _mom, bob, _bill = self._make_household("Parents Household")
+		family, _dad, _mom, _gran, bob, _bill = self._make_household("Parents Household")
 		jane = self._make_person("Jane", gender="Female")
 		bob = frappe.get_doc("Person", bob.name)
 		bob.last_name = "Parents"
-		bob.is_married = 1
+		bob.marital_status = "Married"
 		bob.spouse = jane.name
 		bob.save(ignore_permissions=True)
 
 		bob.new_family_from_person()
 
 		self.assertNotEqual(bob.family, family.name)
-		self.assertEqual(
-			{m.member for m in frappe.get_doc("Family", bob.family).members}, {bob.name, jane.name}
-		)
-		self.assertNotIn(bob.name, {m.member for m in frappe.get_doc("Family", family.name).members})
-		self.assertNotIn(jane.name, {m.member for m in frappe.get_doc("Family", family.name).members})
+		self.assertEqual(frappe.db.get_value("Family", bob.family, "primary_contact"), bob.name)
+		self.assertEqual(self._labels(bob.family), {bob.name: "Husband", jane.name: "Wife"})
+		self.assertNotIn(bob.name, self._labels(family.name))
+		self.assertNotIn(jane.name, self._labels(family.name))
 		self.assertEqual(frappe.db.get_value("Person", jane.name, "family"), bob.family)
-		labels = {m.member: m.relationship_to_head for m in frappe.get_doc("Family", bob.family).members}
-		self.assertEqual(labels[jane.name], "Wife")
-		self.assertEqual(self._relations(bob)[head.name], ("Father", 0))
-		self.assertEqual(self._relations(jane)[head.name], ("Father-in-law", 0))
-
-	def test_unknown_gender_gets_no_relation(self):
-		family, head, _mom, bob, _bill = self._make_household("Unknown Household")
-		child = self._make_person("Kid", gender="Unknown", family=family.name)
-		family.reload()
-		for member in family.members:
-			if member.member == child.name:
-				member.relationship_to_head = "Son"
-		family.save(ignore_permissions=True)
-
-		self.assertNotIn(child.name, self._relations(bob))
-		self.assertEqual(self._relations(head)[child.name], ("Son", 1))

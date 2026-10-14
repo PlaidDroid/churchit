@@ -1,8 +1,6 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
-import frappe
-
 ROLE_TYPES = {
 	"spouse": ("Husband", "Wife"),
 	"child": ("Son", "Daughter"),
@@ -23,8 +21,9 @@ ROLE_TYPES = {
 }
 ROLE_OF_TYPE = {relation_type: role for role, types in ROLE_TYPES.items() for relation_type in types}
 
-# What someone is to a person who has this role to them. The spouse link owns Husband/Wife.
+# What someone is to a person who has this role to them.
 INVERSE_ROLES = {
+	"spouse": "spouse",
 	"child": "parent",
 	"parent": "child",
 	"sibling": "sibling",
@@ -42,15 +41,15 @@ INVERSE_ROLES = {
 	"fiance": "fiance",
 }
 
-# What a member's spouse is to the head, from that member's role.
+# What a member's spouse is to the primary contact, from that member's role.
 SPOUSE_ROLES = {
 	"child": "child_in_law",
 	"child_in_law": "child",
 	"sibling": "sibling_in_law",
 }
 
-# (person's role, other's role) -> what the other is to the person, both roles read against the head.
-# Pairs left out are ambiguous (two grandchildren may be siblings or cousins), so they get no row.
+# (person's role, other's role) -> what the other is to the person, both roles read against the primary
+# contact. Pairs left out are ambiguous (two grandchildren may be siblings or cousins), so they get none.
 MEMBER_ROLE_FOR = {
 	("child", "child"): "sibling",
 	("child", "spouse"): "parent",
@@ -65,6 +64,7 @@ MEMBER_ROLE_FOR = {
 	("spouse", "sibling"): "sibling_in_law",
 	("sibling", "spouse"): "sibling_in_law",
 	("spouse", "parent"): "parent_in_law",
+	("spouse", "parent_in_law"): "parent",
 	("spouse", "grandchild"): "grandchild",
 	("grandchild", "spouse"): "grandparent",
 	("spouse", "child_in_law"): "child_in_law",
@@ -74,74 +74,26 @@ MEMBER_ROLE_FOR = {
 }
 
 
-class FamilyRelations:
-	"""Relations rows that a Family's 'Relationship to Head' labels imply between its members."""
+def get_rebased_labels(labels, genders, old_contact, new_contact):
+	"""{member: relationship to *new_contact*}, worked out from *labels*, their relationships to *old_contact*.
 
-	def __init__(self, family):
-		self.head = family.head_of_household
-		self.labels = {
-			member.member: member.relationship_to_head for member in family.members if member.member
-		}
-		self.genders = dict(
-			# church-scope: only this family's own members, by name
-			frappe.get_all(
-				"Person", filters={"name": ["in", list(self.labels)]}, fields=["name", "gender"], as_list=True
-			)
-		)
-		self.relation_types = set(frappe.get_all("Person Relation Type", pluck="name"))
-		self.hand_entered = self.get_hand_entered_types()
-
-	def sync(self):
-		for person in self.labels:
-			set_family_relations(person, self.get_relations(person))
-
-	def get_relations(self, person):
-		"""(other person, relation type) pairs for *person*'s Relations table."""
-		relations = []
-		for other in self.labels:
-			relation_type = other != person and self.get_relation_type(person, other)
-			if relation_type in self.relation_types:
-				relations.append((other, relation_type))
-		return relations
-
-	def get_hand_entered_types(self):
-		"""{(person, other): relation type} for rows members entered by hand for each other."""
-		members = list(self.labels)
-		rows = frappe.get_all(
-			"Person Relation",
-			filters={
-				"parenttype": "Person",
-				"parent": ["in", members],
-				"person": ["in", members],
-				"from_family": 0,
-			},
-			fields=["parent", "person", "type"],
-		)
-		return {(row.parent, row.person): row.type for row in rows}
-
-	def get_relation_type(self, person, other):
-		"""What *other* is to *person*, or None when the labels do not say.
-
-		A row *other* entered by hand for *person* wins over the labels, so both sides agree.
-		"""
-		entered_by_other = self.hand_entered.get((other, person))
-		if entered_by_other:
-			role = INVERSE_ROLES.get(ROLE_OF_TYPE.get(entered_by_other))
-		elif person == self.head:
-			label = self.labels[other]
-			return None if ROLE_OF_TYPE.get(label) == "spouse" else label
-		elif other == self.head:
-			role = INVERSE_ROLES.get(self.get_role(person))
+	A relationship that cannot be worked out is None, and so is the new contact's own.
+	"""
+	new_role = ROLE_OF_TYPE.get(labels.get(new_contact))
+	rebased = {new_contact: None}
+	for member, label in labels.items():
+		if member == new_contact:
+			continue
+		if member == old_contact:
+			role = INVERSE_ROLES.get(new_role)
 		else:
-			role = MEMBER_ROLE_FOR.get((self.get_role(person), self.get_role(other)))
-		return get_gendered_type(role, self.genders.get(other))
-
-	def get_role(self, person):
-		return ROLE_OF_TYPE.get(self.labels[person])
+			role = MEMBER_ROLE_FOR.get((new_role, ROLE_OF_TYPE.get(label)))
+		rebased[member] = get_gendered_type(role, genders.get(member))
+	return rebased
 
 
 def get_spouse_label(partner_label, gender):
-	"""Relationship to Head for the spouse of a member labelled *partner_label*, e.g. a Son's wife is a Daughter-in-law."""
+	"""Relationship to the primary contact for the spouse of a member labelled *partner_label*, e.g. a Son's wife is a Daughter-in-law."""
 	return get_gendered_type(SPOUSE_ROLES.get(ROLE_OF_TYPE.get(partner_label)), gender)
 
 
@@ -153,32 +105,3 @@ def get_gendered_type(role, gender):
 	if male == female:
 		return male
 	return {"Male": male, "Female": female}.get(gender)
-
-
-def keep_relations_of(leavers):
-	"""Make From Family rows to and from people leaving the family hand-entered, since the relationships still hold."""
-	if not leavers:
-		return
-	for fieldname in ("parent", "person"):
-		frappe.db.set_value(
-			"Person Relation",
-			{"parenttype": "Person", fieldname: ["in", leavers], "from_family": 1},
-			"from_family",
-			0,
-		)
-
-
-def set_family_relations(person_name, relations):
-	"""Replace *person_name*'s From Family rows with *relations*. A hand-entered row for the same person wins."""
-	person = frappe.get_doc("Person", person_name)
-	hand_entered = [row for row in person.relations if not row.from_family]
-	people_entered_by_hand = {row.person for row in hand_entered}
-	relations = sorted(relation for relation in relations if relation[0] not in people_entered_by_hand)
-	if relations == sorted((row.person, row.type) for row in person.relations if row.from_family):
-		return
-	person.set("relations", hand_entered)
-	for other, relation_type in relations:
-		person.append("relations", {"person": other, "type": relation_type, "from_family": 1})
-	for idx, row in enumerate(person.relations, 1):
-		row.idx = idx
-	person.update_child_table("relations")

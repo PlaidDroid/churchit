@@ -66,8 +66,18 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Recurring functions: Functions are automatically created based on a given frequency.
 - Calendar view (Private & Public)
 - Attendance types (Confirmed, Assumed, Absent, etc.)
-- Song tracking for worship services
+- Song tracking for worship services, and a Song Usage report with CCLI numbers for CCLI reporting
 - Reports: attendance by function, attendance by person, function count by type
+
+### Ministry Teams
+- Ministry team positions (e.g. Greeter, Usher, Nursery Worker) with the people who can fill each one, and an optional background check rule
+- Team needs on each function, copied to recurring functions from their template
+- Assignments that ask one person to fill one position, with warnings for blocked dates, double booking, missing background checks and missing email addresses
+- Request and reminder emails with accept and decline links that work without signing in, and an email to the ministry's coordinator for each decline
+- A portal page where members answer their requests, see the schedule of each function they serve at, and block out the dates they cannot serve
+- A calendar link that shows each member the functions they accepted in their phone or computer calendar
+- Email the Team on a function: one email, in BCC, to everyone asked to serve who has not declined
+- Ministry Team Schedule report: what each function needs, who is asked, and which places are still open
 
 ### Sermons & Presentations
 - Sermon management with slides referencing any church document

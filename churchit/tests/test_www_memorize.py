@@ -3,34 +3,38 @@
 
 import frappe
 from frappe.exceptions import PermissionError, ValidationError
-from frappe.tests.utils import FrappeTestCase
 
-from churchit.tests.helpers import ensure_user, make_translation
+from churchit.tests.helpers import RollbackEachTest, ensure_user, make_translation
 from churchit.www.memorize import index, session
 
 
-class TestMemorizePages(FrappeTestCase):
-	def setUp(self):
-		self.translation = make_translation(self, "_TPG", [("GEN", 1, 1, "In the beginning God created.")])
-		self.user = ensure_user("_test_page_learner@example.com", "_Test Page Learner")
-		self.other = ensure_user("_test_page_other@example.com", "_Test Page Other")
-		frappe.db.delete("Bible Memory Item", {"translation": self.translation})
-		self.item = frappe.get_doc(
+class TestMemorizePages(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.translation = make_translation(cls, "_TPG", [("GEN", 1, 1, "In the beginning God created.")])
+		cls.user = ensure_user("_test_page_learner@example.com", "_Test Page Learner")
+		cls.other = ensure_user("_test_page_other@example.com", "_Test Page Other")
+		frappe.db.delete("Bible Memory Item", {"translation": cls.translation})
+		cls.item = frappe.get_doc(
 			{
 				"doctype": "Bible Memory Item",
 				"bible_reference": "Genesis 1:1",
-				"translation": self.translation,
-				"user": self.user,
-				"assigned_by": self.other,
+				"translation": cls.translation,
+				"user": cls.user,
+				"assigned_by": cls.other,
 				"progress": 40,
 				"word_mistakes": {"2": 1},
 			}
 		).insert(ignore_permissions=True)
+
+	def setUp(self):
+		super().setUp()
 		frappe.set_user(self.user)
 		frappe.local.form_dict = frappe._dict()
 
 	def tearDown(self):
-		frappe.set_user("Administrator")
+		super().tearDown()
 		frappe.local.form_dict = frappe._dict()
 
 	def test_guests_are_sent_to_login(self):

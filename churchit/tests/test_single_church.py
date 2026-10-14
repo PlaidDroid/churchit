@@ -15,7 +15,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_foundations.doctype.church.church import selected_church_name
-from churchit.church_scope import is_multi_church
+from churchit.church_scope import is_multi_church, scoped
 from churchit.tests.helpers import ensure, ensure_root_church, force_single_church, make_function
 from churchit.tests.test_reports_execute import report_modules
 
@@ -42,6 +42,15 @@ class TestSingleChurch(FrappeTestCase):
 			ignore_permissions=True
 		)
 		self.assertFalse(person.church)
+
+	def test_a_report_asked_for_the_one_church_still_lists_records_saved_without_one(self):
+		person = frappe.get_doc({"doctype": "Person", "first_name": "_Test Single Church Scope"}).insert(
+			ignore_permissions=True
+		)
+		Person = frappe.qb.DocType("Person")
+		query = frappe.qb.from_(Person).select(Person.name).where(Person.name == person.name)
+
+		self.assertEqual(scoped(query, Person, {"church": self.root}).run(pluck=True), [person.name])
 
 	def test_the_one_church_is_what_every_page_and_letterhead_resolves_to(self):
 		self.assertEqual(selected_church_name(), self.root)

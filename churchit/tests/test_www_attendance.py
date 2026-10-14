@@ -4,30 +4,31 @@
 """The member-facing /attendance page: a member sees their own attendance and no one else's."""
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, getdate
 
 from churchit.church_ministries.member_attendance import change_own_attendance
-from churchit.tests.helpers import ensure_user, make_function, make_person
+from churchit.tests.helpers import RollbackEachTest, ensure_user, make_function, make_person
 from churchit.www.attendance import get_context
 
 
-class AttendanceTestCase(FrappeTestCase):
+class AttendanceTestCase(RollbackEachTest):
 	"""A portal member and a stranger, with Portal Settings set by each test class."""
 
 	members_can_change_attendance = 0
 
-	def setUp(self):
-		frappe.local.form_dict = frappe._dict()
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
 		frappe.db.set_single_value(
-			"Portal Settings", "members_can_change_attendance", self.members_can_change_attendance
+			"Portal Settings", "members_can_change_attendance", cls.members_can_change_attendance
 		)
-		self.email = ensure_user("_test_attendance_member@example.com", "Attendance")
-		self.person = make_person("_Test Portal", "Attender", user=self.email)
-		self.stranger = make_person("_Test Portal", "Stranger")
+		cls.email = ensure_user("_test_attendance_member@example.com", "Attendance")
+		cls.person = make_person("_Test Portal", "Attender", user=cls.email)
+		cls.stranger = make_person("_Test Portal", "Stranger")
 
-	def tearDown(self):
-		frappe.set_user("Administrator")
+	def setUp(self):
+		super().setUp()
+		frappe.local.form_dict = frappe._dict()
 
 	def _function(self, days_from_today, attendance):
 		return make_function(

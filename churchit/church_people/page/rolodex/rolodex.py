@@ -20,7 +20,6 @@ PERSON_FIELDS = [
 	"full_name",
 	"photo",
 	"family",
-	"is_head_of_household",
 	"membership",
 	"membership_status",
 	"age",
@@ -46,6 +45,9 @@ def get_directory():
 		"Group", fields=["name", "group_name"], order_by="group_name asc", limit_page_length=0
 	)
 	families = get_families({person.family for person in people if person.family})
+	primary_contacts = {family.primary_contact for family in families}
+	for person in people:
+		person.is_primary_contact = person.name in primary_contacts
 	add_contacts(people, "Person")
 	add_contacts(families, "Family")
 	add_card_backs(people, groups)
@@ -84,7 +86,7 @@ def get_families(names):
 	return frappe.get_list(
 		"Family",
 		filters={"name": ("in", list(names))},
-		fields=["name", "family_name", "photo"],
+		fields=["name", "family_name", "photo", "primary_contact"],
 		limit_page_length=0,
 	)
 

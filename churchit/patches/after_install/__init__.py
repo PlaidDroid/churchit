@@ -14,6 +14,9 @@ import frappe
 from churchit.church_missions.doctype.missionary_status.missionary_status import (
 	DEFAULT_STATUSES as DEFAULT_MISSIONARY_STATUSES,
 )
+from churchit.church_people.doctype.marital_status.marital_status import (
+	DEFAULT_STATUSES as DEFAULT_MARITAL_STATUSES,
+)
 from churchit.church_people.membership import MEMBER_STATUSES, MEMBERSHIP_TYPES
 
 # We define this here so we can import it from sample_data
@@ -31,6 +34,7 @@ def execute():
 	_create_contact_types()
 	_create_member_statuses()
 	_create_membership_types()
+	_create_marital_statuses()
 	_create_function_types()
 	_create_function_attendance_types()
 	_create_position_types()
@@ -208,6 +212,11 @@ def _create_member_statuses():
 def _create_membership_types():
 	for membership_type in MEMBERSHIP_TYPES:
 		_insert_if_missing("Membership Type", {"type": membership_type}, type=membership_type)
+
+
+def _create_marital_statuses():
+	for status, description in DEFAULT_MARITAL_STATUSES.items():
+		_insert_if_missing("Marital Status", {"status": status}, status=status, description=description)
 
 
 def _create_function_types():
@@ -745,6 +754,7 @@ def _setup_portal_settings():
 	items = [
 		("Function Sign-Ups", "function-sign-up", "Function Sign-Up", "Church User"),
 		("Attendance", "attendance", "Function Attendance", "Church User"),
+		("Ministry Team", "ministry-team", "Ministry Team Assignment", "Church User"),
 		("Bible", "bible", "Bible Translation", "Church User"),
 		("Bible Memory", "memorize", "Bible Memory Item", "Church User"),
 		("Prayer Requests", "prayer-request", "Prayer Request", "Church User"),

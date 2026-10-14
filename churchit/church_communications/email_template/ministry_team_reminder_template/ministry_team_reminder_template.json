@@ -1,0 +1,12 @@
+{
+ "creation": "2026-10-11 12:00:00.000000",
+ "doctype": "Email Template",
+ "modified": "2026-10-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "name": "Ministry Team Reminder",
+ "owner": "Administrator",
+ "reference_doctype": "Ministry Team Assignment",
+ "response_html": "<p>Dear {{ first_name | e }},</p>\n\n<p>This is a reminder that you serve as <strong>{{ position | e }}</strong> ({{ ministry | e }}) at {{ function | e }} on {{ date }}{% if time %} at {{ time }}{% endif %}.</p>\n\n{% if status == \"Pending\" %}\n<p>You have not answered yet. <a href=\"{{ response_link }}\">Accept or decline</a></p>\n{% else %}\n<p>If you can no longer serve, <a href=\"{{ response_link }}\">let us know</a>.</p>\n{% endif %}\n\n<p>Thank you for serving!</p>",
+ "subject": "Reminder: {{ position }} at {{ function }} on {{ date }}",
+ "use_html": 1
+}

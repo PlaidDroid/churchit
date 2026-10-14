@@ -60,7 +60,7 @@ class TestCelebrations(FrappeTestCase):
 			"Open",
 			"_Test Hidden",
 			membership=self.member,
-			is_married=1,
+			marital_status="Married",
 			anniversary="2010-12-29",
 			spouse=partner.name,
 		)
@@ -81,7 +81,7 @@ class TestCelebrations(FrappeTestCase):
 			"Matt",
 			"_Test Smith",
 			membership=self.member,
-			is_married=1,
+			marital_status="Married",
 			anniversary="2010-12-29",
 			spouse=sarah.name,
 		)
@@ -90,7 +90,7 @@ class TestCelebrations(FrappeTestCase):
 			"Ben",
 			"_Test Brown",
 			membership=self.member,
-			is_married=1,
+			marital_status="Married",
 			anniversary="2005-01-01",
 			spouse=ann.name,
 		)

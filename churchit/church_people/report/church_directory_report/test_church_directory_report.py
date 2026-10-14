@@ -16,7 +16,14 @@ from churchit.church_people.report.church_directory_report.church_directory_repo
 	get_directory_html,
 	get_paginated_directory,
 )
-from churchit.tests.helpers import ensure, ensure_root_church, make_address, make_person, make_translation
+from churchit.tests.helpers import (
+	ensure,
+	ensure_root_church,
+	make_address,
+	make_person,
+	make_primary_contact,
+	make_translation,
+)
 
 
 class TestChurchDirectoryReport(FrappeTestCase):
@@ -147,20 +154,21 @@ class TestChurchDirectoryReport(FrappeTestCase):
 	def test_hidden_people_are_left_out_everywhere(self):
 		family = make_family("_Test Hidden - Hal", "_Test Hidden Street")
 		born = [{"event_type": "Birth", "date": "1980-05-05"}]
-		hal = make_person(
-			"_Test Hal",
-			"Hidden",
-			family=family.name,
-			is_head_of_household=1,
-			hide_from_directory=1,
-			life_events=born,
+		hal = make_primary_contact(
+			make_person(
+				"_Test Hal",
+				"Hidden",
+				family=family.name,
+				hide_from_directory=1,
+				life_events=born,
+			)
 		)
 		make_person(
 			"_Test Wanda",
 			"Hidden",
 			family=family.name,
 			spouse=hal.name,
-			is_married=1,
+			marital_status="Married",
 			anniversary="2005-06-06",
 			life_events=born,
 		)
@@ -181,12 +189,17 @@ class TestChurchDirectoryReport(FrappeTestCase):
 
 	def test_anniversaries_name_only_the_spouses(self):
 		family = make_family("_Test Wed - Carl", "_Test Wed Street")
-		carl = make_person("_Test Carl", "Wed", family=family.name, is_head_of_household=1)
+		carl = make_primary_contact(make_person("_Test Carl", "Wed", family=family.name))
 		make_person(
-			"_Test Dana", "Wed", family=family.name, spouse=carl.name, is_married=1, anniversary="2003-03-03"
+			"_Test Dana",
+			"Wed",
+			family=family.name,
+			spouse=carl.name,
+			marital_status="Married",
+			anniversary="2003-03-03",
 		)
 		eve = make_person("_Test Eve", "Pine")
-		make_person("_Test Finn", "Oak", spouse=eve.name, is_married=1, anniversary="2004-04-04")
+		make_person("_Test Finn", "Oak", spouse=eve.name, marital_status="Married", anniversary="2004-04-04")
 
 		html = self.render(show_anniversaries="1")
 
@@ -195,33 +208,61 @@ class TestChurchDirectoryReport(FrappeTestCase):
 
 	def test_family_relationships_are_printed_only_when_ticked(self):
 		family = make_family("_Test Kin - Gil", "_Test Kin Street")
-		gil = make_person("_Test Gil", "Kin", family=family.name, is_head_of_household=1, gender="Male")
-		make_person("_Test Hope", "Kin", family=family.name, spouse=gil.name, is_married=1, gender="Female")
+		gil = make_primary_contact(make_person("_Test Gil", "Kin", family=family.name, gender="Male"))
+		make_person(
+			"_Test Hope",
+			"Kin",
+			family=family.name,
+			spouse=gil.name,
+			marital_status="Married",
+			gender="Female",
+		)
 
 		html = self.render()
-		self.assertIn('<span class="member-relation">(Head of Household)</span>', html)
+		self.assertIn('<span class="member-relation">(Husband)</span>', html)
 		self.assertIn('<span class="member-relation">(Wife)</span>', html)
-		self.assertNotIn('class="member-relation"', self.render(show_hoh="0"))
+		self.assertNotIn('class="member-relation"', self.render(show_relationships="0"))
+
+	def test_families_list_the_primary_contact_and_spouse_before_the_others(self):
+		family = make_family("_Test Order - Zed", "_Test Order Street")
+		zed = make_primary_contact(make_person("_Test Zed", "Order", family=family.name))
+		make_person("_Test Yara", "Order", family=family.name, spouse=zed.name, marital_status="Married")
+		make_person("_Test Abby", "Order", family=family.name)
+		unlisted_head = make_family("_Test Unlisted - Vic", "_Test Unlisted Street")
+		vic = make_primary_contact(
+			make_person("_Test Vic", "Unlisted", family=unlisted_head.name, hide_from_directory=1)
+		)
+		make_person(
+			"_Test Wren", "Unlisted", family=unlisted_head.name, spouse=vic.name, marital_status="Married"
+		)
+		make_person("_Test Ada", "Unlisted", family=unlisted_head.name)
+
+		html = self.render()
+
+		names = ("_Test Zed Order", "_Test Yara Order", "_Test Abby Order")
+		self.assertEqual([html.index(name) for name in names], sorted(html.index(name) for name in names))
+		self.assertLess(html.index("_Test Wren Unlisted"), html.index("_Test Ada Unlisted"))
 
 	def test_people_who_are_not_active_are_left_out_only_when_ticked(self):
 		ensure("Member Status", {"status": "Inactive"})
 		ensure("Member Status", {"status": "_Test Homebound"})
 		family = make_family("_Test Lapsed - Ivy", "_Test Lapsed Street")
 		born = [{"event_type": "Birth", "date": "1980-07-07"}]
-		ivy = make_person(
-			"_Test Ivy",
-			"Lapsed",
-			family=family.name,
-			is_head_of_household=1,
-			membership_status="Inactive",
-			life_events=born,
+		ivy = make_primary_contact(
+			make_person(
+				"_Test Ivy",
+				"Lapsed",
+				family=family.name,
+				membership_status="Inactive",
+				life_events=born,
+			)
 		)
 		make_person(
 			"_Test Abe",
 			"Lapsed",
 			family=family.name,
 			spouse=ivy.name,
-			is_married=1,
+			marital_status="Married",
 			anniversary="2001-08-08",
 		)
 		make_person("_Test Solo", "Lapsed", membership_status="_Test Homebound")
@@ -288,22 +329,23 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		for event_type in ("Birth", "Death"):
 			ensure("Life Event Type", {"type": event_type})
 		family = make_family("_Test Mourning - Walt", "_Test Mourning Street")
-		walt = make_person(
-			"_Test Walt",
-			"Mourning",
-			family=family.name,
-			is_head_of_household=1,
-			life_events=[
-				{"event_type": "Birth", "date": "1950-09-09"},
-				{"event_type": "Death", "date": "2024-01-01"},
-			],
+		walt = make_primary_contact(
+			make_person(
+				"_Test Walt",
+				"Mourning",
+				family=family.name,
+				life_events=[
+					{"event_type": "Birth", "date": "1950-09-09"},
+					{"event_type": "Death", "date": "2024-01-01"},
+				],
+			)
 		)
 		make_person(
 			"_Test Rose",
 			"Mourning",
 			family=family.name,
 			spouse=walt.name,
-			is_married=1,
+			marital_status="Married",
 			anniversary="1975-10-10",
 			life_events=[{"event_type": "Birth", "date": "1952-09-10"}],
 		)

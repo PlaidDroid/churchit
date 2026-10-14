@@ -16,7 +16,7 @@ from churchit.church_people.dashboard_chart_source.people_added import people_ad
 from churchit.church_people.number_card.anniversaries_this_week import anniversaries_this_week
 from churchit.church_people.number_card.birthdays_this_week import birthdays_this_week
 from churchit.dashboard import bucket_label, count_weekly_attendance, time_buckets
-from churchit.tests.helpers import ensure, make_function, make_person
+from churchit.tests.helpers import ensure, make_function, make_person, make_primary_contact
 
 
 class TestWeeklyAttendanceCard(FrappeTestCase):
@@ -52,14 +52,14 @@ class TestPeopleNumberCards(FrappeTestCase):
 		person.insert(ignore_permissions=True)
 		self.assertEqual(birthdays_this_week.get_count(), before + 1)
 
-	def test_anniversaries_this_week_counts_heads_of_household_only(self):
+	def test_anniversaries_this_week_counts_primary_contacts_only(self):
 		before = anniversaries_this_week.get_count()
 		anniversary = add_years(getdate(), -5)
 		family = frappe.get_doc({"doctype": "Family", "family_name": "_Test Anniversary Family"}).insert(
 			ignore_permissions=True
 		)
-		make_person(
-			"_Test Anniversary Head", anniversary=anniversary, family=family.name, is_head_of_household=1
+		make_primary_contact(
+			make_person("_Test Anniversary Head", anniversary=anniversary, family=family.name)
 		)
 		make_person("_Test Anniversary Spouse", anniversary=anniversary, family=family.name)
 		self.assertEqual(anniversaries_this_week.get_count(), before + 1)

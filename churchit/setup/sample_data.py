@@ -14,6 +14,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, get_last_day, getdate
 
+from churchit.church_people.doctype.marital_status.marital_status import MARRIED
 from churchit.church_people.membership import MEMBER, REGULAR_ATTENDER
 from churchit.patches.after_install import DEFAULT_CHURCH_NAME
 
@@ -113,7 +114,6 @@ def create_sample_data():
 	families = _create_families()
 	_assign_families(people, families)
 	_assign_spouses(people)
-	_assign_relations(people)
 	_create_person_letters(people)
 
 	agencies = _create_missionary_agencies()
@@ -635,8 +635,8 @@ _FAMILIES = [
 	("Thompson - David", ["David Thompson", "Lisa Thompson"]),
 ]
 
-# Head of household is always the first member listed
-_HEADS = {
+# The primary contact is always the first member listed
+_PRIMARY_CONTACTS = {
 	"Wilson - James": "James Wilson",
 	"Johnson - Robert": "Robert Johnson",
 	"Thompson - David": "David Thompson",
@@ -702,12 +702,11 @@ def _get_home_address_rows(key):
 
 
 def _assign_families(people, families):
-	"""Link people to their families and set head of household."""
+	"""Link people to their families and set each family's primary contact."""
 	for family_name, members in _FAMILIES:
 		family_doc_name = families.get(family_name)
 		if not family_doc_name:
 			continue
-		head_key = _HEADS.get(family_name)
 		for person_key in members:
 			person_name = people.get(person_key)
 			if not person_name:
@@ -716,8 +715,11 @@ def _assign_families(people, families):
 			if person.family == family_doc_name:
 				continue
 			person.family = family_doc_name
-			person.is_head_of_household = 1 if person_key == head_key else 0
 			person.save(ignore_permissions=True)
+		family = frappe.get_doc("Family", family_doc_name)
+		if not family.primary_contact:
+			family.primary_contact = people.get(_PRIMARY_CONTACTS[family_name])
+			family.save(ignore_permissions=True)
 
 
 def _assign_spouses(people):
@@ -730,72 +732,12 @@ def _assign_spouses(people):
 		husband = frappe.get_doc("Person", husband_name)
 		if husband.spouse:
 			continue
-		husband.is_married = 1
+		husband.marital_status = MARRIED
 		husband.spouse = wife_name
 		husband.anniversary = anniversary
 		frappe.flags.in_import = True
 		husband.save(ignore_permissions=True)
 		frappe.flags.in_import = False
-
-
-# Cross-family relationships beyond spouse. Each tuple defines the relation
-# from A's perspective; the reciprocal is added automatically using _RECIPROCAL.
-_RELATIONS = [
-	("Sarah Wilson", "Sister", "Mary Johnson"),
-	("Martha Evans", "Daughter", "Elizabeth Harper"),
-	("Thomas Reed", "Brother", "Samuel Brooks"),
-	("Michael Grant", "Daughter", "Rachel Cooper"),
-]
-
-_RECIPROCAL = {
-	"Brother": "Brother",
-	"Sister": "Sister",
-	"Father": "Son",
-	"Mother": "Son",
-	"Son": "Father",
-	"Daughter": "Father",
-	"Husband": "Wife",
-	"Wife": "Husband",
-	"Uncle": "Nephew",
-	"Aunt": "Niece",
-}
-
-
-def _assign_relations(people):
-	"""Add sample Person Relation rows linking people across families."""
-
-	def add_relation(person_key, relation_type, other_key):
-		person_name = people.get(person_key)
-		other_name = people.get(other_key)
-		if not (person_name and other_name):
-			return
-		person = frappe.get_doc("Person", person_name)
-		if any(r.person == other_name and r.type == relation_type for r in (person.relations or [])):
-			return
-		person.append("relations", {"type": relation_type, "person": other_name})
-		frappe.flags.in_import = True
-		person.save(ignore_permissions=True)
-		frappe.flags.in_import = False
-
-	# When the reciprocal depends on the OTHER person's gender (e.g. parent →
-	# Son/Daughter), look it up from the Person record.
-	gendered_reciprocals = {
-		"Father": {"Female": "Daughter", "Male": "Son"},
-		"Mother": {"Female": "Daughter", "Male": "Son"},
-		"Son": {"Female": "Mother", "Male": "Father"},
-		"Daughter": {"Female": "Mother", "Male": "Father"},
-		"Niece": {"Female": "Aunt", "Male": "Uncle"},
-		"Nephew": {"Female": "Aunt", "Male": "Uncle"},
-	}
-
-	for a_key, rel, b_key in _RELATIONS:
-		add_relation(a_key, rel, b_key)
-
-		a_name = people.get(a_key)
-		a_gender = frappe.db.get_value("Person", a_name, "gender") if a_name else None
-		reciprocal = gendered_reciprocals.get(rel, {}).get(a_gender) or _RECIPROCAL.get(rel)
-		if reciprocal:
-			add_relation(b_key, reciprocal, a_key)
 
 
 # ---------------------------------------------------------------------------

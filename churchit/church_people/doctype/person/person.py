@@ -10,17 +10,11 @@ from frappe.model.document import Document
 from frappe.utils import cstr, get_link_to_form, getdate, nowdate
 
 from churchit.church_foundations import church_access
+from churchit.church_people.doctype.marital_status.marital_status import MARRIED, WIDOWED, WITH_SPOUSE
 from churchit.church_people.member_access import refuse_member_edits_beyond_personal_details
 from churchit.church_people.membership import INACTIVE, MEMBER
 from churchit.church_scope import is_multi_church
 from churchit.contacts import primary_email, validate_contact_tables
-
-SPOUSE_RELATION_TYPES = {"Male": "Husband", "Female": "Wife"}
-
-
-def spouse_relation_type(gender):
-	"""Relation Type a person of ``gender`` is to their spouse, or None when unknown."""
-	return SPOUSE_RELATION_TYPES.get(gender)
 
 
 def years_since(date):
@@ -31,6 +25,9 @@ def years_since(date):
 
 
 class Person(Document):
+	def onload(self):
+		self.set_onload("is_primary_contact", self.is_primary_contact)
+
 	def on_update(self):
 		self.sync_church_permission()
 		self.sync_family_church()
@@ -44,10 +41,7 @@ class Person(Document):
 		one is saved, so the new one's labels see who its members are.
 		"""
 		before = self.get_doc_before_save()
-		moving_spouse = self.spouse_moving_along
-		if moving_spouse:
-			frappe.db.set_value("Person", moving_spouse, "is_head_of_household", 0)
-		spouse = moving_spouse or self.spouse_without_family
+		spouse = self.spouse_moving_along or self.spouse_without_family
 		if before and before.family and before.family != self.family:
 			self.remove_from_family(before.family, spouse)
 		if self.family:
@@ -55,10 +49,9 @@ class Person(Document):
 			for person in filter(None, (self.name, spouse)):
 				if not any(member.member == person for member in family.members):
 					family.append("members", {"member": person})
+			if self.flags.pop("leads_new_family", False):
+				family.primary_contact = self.name
 			family.save(ignore_permissions=True)
-		if self.family or (before and before.family):
-			# The Family rewrote this person's From Family relation rows.
-			self.load_children_from_db()
 
 	def remove_from_family(self, family_name, spouse=None):
 		"""Drop this person, and *spouse* when given, from *family_name*'s members, when that family still exists."""
@@ -67,7 +60,15 @@ class Person(Document):
 		family = frappe.get_doc("Family", family_name)
 		for member in [member for member in family.members if member.member in (self.name, spouse)]:
 			family.remove(member)
+		if family.primary_contact in (self.name, spouse):
+			family.primary_contact = None
 		family.save(ignore_permissions=True)
+
+	@property
+	def is_primary_contact(self):
+		return (
+			bool(self.family) and frappe.db.get_value("Family", self.family, "primary_contact") == self.name
+		)
 
 	def sync_church_permission(self):
 		"""Keep the linked user's Church permission pointed at this person's church.
@@ -83,8 +84,8 @@ class Person(Document):
 		church_access.set_user_church(self.user, self.church)
 
 	def sync_family_church(self):
-		"""Move the family with its head of household when the head changes church."""
-		if not is_multi_church() or not self.family or not self.is_head_of_household:
+		"""Move the family with its primary contact when they change church."""
+		if not is_multi_church() or not self.is_primary_contact:
 			return
 		if frappe.db.get_value("Family", self.family, "church") != self.church:
 			frappe.db.set_value("Family", self.family, "church", self.church)
@@ -116,8 +117,17 @@ class Person(Document):
 		if "Death" in added:
 			self.membership_status = INACTIVE
 			self.inactive_reason = self.inactive_reason or _("Deceased")
+			self.widow_spouse()
 		if self.membership_status != INACTIVE:
 			self.inactive_reason = None
+
+	def widow_spouse(self):
+		"""Make the spouse of a person who has died Widowed, when they are still married to them."""
+		if not self.spouse:
+			return
+		spouse = frappe.db.get_value("Person", self.spouse, ["spouse", "marital_status"], as_dict=True)
+		if spouse and spouse.spouse == self.name and spouse.marital_status == MARRIED:
+			frappe.db.set_value("Person", self.spouse, "marital_status", WIDOWED)
 
 	@property
 	def added_life_event_types(self):
@@ -130,8 +140,6 @@ class Person(Document):
 	def on_trash(self):
 		if self.spouse:
 			self.unlink_spouse(self.spouse)
-		# Leaving a family keeps its rows as hand-entered ones, which would block the delete.
-		frappe.db.delete("Person Relation", {"parenttype": "Person", "person": self.name, "from_family": 1})
 		# A bulk delete takes the Family out first, and then there is no member row left to remove.
 		if self.family:
 			self.remove_from_family(self.family)
@@ -142,55 +150,26 @@ class Person(Document):
 		# reads a primary value off them.
 		validate_contact_tables(self)
 
-		# Remove head of household status when family is removed
-		if not self.family and self.is_head_of_household:
-			self.set("is_head_of_household", False)
-		# Remove old head of household when new one is assigned - Also rename family
-		if self.is_head_of_household:
-			old_heads_of_household = frappe.db.get_all(
-				doctype="Person",
-				filters=[
-					["family", "=", self.family],
-					["is_head_of_household", "=", True],
-					["name", "!=", self.name],
-				],
-			)
-			if old_heads_of_household:
-				# There should only be one head of household, but just in case we loop through all of them.
-				for head in old_heads_of_household:
-					head_doc = frappe.get_doc("Person", head["name"])
-					frappe.msgprint(
-						f"ℹ️ {head_doc.full_name} was removed from being the head of this household."
-					)
-					head_doc.is_head_of_household = False
-					head_doc.save()
-				# Rename family with new head of household
-				family_doc = frappe.get_doc("Family", self.family)
-				dashes = family_doc.family_name.rfind("-")
-				if dashes == -1:  # If no dashes found, add one
-					family_doc.family_name = f"{family_doc.family_name} - {self.first_name}"
-				else:
-					family_doc.family_name = f"{family_doc.family_name[: dashes + 1]} {self.first_name}"
-				family_doc.save(ignore_permissions=True)
-
 		self.sync_spouse()
 		self.share_family_with_spouse()
 
 	def sync_spouse(self):
-		"""Mirror the spouse link, anniversary and Husband/Wife relation onto the other person."""
+		"""Mirror a marriage onto the spouse, and end it on both people when this person is no longer married.
+
+		A widowed person keeps the spouse and anniversary, and the late spouse is left as they are.
+		"""
 		before = self.get_doc_before_save()
 		previous = before.spouse if before else None
-		if self.spouse and self.is_married:
+		if self.spouse and self.marital_status in WITH_SPOUSE:
 			if previous and previous != self.spouse:
 				self.unlink_spouse(previous)
-			self.link_spouse()
+			if self.marital_status == MARRIED:
+				self.link_spouse()
 			return
 		if previous:
-			self.unlink_spouse(previous)
-			self.is_married = False
+			self.unlink_spouse(previous, self.marital_status)
 			self.anniversary = None
 		self.spouse = None
-		self.sync_spouse_relation(None)
 
 	@property
 	def has_new_spouse(self):
@@ -229,59 +208,42 @@ class Person(Document):
 		family = frappe.get_doc({"doctype": "Family", "family_name": self.household_name})
 		family.insert(ignore_permissions=True)
 		self.family = family.name
-		self.is_head_of_household = 1
+		self.flags.leads_new_family = True
 		if not frappe.flags.in_import:
 			family_link = get_link_to_form("Family", family.name, family.family_name)
 			frappe.msgprint(f"👨‍👩‍👧‍👦 New family created: {family_link}")
 
 	def link_spouse(self):
-		"""Point the spouse back at this person, sharing the anniversary and relation rows."""
+		"""Point the spouse back at this person as Married, sharing the anniversary.
+
+		A spouse who already points here keeps their own marital status, so a widow stays Widowed.
+		"""
 		spouse = frappe.get_doc("Person", self.spouse)
 		self.anniversary = self.anniversary or spouse.anniversary
-		self.sync_spouse_relation(spouse)
-		spouse.sync_spouse_relation(self)
-		spouse.update_child_table("relations")
+		values = {}
 		if spouse.spouse != self.name:
 			if spouse.spouse:
 				spouse.unlink_spouse(spouse.spouse)
+			values.update(spouse=self.name, marital_status=MARRIED)
 			if not frappe.flags.in_import:
 				frappe.msgprint(f"Spouses have been linked:<br>{self.full_name} 👩‍❤️‍👨 {spouse.full_name}")
-		if spouse.spouse != self.name or cstr(spouse.anniversary) != cstr(self.anniversary):
-			frappe.db.set_value(
-				"Person",
-				spouse.name,
-				{
-					"spouse": self.name,
-					"is_married": True,
-					"anniversary": self.anniversary,
-					"marriage_years": years_since(self.anniversary),
-				},
-			)
+		if cstr(spouse.anniversary) != cstr(self.anniversary):
+			values.update(anniversary=self.anniversary, marriage_years=years_since(self.anniversary))
+		if values:
+			frappe.db.set_value("Person", spouse.name, values)
 
-	def unlink_spouse(self, spouse_name):
-		"""Clear the marriage fields and Husband/Wife relation on the other person, if they still point here."""
-		spouse = frappe.get_doc("Person", spouse_name)
-		if spouse.spouse != self.name:
+	def unlink_spouse(self, spouse_name, marital_status=None):
+		"""Clear the spouse and anniversary on the other person, if they still point here, and give them *marital_status*."""
+		spouse = frappe.db.get_value("Person", spouse_name, ["name", "spouse", "full_name"], as_dict=True)
+		if not spouse or spouse.spouse != self.name:
 			return
-		spouse.sync_spouse_relation(None)
-		spouse.update_child_table("relations")
 		frappe.db.set_value(
 			"Person",
 			spouse.name,
-			{"spouse": None, "is_married": False, "anniversary": None, "marriage_years": 0},
+			{"spouse": None, "marital_status": marital_status, "anniversary": None, "marriage_years": 0},
 		)
 		if not frappe.flags.in_import:
 			frappe.msgprint(f"Spouses have been unlinked:<br>{self.full_name} 💔 {spouse.full_name}")
-
-	def sync_spouse_relation(self, spouse):
-		"""Keep exactly one Husband/Wife row in ``relations``, pointing at ``spouse`` (a Person or None)."""
-		relation = spouse_relation_type(spouse.gender) if spouse else None
-		for row in list(self.relations):
-			is_wanted = relation and row.person == spouse.name and row.type == relation
-			if row.type in SPOUSE_RELATION_TYPES.values() and not is_wanted:
-				self.remove(row)
-		if relation and not any(row.type == relation and row.person == spouse.name for row in self.relations):
-			self.append("relations", {"type": relation, "person": spouse.name})
 
 	@frappe.whitelist()
 	def new_family_from_person(self):
@@ -291,7 +253,6 @@ class Person(Document):
 		if existing_family:
 			# Set this person's family to the existing one
 			self.family = existing_family
-			self.is_head_of_household = False  # Not head of household in an existing family
 			self.save()
 			family_link = get_link_to_form("Family", existing_family, self.household_name)
 			frappe.msgprint(
@@ -304,7 +265,7 @@ class Person(Document):
 		doc.family_name = self.household_name
 		doc.save()
 		self.set("family", doc.name)
-		self.set("is_head_of_household", True)
+		self.flags.leads_new_family = True
 		self.save()
 		self.reload()
 		family_link = get_link_to_form("Family", doc.name, doc.family_name)
