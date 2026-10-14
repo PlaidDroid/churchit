@@ -15,7 +15,11 @@
   "full_name",
   "church",
   "gender",
-  "age",
+  "family",
+  "marital_status",
+  "spouse",
+  "anniversary",
+  "marriage_years",
   "column_break_agva",
   "membership",
   "membership_status",
@@ -24,13 +28,7 @@
   "alergies",
   "user",
   "hide_from_directory",
-  "family_section",
-  "family",
-  "column_break_gwhd",
-  "marital_status",
-  "spouse",
-  "anniversary",
-  "marriage_years",
+  "age",
   "life_events_section",
   "life_events",
   "section_break_osjz",
@@ -79,10 +77,6 @@
    "label": "Church",
    "options": "Church",
    "search_index": 1
-  },
-  {
-   "fieldname": "column_break_gwhd",
-   "fieldtype": "Column Break"
   },
   {
    "description": "Calculated from the Birth event in Life Events.",
@@ -274,11 +268,6 @@
    "options": "User"
   },
   {
-   "fieldname": "family_section",
-   "fieldtype": "Section Break",
-   "label": "Family"
-  },
-  {
    "description": "A married or widowed person keeps a spouse and an anniversary.",
    "fieldname": "marital_status",
    "fieldtype": "Link",
@@ -331,7 +320,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-12 00:10:00.000000",
+ "modified": "2026-10-12 23:39:24.398879",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
