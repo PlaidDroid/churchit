@@ -4,13 +4,14 @@
 """Birthdays and wedding anniversaries falling in a window of days, as a bulletin prints them.
 
 People who ticked Hide from Directory and Bulletin are left out, and so is a couple's anniversary when either is.
+The same goes for people who have died.
 """
 
 import frappe
 from frappe.utils import formatdate, getdate
 
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED
-from churchit.church_people.membership import ACTIVE_MEMBER_FILTERS, is_active_member
+from churchit.church_people.membership import ACTIVE_MEMBER_FILTERS, deceased_people, is_active_member
 
 
 def birthdays(start, end, members_only=True, church=None):
@@ -24,7 +25,7 @@ def birthdays(start, end, members_only=True, church=None):
 		.on((LifeEvent.parent == Person.name) & (LifeEvent.parenttype == "Person"))
 		.select(Person.full_name, LifeEvent.date)
 		.where((LifeEvent.event_type == "Birth") & LifeEvent.date.isnotnull())
-		.where(Person.hide_from_directory == 0)
+		.where((Person.hide_from_directory == 0) & Person.name.notin(deceased_people()))
 	)
 	if members_only:
 		query = query.where(is_active_member(Person))
@@ -53,9 +54,10 @@ def anniversaries(start, end, members_only=True, church=None):
 	)
 	rows = []
 	listed = set()
+	deceased = set(deceased_people().run(pluck=True))
 	for person in people:
 		occurrence = occurrence_between(person.anniversary, start, end)
-		if not occurrence or person.name in listed:
+		if not occurrence or person.name in listed or {person.name, person.spouse} & deceased:
 			continue
 		if person.spouse and frappe.db.get_value("Person", person.spouse, "hide_from_directory"):
 			continue

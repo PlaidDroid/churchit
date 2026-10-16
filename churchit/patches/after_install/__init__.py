@@ -760,9 +760,11 @@ def _setup_portal_settings():
 		("Prayer Requests", "prayer-request", "Prayer Request", "Church User"),
 		("Community Prayer Requests", "community-prayer-requests", "Prayer Request", "Church User"),
 		("Alms Requests", "alms-request", "Alms Request", "Church User"),
+		("Care Requests", "care-request", "Care Request", "Church User"),
 		("Groups", "groups", "Group", "Church User"),
 		("Giving Statements", "statements", "Giving Statement", "Church User"),
 		("Bulletins", "bulletins", "Bulletin", "Church User"),
+		("Personal Details", "personal-details", "Person", "Church User"),
 		("Newsletter Subscription", "newsletter-subscription", "Email Group Member", "Church User"),
 	]
 	doc = frappe.get_doc("Portal Settings")

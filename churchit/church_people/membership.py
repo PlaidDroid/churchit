@@ -8,6 +8,8 @@ Attender, Visitor or Contact. `membership_status` (a Member Status) is whether
 they still take part: Active or Inactive, for everyone. An active member has both.
 """
 
+import frappe
+
 MEMBER = "Member"
 REGULAR_ATTENDER = "Regular Attender"
 VISITOR = "Visitor"
@@ -24,3 +26,13 @@ ACTIVE_MEMBER_FILTERS = {"membership": MEMBER, "membership_status": ACTIVE}
 def is_active_member(Person):
 	"""Query criterion for an active member on the Person table *Person*."""
 	return (Person.membership == MEMBER) & (Person.membership_status == ACTIVE)
+
+
+def deceased_people():
+	"""Subquery of the people with a Death life event."""
+	LifeEvent = frappe.qb.DocType("Life Event")
+	return (
+		frappe.qb.from_(LifeEvent)
+		.select(LifeEvent.parent)
+		.where((LifeEvent.parenttype == "Person") & (LifeEvent.event_type == "Death"))
+	)

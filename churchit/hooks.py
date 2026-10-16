@@ -277,6 +277,7 @@ scheduler_events = {
 		"churchit.church_communications.newsletter.sync_member_email_group",
 		"churchit.church_missions.doctype.missionary.missionary.create_missionary_expenses",
 		"churchit.church_people.doctype.background_check.background_check.expire_background_checks",
+		"churchit.church_people.doctype.person.person.refresh_ages",
 		"churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment.send_team_emails",
 	],
 }

@@ -1,6 +1,7 @@
 import frappe
 from frappe.query_builder.functions import Count
 
+from churchit.church_people.membership import deceased_people
 from churchit.church_scope import scoped
 from churchit.query import falls_this_week
 
@@ -21,5 +22,6 @@ def get_count():
 		)
 		.select(Count("*"))
 		.where(LifeEvent.date.isnotnull() & falls_this_week(LifeEvent.date))
+		.where(Person.name.notin(deceased_people()))
 	)
 	return scoped(query, Person, {}).run()[0][0]

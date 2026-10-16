@@ -53,6 +53,25 @@ class TestNotificationTemplates(FrappeTestCase):
 			self.assertIn("_Test Notice Elder", rendered)
 			self.assertIn("_Test Notice Holder", rendered)
 
+	def test_visitation_follow_up_due_reaches_the_visitor(self):
+		"""Visited By holds a Person, which Frappe would drop as a recipient for not being an email."""
+		visitor = make_person("_Test Notice", "Visitor")
+		visitor.append("emails", {"email_address": "_test_notice_visitor@example.com", "is_primary": 1})
+		visitor.save(ignore_permissions=True)
+		visit = frappe.get_doc(
+			{
+				"doctype": "Visitation Log",
+				"person": make_person("_Test Notice", "Visited").name,
+				"visited_by": visitor.name,
+				"status": "Scheduled",
+			}
+		)
+		notification, _markdown = shipped_templates("church_communications", "Visitation Follow-Up Due")
+
+		_recipients, cc, _bcc = frappe.get_doc(notification).get_list_of_recipients(visit, get_context(visit))
+
+		self.assertIn("_test_notice_visitor@example.com", cc)
+
 
 class TestShippedEmailTemplates(FrappeTestCase):
 	def test_every_shipped_email_template_sends_a_body(self):

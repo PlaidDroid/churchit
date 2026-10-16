@@ -13,14 +13,14 @@
  "idx": 0,
  "is_standard": 1,
  "message": "<p>A scheduled visitation follow-up is due tomorrow:</p>\n\n<ul>\n  <li><strong>Person:</strong> {{ doc.person }}</li>\n  <li><strong>Visit Date:</strong> {{ frappe.utils.formatdate(doc.visit_date) }} ({{ doc.visit_type }})</li>\n</ul>\n\n<p><strong>Notes:</strong></p>\n<p>{{ doc.notes }}</p>",
- "modified": "2026-07-13 00:00:00.000000",
+ "modified": "2026-10-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church Communications",
  "name": "Visitation Follow-Up Due",
  "owner": "Administrator",
  "recipients": [
   {
-   "receiver_by_document_field": "visited_by"
+   "cc": "{{ frappe.db.get_value(\"Email Address\", {\"parenttype\": \"Person\", \"parent\": doc.visited_by, \"is_primary\": 1}, \"email_address\") or \"\" }}"
   },
   {
    "receiver_by_role": "Church Manager"

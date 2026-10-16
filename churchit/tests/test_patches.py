@@ -23,6 +23,7 @@ from churchit.patches.v1_0 import (
 	add_ministry_teams,
 	add_missionary_map_to_missions_page,
 	add_missionary_statuses,
+	add_personal_details_and_care_requests_to_portal,
 	add_unsynced_default_records,
 	list_missionary_people_in_a_table,
 	move_copied_function_schedules,
@@ -266,6 +267,21 @@ class TestVersionedPatches(FrappeTestCase):
 				self.assertEqual(len(rows), 1)
 				self.assertEqual(rows[0].role, "Church User", "members, not staff, reach it from the portal")
 				self.assertTrue(rows[0].enabled)
+
+	def test_personal_details_and_care_requests_are_added_to_the_portal_once(self):
+		routes = [item["route"] for item in add_personal_details_and_care_requests_to_portal.ITEMS]
+		settings = frappe.get_doc("Portal Settings")
+		settings.menu = [row for row in settings.menu if row.route not in routes]
+		settings.save(ignore_permissions=True)
+
+		add_personal_details_and_care_requests_to_portal.execute()
+		add_personal_details_and_care_requests_to_portal.execute()
+
+		menu = frappe.get_doc("Portal Settings").menu
+		for route in routes:
+			rows = [row for row in menu if row.route == route]
+			self.assertEqual(len(rows), 1, route)
+			self.assertEqual(rows[0].role, "Church User", "members, not staff, reach it from the portal")
 
 	def test_knowledge_base_is_taken_out_of_the_app(self):
 		settings = frappe.get_doc("Portal Settings")

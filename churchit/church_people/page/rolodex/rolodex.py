@@ -9,6 +9,7 @@ import frappe
 from frappe.utils import getdate, sbool
 
 from churchit.church_foundations.doctype.church.church import ADDRESS_FIELDS, address_line
+from churchit.church_people.membership import deceased_people
 from churchit.church_scope import is_multi_church
 from churchit.church_website.footer import map_url
 from churchit.contacts import ADDRESS_DOCTYPE, EMAIL_DOCTYPE, PHONE_DOCTYPE, get_primary_values
@@ -33,13 +34,17 @@ SETTINGS_DEFAULT = "rolodex_settings"
 
 @frappe.whitelist()
 def get_directory():
-	"""Every person and family the reader may see, what their cards show, and the filter choices.
+	"""Every living person and family the reader may see, what their cards show, and the filter choices.
 
 	`frappe.get_list` applies the reader's churches and the directory privacy
 	setting. Child tables carry no church, so they are read only for those people.
 	"""
 	people = frappe.get_list(
-		"Person", fields=PERSON_FIELDS, order_by="last_name asc, first_name asc", limit_page_length=0
+		"Person",
+		filters={"name": ("not in", deceased_people().run(pluck=True))},
+		fields=PERSON_FIELDS,
+		order_by="last_name asc, first_name asc",
+		limit_page_length=0,
 	)
 	groups = frappe.get_list(
 		"Group", fields=["name", "group_name"], order_by="group_name asc", limit_page_length=0

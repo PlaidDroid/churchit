@@ -66,6 +66,17 @@ class TestRolodexCards(FrappeTestCase):
 		self.assertEqual(str(card.birthday), "1980-03-14")
 		self.assertEqual(card.groups, [self.group.name])
 
+	def test_people_who_have_died_get_no_card(self):
+		ensure("Life Event Type", {"type": "Death"})
+		departed = make_person(
+			"_Test Rolodex", "Departed", life_events=[{"event_type": "Death", "date": "2024-01-01"}]
+		)
+
+		names = [person.name for person in get_directory()["people"]]
+
+		self.assertIn(self.person.name, names)
+		self.assertNotIn(departed.name, names)
+
 	def test_only_positions_held_today_are_listed(self):
 		self.assertEqual(card_for(get_directory(), self.person.name).positions, [self.elder])
 

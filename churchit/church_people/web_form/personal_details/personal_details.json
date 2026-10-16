@@ -39,13 +39,13 @@
   {
    "fieldname": "alergies",
    "fieldtype": "Data",
-   "label": "Alergies"
+   "label": "Allergies"
   }
  ],
  "list_title": "Your Personal Information",
  "login_required": 1,
  "max_attachment_size": 0,
- "modified": "2026-10-12 00:10:00.000000",
+ "modified": "2026-10-15 12:05:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "personal-details",
@@ -54,7 +54,7 @@
  "route": "personal-details",
  "show_attachments": 0,
  "show_list": 1,
- "show_sidebar": 0,
+ "show_sidebar": 1,
  "title": "Personal Details",
  "web_form_fields": [
   {
@@ -141,7 +141,7 @@
    "fieldname": "alergies",
    "fieldtype": "Data",
    "hidden": 0,
-   "label": "Alergies",
+   "label": "Allergies",
    "max_length": 0,
    "max_value": 0,
    "precision": "",

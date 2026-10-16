@@ -1,6 +1,7 @@
 import frappe
 from frappe import _
 
+from churchit.church_people.membership import deceased_people
 from churchit.church_scope import scoped
 from churchit.query import DayOfWeek, falls_this_week
 from churchit.utils import set_report_link_titles
@@ -34,6 +35,7 @@ def get_data(filters=None):
 		)
 		.select(Person.name, LifeEvent.date.as_("birthday"))
 		.where(LifeEvent.date.isnotnull() & falls_this_week(LifeEvent.date))
+		.where(Person.name.notin(deceased_people()))
 		.orderby(DayOfWeek(LifeEvent.date))
 		.orderby(Person.full_name)
 	)

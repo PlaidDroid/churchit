@@ -371,6 +371,36 @@
   },
   {
    "added": 0,
+   "child": 1,
+   "collapsible": 1,
+   "hidden": 0,
+   "indent": 0,
+   "is_default_module": 0,
+   "keep_closed": 0,
+   "label": "Background Checks",
+   "link_to": "Background Check",
+   "link_type": "DocType",
+   "open_in_new_tab": 1,
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "added": 0,
+   "child": 1,
+   "collapsible": 1,
+   "hidden": 0,
+   "indent": 0,
+   "is_default_module": 0,
+   "keep_closed": 0,
+   "label": "Background Check Types",
+   "link_to": "Background Check Type",
+   "link_type": "DocType",
+   "open_in_new_tab": 1,
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "added": 0,
    "child": 0,
    "collapsible": 1,
    "hidden": 0,
@@ -609,6 +639,22 @@
   },
   {
    "added": 0,
+   "child": 1,
+   "collapsible": 1,
+   "hidden": 0,
+   "icon": "table",
+   "indent": 0,
+   "is_default_module": 0,
+   "keep_closed": 0,
+   "label": "Visitation Followups Needed",
+   "link_to": "Visitation Followups Needed",
+   "link_type": "Report",
+   "open_in_new_tab": 1,
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "added": 0,
    "child": 0,
    "collapsible": 1,
    "hidden": 0,
@@ -637,7 +683,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-12 00:10:00.000000",
+ "modified": "2026-10-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "People",

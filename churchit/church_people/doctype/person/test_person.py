@@ -5,6 +5,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_years, getdate, nowdate
 
+from churchit.church_people.doctype.person.person import refresh_ages
 from churchit.tests.helpers import make_primary_contact
 
 
@@ -33,6 +34,20 @@ class TestPerson(FrappeTestCase):
 		person.append("life_events", {"event_type": "Birth", "date": add_years(nowdate(), -30)})
 		person.insert(ignore_permissions=True)
 		self.assertEqual(person.age, 30)
+
+	def test_daily_refresh_catches_up_a_stale_age_and_marriage(self):
+		"""Age and years married are stored on save, so a birthday alone left them a year behind."""
+		_ensure("Life Event Type", {"type": "Birth"}, {"type": "Birth"})
+		person = self._make_person(
+			first_name="_Test Stale",
+			anniversary=add_years(nowdate(), -10),
+			life_events=[{"event_type": "Birth", "date": add_years(nowdate(), -30)}],
+		)
+		frappe.db.set_value("Person", person.name, {"age": 29, "marriage_years": 9}, update_modified=False)
+
+		refresh_ages()
+
+		self.assertEqual(frappe.db.get_value("Person", person.name, ["age", "marriage_years"]), (30, 10))
 
 	def test_age_cleared_without_birth_event(self):
 		person = self._make_person(first_name="Ageless")

@@ -14,7 +14,7 @@ from pypika import Order
 from churchit.church_missions.doctype.missionary_status.missionary_status import is_current_missionary
 from churchit.church_people.doctype.family.family import primary_contacts
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED
-from churchit.church_people.membership import ACTIVE, is_active_member
+from churchit.church_people.membership import ACTIVE, deceased_people, is_active_member
 from churchit.church_people.report.church_directory_report.booklet import impose_booklet
 from churchit.church_scope import church_filter, root_church, scoped
 from churchit.contacts import primary_address_query, primary_email_query, primary_phone_query
@@ -591,16 +591,6 @@ def get_families_with_hidden_contact(hide_non_active=False):
 		.where(is_hidden)
 	)
 	return set(families.run(pluck=True))
-
-
-def deceased_people():
-	"""Subquery of the people with a Death life event."""
-	LifeEvent = frappe.qb.DocType("Life Event")
-	return (
-		frappe.qb.from_(LifeEvent)
-		.select(LifeEvent.parent)
-		.where((LifeEvent.parenttype == "Person") & (LifeEvent.event_type == "Death"))
-	)
 
 
 def listed_family_name(family_name, is_contact_hidden):

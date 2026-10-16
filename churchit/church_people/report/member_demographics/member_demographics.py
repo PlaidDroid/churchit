@@ -18,7 +18,7 @@ AGE_BUCKETS = (
 
 
 def execute(filters=None):
-	return get_columns(), get_data()
+	return get_columns(), get_data(filters)
 
 
 def get_columns():

@@ -138,7 +138,7 @@
   {
    "fieldname": "alergies",
    "fieldtype": "Data",
-   "label": "Alergies",
+   "label": "Allergies",
    "print_hide": 1
   },
   {
@@ -332,7 +332,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-13 12:00:00.000000",
+ "modified": "2026-10-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
