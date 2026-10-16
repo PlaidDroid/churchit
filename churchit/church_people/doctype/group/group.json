@@ -16,6 +16,7 @@
   "status",
   "public",
   "show_in_portal",
+  "show_in_directory",
   "section_break_members",
   "members"
  ],
@@ -81,6 +82,13 @@
    "fieldname": "show_in_portal",
    "fieldtype": "Check",
    "label": "Show in Portal"
+  },
+  {
+   "default": "0",
+   "description": "List this group's members in the Church Directory. This works only when the directory's Group List and Group Members options are ticked.",
+   "fieldname": "show_in_directory",
+   "fieldtype": "Check",
+   "label": "Show in Directory"
   }
  ],
  "grid_page_length": 50,
@@ -92,7 +100,7 @@
    "link_fieldname": "group"
   }
  ],
- "modified": "2026-09-28 13:00:00",
+ "modified": "2026-10-15 09:00:00",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Group",

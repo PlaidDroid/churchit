@@ -381,6 +381,18 @@ class TestChurchPermissions(FrappeTestCase):
 		self.assertEqual(by_family[family.name]["member_count"], 1)
 		self.assertIn(moved.name, [row["person"] for row in directory.execute({"group_by_family": 0})[1]])
 
+	def test_directory_lists_only_the_readers_groups(self):
+		for name, church in (
+			("_Test Listed Group A", self.branch_a),
+			("_Test Listed Group B", self.branch_b),
+		):
+			ensure("Group", {"group_name": name}, {"group_name": name, "church": church})
+
+		frappe.set_user(self.manager_a)
+		names = [group.group_name for group in directory.get_directory_groups({})]
+		self.assertIn("_Test Listed Group A", names)
+		self.assertNotIn("_Test Listed Group B", names)
+
 	def test_a_requested_church_narrows_like_a_list_filter(self):
 		"""With branches included, a blank filter shows them all; a picked church shows only itself."""
 		frappe.set_user(self.parent_manager)

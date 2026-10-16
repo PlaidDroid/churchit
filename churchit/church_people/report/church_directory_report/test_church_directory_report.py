@@ -325,6 +325,58 @@ class TestChurchDirectoryReport(FrappeTestCase):
 			"_Test Former Ashby</", html, "an inactive missionary's people are listed with everyone"
 		)
 
+	def test_groups_are_listed_only_when_ticked(self):
+		make_group("_Test Directory Choir", description="_Test sings on Sundays")
+
+		self.assertNotIn("_Test Directory Choir", self.render())
+		html = self.render(show_groups="1")
+		self.assertIn('<div class="group-name">_Test Directory Choir</div>', html)
+		self.assertIn('<div class="group-description">_Test sings on Sundays</div>', html)
+
+	def test_groups_list_members_and_roles_only_when_shown_in_the_directory(self):
+		ensure("Group Role", {"role": "Leader"})
+		lead = make_person("_Test Lead", "Choir")
+		shy = make_person("_Test Shy", "Choir", hide_from_directory=1)
+		drummer = make_person("_Test Drummer", "Band")
+		make_group(
+			"_Test Directory Choir",
+			show_in_directory=1,
+			members=[{"person": lead.name, "group_role": "Leader"}, {"person": shy.name}],
+		)
+		make_group("_Test Directory Band", members=[{"person": drummer.name, "group_role": "Leader"}])
+		member = '<span class="group-member-name">{}</span>'
+		role = '<span class="group-member-role">Leader</span>'
+
+		self.assertNotIn(member.format("_Test Lead Choir"), self.render(show_groups="1"))
+		html = self.render(show_group_members="1", show_group_roles="1")
+		self.assertNotIn('<div class="group-name">', html, "members need the group list")
+
+		html = self.render(show_groups="1", show_group_members="1")
+		self.assertIn(member.format("_Test Lead Choir"), html)
+		self.assertNotIn(member.format("_Test Shy Choir"), html)
+		self.assertNotIn(member.format("_Test Drummer Band"), html)
+		self.assertNotIn(role, html)
+		self.assertIn(role, self.render(show_groups="1", show_group_members="1", show_group_roles="1"))
+
+	def test_group_members_are_listed_by_first_name(self):
+		people = [make_person(first, "Sorted") for first in ("_Test Zoe", "_Test Abe", "_Test Max")]
+		make_group(
+			"_Test Directory Sorted",
+			show_in_directory=1,
+			members=[{"person": person.name} for person in people],
+		)
+
+		html = self.render(show_groups="1", show_group_members="1")
+
+		names = [f">{first} Sorted<" for first in ("_Test Abe", "_Test Max", "_Test Zoe")]
+		self.assertEqual([html.index(name) for name in names], sorted(html.index(name) for name in names))
+
+	def test_inactive_groups_are_left_out(self):
+		ensure("Group Status", {"status": "Inactive"})
+		make_group("_Test Directory Disbanded", status="Inactive")
+
+		self.assertNotIn("_Test Directory Disbanded", self.render(show_groups="1"))
+
 	def test_deceased_people_are_left_out_everywhere(self):
 		for event_type in ("Birth", "Death"):
 			ensure("Life Event Type", {"type": event_type})
@@ -446,6 +498,13 @@ def make_family(family_name, street):
 			"addresses": [{"address": address, "is_primary": 1}],
 		}
 	).insert(ignore_permissions=True)
+
+
+def make_group(group_name, **values):
+	ensure("Group Status", {"status": "Active"})
+	return frappe.get_doc({"doctype": "Group", "group_name": group_name, **values}).insert(
+		ignore_permissions=True
+	)
 
 
 MM_TO_PX = 96 / 25.4

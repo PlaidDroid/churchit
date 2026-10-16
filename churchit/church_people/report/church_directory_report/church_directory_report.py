@@ -149,6 +149,9 @@ def get_directory_html(
 	show_birthdays: bool = 0,
 	show_anniversaries: bool = 0,
 	show_missionaries: bool = 0,
+	show_groups: bool = 0,
+	show_group_members: bool = 0,
+	show_group_roles: bool = 0,
 	blank_back_cover: bool = 0,
 	show_page_numbers: bool = 0,
 	include_notes_page: bool = 0,
@@ -170,6 +173,9 @@ def get_directory_html(
 	show_birthdays = frappe.utils.cint(show_birthdays)
 	show_anniversaries = frappe.utils.cint(show_anniversaries)
 	show_missionaries = frappe.utils.cint(show_missionaries)
+	show_groups = frappe.utils.cint(show_groups)
+	show_group_members = show_groups and frappe.utils.cint(show_group_members)
+	show_group_roles = show_group_members and frappe.utils.cint(show_group_roles)
 	blank_back_cover = frappe.utils.cint(blank_back_cover)
 	show_page_numbers = frappe.utils.cint(show_page_numbers)
 	include_notes_page = frappe.utils.cint(include_notes_page)
@@ -465,6 +471,8 @@ def get_directory_html(
 				if m.agency:
 					m["agency"] = agency_map.get(m.agency, m.agency)
 
+	groups = get_directory_groups(filters, show_group_members) if show_groups else []
+
 	generated_date = frappe.utils.formatdate(frappe.utils.nowdate(), "MMMM yyyy")
 	church_name = church_doc.church_name if church_doc else ""
 	context = {
@@ -486,6 +494,8 @@ def get_directory_html(
 		"show_birthdays": show_birthdays,
 		"show_anniversaries": show_anniversaries,
 		"show_missionaries": show_missionaries,
+		"groups": groups,
+		"show_group_roles": show_group_roles,
 		"blank_back_cover": blank_back_cover,
 		"show_page_numbers": show_page_numbers,
 		"include_notes_page": include_notes_page,
@@ -639,6 +649,47 @@ def get_missionary_people(missionaries):
 	for row in rows:
 		people.setdefault(row.parent, []).append(row.full_name)
 	return people
+
+
+def get_directory_groups(filters, show_members=False):
+	"""Groups that are not Inactive, and with *show_members* the members of each one shown in the directory."""
+	Group = frappe.qb.DocType("Group")
+	groups_query = (
+		frappe.qb.from_(Group)
+		.select(Group.name, Group.group_name, Group.description, Group.show_in_directory)
+		.where(Coalesce(Group.status, "") != "Inactive")
+		.orderby(Group.group_name)
+	)
+	groups = scoped(groups_query, Group, filters).run(as_dict=True)
+
+	members = {}
+	if show_members:
+		members = get_group_members([group.name for group in groups if group.show_in_directory], filters)
+	for group in groups:
+		group["members"] = members.get(group.name, [])
+	return groups
+
+
+def get_group_members(groups, filters):
+	"""{group: [rows with full_name and role]} by first name, without the people the directory leaves out."""
+	if not groups:
+		return {}
+	GroupMember = frappe.qb.DocType("Group Member")
+	Person = frappe.qb.DocType("Person")
+	# church-scope: only the members of groups the scoped query already listed
+	query = (
+		frappe.qb.from_(GroupMember)
+		.join(Person)
+		.on(Person.name == GroupMember.person)
+		.select(GroupMember.parent, Person.full_name, GroupMember.group_role.as_("role"))
+		.where((GroupMember.parenttype == "Group") & GroupMember.parent.isin(groups))
+		.orderby(Person.first_name)
+		.orderby(Person.last_name)
+	)
+	members = {}
+	for row in listed(query, Person, filters).run(as_dict=True):
+		members.setdefault(row.parent, []).append(row)
+	return members
 
 
 def header_church(filters):
