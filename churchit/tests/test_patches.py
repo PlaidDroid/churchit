@@ -30,8 +30,10 @@ from churchit.patches.v1_0 import (
 	move_email_template_bodies_to_html,
 	move_to_the_apps_screen_and_dock,
 	redesign_home_page,
+	remove_duplicate_new_members_chart,
 	remove_knowledge_base,
 	rename_agency_logo_field,
+	restore_shipped_people_charts,
 	scope_website_pages_to_church,
 	seed_naming_series_counters,
 	set_church_website,
@@ -282,6 +284,47 @@ class TestVersionedPatches(FrappeTestCase):
 			rows = [row for row in menu if row.route == route]
 			self.assertEqual(len(rows), 1, route)
 			self.assertEqual(rows[0].role, "Church User", "members, not staff, reach it from the portal")
+
+	def test_the_install_time_people_charts_give_way_to_the_shipped_ones(self):
+		"""Install's own Members chart counted Life Event rows, which carry no church."""
+		frappe.db.set_value(
+			"Dashboard Chart", "Members", {"is_standard": 0, "chart_type": "Count", "source": None}
+		)
+
+		restore_shipped_people_charts.execute()
+
+		chart = frappe.get_doc("Dashboard Chart", "Members")
+		self.assertEqual((chart.is_standard, chart.chart_type, chart.source), (1, "Custom", "Life Events"))
+
+	def test_the_duplicate_new_members_chart_goes_unless_a_dashboard_uses_it(self):
+		def make_chart():
+			return frappe.get_doc(
+				{
+					"doctype": "Dashboard Chart",
+					"chart_name": remove_duplicate_new_members_chart.CHART,
+					"chart_type": "Count",
+					"document_type": "Person",
+					"based_on": "creation",
+					"filters_json": "[]",
+					"timeseries": 1,
+					"time_interval": "Monthly",
+					"timespan": "Last Year",
+				}
+			).insert(ignore_permissions=True)
+
+		make_chart()
+		remove_duplicate_new_members_chart.execute()
+		self.assertFalse(frappe.db.exists("Dashboard Chart", remove_duplicate_new_members_chart.CHART))
+
+		frappe.get_doc(
+			{
+				"doctype": "Dashboard",
+				"dashboard_name": "_Test New Members Dashboard",
+				"charts": [{"chart": make_chart().name}],
+			}
+		).insert(ignore_permissions=True)
+		remove_duplicate_new_members_chart.execute()
+		self.assertTrue(frappe.db.exists("Dashboard Chart", remove_duplicate_new_members_chart.CHART))
 
 	def test_knowledge_base_is_taken_out_of_the_app(self):
 		settings = frappe.get_doc("Portal Settings")

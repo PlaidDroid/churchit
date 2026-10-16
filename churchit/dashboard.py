@@ -82,6 +82,7 @@ def time_buckets(timespan, time_interval, from_date, to_date):
 	else:
 		end = today
 		start_map = {
+			"Last 5 Years": add_to_date(today, years=-5, as_datetime=False),
 			"Last Year": add_to_date(today, years=-1, as_datetime=False),
 			"Last Quarter": add_months(today, -3),
 			"Last Month": add_months(today, -1),

@@ -55,9 +55,6 @@ def execute():
 	# Module access control
 	_create_module_profile()
 
-	# Dashboard charts
-	_create_dashboard_charts()
-
 	# Custom HTML blocks
 	_create_custom_html_blocks()
 
@@ -513,53 +510,6 @@ def _create_module_profile():
 			"block_modules": [{"module": m} for m in blocked_modules],
 		}
 	).insert(ignore_permissions=True)
-
-
-# ---------------------------------------------------------------------------
-# Dashboard Charts
-# ---------------------------------------------------------------------------
-
-
-def _create_dashboard_charts():
-	"""Create People and Members line charts shown on the Church workspace."""
-	if not frappe.db.exists("Dashboard Chart", "People"):
-		frappe.get_doc(
-			{
-				"doctype": "Dashboard Chart",
-				"chart_name": "People",
-				"module": "Church People",
-				"document_type": "Person",
-				"based_on": "creation",
-				"type": "Line",
-				"time_interval": "Weekly",
-				"timespan": "Last Year",
-				"timeseries": 1,
-				"is_standard": 0,
-				"show_values_over_chart": 1,
-				"filters_json": "[]",
-				"dynamic_filters_json": "[]",
-			}
-		).insert(ignore_permissions=True)
-
-	if not frappe.db.exists("Dashboard Chart", "Members"):
-		frappe.get_doc(
-			{
-				"doctype": "Dashboard Chart",
-				"chart_name": "Members",
-				"module": "Church People",
-				"document_type": "Life Event",
-				"parent_document_type": "Person",
-				"based_on": "date",
-				"type": "Line",
-				"time_interval": "Monthly",
-				"timespan": "Last Year",
-				"timeseries": 1,
-				"is_standard": 0,
-				"show_values_over_chart": 1,
-				"filters_json": '[["Life Event","event_type","=","Membership",false]]',
-				"dynamic_filters_json": "[]",
-			}
-		).insert(ignore_permissions=True)
 
 
 # ---------------------------------------------------------------------------
