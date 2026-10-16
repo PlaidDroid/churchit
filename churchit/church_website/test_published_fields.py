@@ -120,11 +120,8 @@ class TestPublishedFields(FrappeTestCase):
 		self.assertIn("statements", routes(published, "Church", "tax_id"))
 
 	def test_fields_read_through_an_imported_helper(self):
-		# www/newsletter-subscription reads the subscription through church_communications.newsletter.
-		self.assertIn(
-			"newsletter-subscription",
-			routes(published_field_map(), "Email Group Member", "unsubscribed"),
-		)
+		# www/newsletter-subscription reads the church's name through church_communications.newsletter.
+		self.assertIn("newsletter-subscription", routes(published_field_map(), "Church", "church_name"))
 
 	def test_every_www_page_is_scanned(self):
 		"""A page added under www/ later is scanned without touching the scanner."""

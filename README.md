@@ -91,6 +91,11 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Sections switched on per bulletin, with defaults in Bulletin Settings: contact information, church verse, order of worship, church leadership by configurable roles, upcoming functions, ministries, missionary of the week (rotated weekly, with override), picked prayer requests, birthdays and anniversaries, and a 2-up sermon handout insert
 - Published bulletins downloadable as PDFs from the member portal
 
+### Church Emails
+- One email to everyone whose Status is Active, to the active members only, or to a Group, each person getting their own copy
+- Recipients worked out when it is sent, leaving out people who have died and anyone who unsubscribed
+- A test email to yourself, a scheduled send time, and a link in every copy to unsubscribe
+
 ### Finances
 - Collection and donation tracking with fund allocation
 - Anonymous donation support
@@ -133,7 +138,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 
 ### Administration
 - Role-based access: a Church Manager, desk roles for staff (Staff, People Editor, Pastoral Care, Finance, Check-In) bundled into role profiles, and Church User for portal members
-- Optional multi-church mode: branch or satellite churches under one main church, with every record and user scoped to a church (parent-church users can include branches), per-church newsletters and notifications, and a Locations switcher on the public website
+- Optional multi-church mode: branch or satellite churches under one main church, with every record and user scoped to a church (parent-church users can include branches), per-church emails and notifications, and a Locations switcher on the public website
 - A people directory shared by every church: any church can look up a person or family, only their own church can change them, and a Church Features option keeps each church's people private instead
 - Songs, sermons, vendors, rooms, assets, funds and ministries can be shared with every church, so branches reuse the main church's library and give to joint funds, while each gift and expense keeps the church that gave or spent it
 - Built-in documentation for each module

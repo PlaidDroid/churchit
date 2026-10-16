@@ -31,6 +31,7 @@ from churchit.patches.v1_0 import (
 	move_to_the_apps_screen_and_dock,
 	redesign_home_page,
 	remove_duplicate_new_members_chart,
+	remove_email_group_onboarding,
 	remove_knowledge_base,
 	rename_agency_logo_field,
 	restore_shipped_people_charts,
@@ -107,7 +108,6 @@ class TestAfterInstall(FrappeTestCase):
 
 		self.assertEqual(frappe.db.count("Church", {"parent_church": ("is", "not set")}), 1)
 		self.assertTrue(frappe.db.exists("Bible Translation", {"source": "Free Use Bible API"}))
-		self.assertTrue(frappe.db.exists("Email Group", "Church Members"))
 		self.assertTrue(frappe.db.exists("Module Profile", "Church"))
 		self.assertEqual(frappe.get_doc("Website Settings").home_page, "home")
 		self.assertEqual(frappe.get_doc("Website Settings").website_theme, "Churchit")
@@ -325,6 +325,31 @@ class TestVersionedPatches(FrappeTestCase):
 		).insert(ignore_permissions=True)
 		remove_duplicate_new_members_chart.execute()
 		self.assertTrue(frappe.db.exists("Dashboard Chart", remove_duplicate_new_members_chart.CHART))
+
+	def test_the_email_group_onboarding_is_taken_out(self):
+		frappe.get_doc(
+			{
+				"doctype": "Onboarding Step",
+				"__newname": remove_email_group_onboarding.NAME,
+				"title": remove_email_group_onboarding.NAME,
+				"action": "Go to Page",
+			}
+		).insert(ignore_permissions=True, ignore_if_duplicate=True)
+		frappe.get_doc(
+			{
+				"doctype": "Form Tour",
+				"name": remove_email_group_onboarding.NAME,
+				"title": remove_email_group_onboarding.NAME,
+				"reference_doctype": "Email Group",
+				"steps": [{"fieldname": "title", "title": "Group Name", "description": "_Test"}],
+			}
+		).insert(ignore_permissions=True, ignore_if_duplicate=True)
+
+		remove_email_group_onboarding.execute()
+		remove_email_group_onboarding.execute()
+
+		for doctype in ("Onboarding Step", "Form Tour"):
+			self.assertFalse(frappe.db.exists(doctype, remove_email_group_onboarding.NAME), doctype)
 
 	def test_knowledge_base_is_taken_out_of_the_app(self):
 		settings = frappe.get_doc("Portal Settings")

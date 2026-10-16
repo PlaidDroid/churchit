@@ -90,8 +90,8 @@
    "indent": 0,
    "is_default_module": 0,
    "keep_closed": 0,
-   "label": "Email Groups",
-   "link_to": "Email Group",
+   "label": "Church Emails",
+   "link_to": "Church Email",
    "link_type": "DocType",
    "open_in_new_tab": 1,
    "show_arrow": 0,
@@ -160,7 +160,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-08 19:41:38.741588",
+ "modified": "2026-10-16 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church Communications",
  "name": "Communications",

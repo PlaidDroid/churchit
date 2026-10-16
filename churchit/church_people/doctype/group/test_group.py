@@ -3,7 +3,7 @@
 
 import frappe
 
-from churchit.church_people.doctype.group.group import add_people, create_email_group
+from churchit.church_people.doctype.group.group import add_people
 from churchit.tests.helpers import RollbackEachTest, ensure_user, make_person
 
 
@@ -37,30 +37,6 @@ class TestGroup(RollbackEachTest):
 		group = self._make_group("_Test Guest Group", members=[self.member.name], show_in_portal=1)
 		frappe.set_user("Guest")
 		self.assertFalse(group.has_webform_permission())
-
-	def test_create_email_group_collects_primary_emails_and_reports_missing(self):
-		group = self._make_group("_Test Mailing List", members=[self.member.name, self.outsider.name])
-
-		result = create_email_group(group.name)
-
-		self.assertTrue(result["created"])
-		self.assertEqual(result["email_group"], "_Test Mailing List")
-		self.assertEqual(result["emails_synced"], 1)
-		self.assertEqual(result["missing"], ["_Test Group Outsider"])
-		self.assertEqual(result["total_members"], 1)
-		self.assertTrue(
-			frappe.db.exists(
-				"Email Group Member",
-				{"email_group": "_Test Mailing List", "email": "_test_group_member@example.com"},
-			)
-		)
-
-	def test_create_email_group_is_idempotent(self):
-		group = self._make_group("_Test Repeat List", members=[self.member.name])
-		create_email_group(group.name)
-		result = create_email_group(group.name)
-		self.assertFalse(result["created"])
-		self.assertEqual(result["total_members"], 1)
 
 	def test_add_people_adds_new_members_and_skips_existing_ones(self):
 		group = self._make_group("_Test Add People", members=[self.member.name])

@@ -13,7 +13,7 @@
  "documentation_url": "https://github.com/meichthys/church",
  "idx": 0,
  "is_complete": 0,
- "modified": "2026-09-25 00:00:00.000000",
+ "modified": "2026-10-16 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church Communications",
  "name": "Communications",
@@ -26,10 +26,10 @@
    "step": "Bulletin"
   },
   {
-   "step": "Email Group"
+   "step": "Church Email"
   }
  ],
- "subtitle": "Bulletins, and the lists your email goes out to.",
- "success_message": "Your bulletins and mailing lists are ready to use.",
+ "subtitle": "Bulletins, and the emails the church sends.",
+ "success_message": "Your bulletins and church emails are ready to use.",
  "title": "\ud83d\udce3 Keeping the Church Informed"
 }

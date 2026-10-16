@@ -290,8 +290,10 @@ covering email, the desk bell and SMS, for records your users create too.
 Recipients resolved from a document field are inherently fine. If you add a notification on a
 doctype with no church field there is nothing to filter by, so every role recipient receives it.
 
-Newsletters use one Email Group per church in multi-church mode
-(`churchit/church_communications/newsletter.py`); the group name is derived in one place.
+A Church Email works out its recipients when it is sent, from its own church's people or one of
+that church's groups. Unsubscribes are Email Unsubscribe records against a church, and
+`newsletter.email_church` is the one place that says which church: the root church on a
+single-church site, where records carry none.
 
 ## Public website and portal
 

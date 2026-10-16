@@ -1,0 +1,156 @@
+{
+ "actions": [],
+ "autoname": "EML-.####",
+ "creation": "2026-10-16 00:11:05.011530",
+ "description": "An email the church sends to many people at once: everyone whose Status is Active, only the active members, or the members of one Group. Each person gets their own copy, with a link to stop the church's emails. Files attached to the email are sent with it.",
+ "doctype": "DocType",
+ "documentation": "/app/manual%3A-communications",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "subject",
+  "church",
+  "send_to",
+  "group",
+  "column_break_status",
+  "status",
+  "send_after",
+  "recipients",
+  "sent_on",
+  "section_break_message",
+  "message"
+ ],
+ "fields": [
+  {
+   "fieldname": "subject",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Subject",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:!(frappe.boot.churchit && frappe.boot.churchit.single_church)",
+   "fieldname": "church",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Church",
+   "options": "Church"
+  },
+  {
+   "default": "Active People",
+   "description": "Active People is everyone whose Status is Active. Active Members is only those whose Membership is Member. People who have died, and anyone who unsubscribed, are always left out.",
+   "fieldname": "send_to",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Send To",
+   "options": "Active People\nActive Members\nGroup",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.send_to==\"Group\"",
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "label": "Group",
+   "mandatory_depends_on": "eval:doc.send_to==\"Group\"",
+   "options": "Group"
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nScheduled\nSending\nSent",
+   "read_only": 1
+  },
+  {
+   "description": "Leave empty to send it when you click Send. Pick a time to have it sent then instead.",
+   "fieldname": "send_after",
+   "fieldtype": "Datetime",
+   "label": "Send At"
+  },
+  {
+   "depends_on": "eval:doc.status==\"Sent\"",
+   "description": "How many people it was sent to.",
+   "fieldname": "recipients",
+   "fieldtype": "Int",
+   "label": "Sent To",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.status==\"Sent\"",
+   "fieldname": "sent_on",
+   "fieldtype": "Datetime",
+   "label": "Sent On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_message",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Text Editor",
+   "label": "Message",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-16 01:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Church Communications",
+ "name": "Church Email",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Church Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Church Staff",
+   "select": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "search_fields": "subject",
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "subject",
+ "track_changes": 1
+}

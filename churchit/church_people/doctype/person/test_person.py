@@ -5,6 +5,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_years, getdate, nowdate
 
+from churchit.church_communications.newsletter import email_church, has_unsubscribed, set_subscribed
 from churchit.church_people.doctype.person.person import refresh_ages
 from churchit.tests.helpers import make_primary_contact
 
@@ -381,3 +382,21 @@ class TestPersonMembership(FrappeTestCase):
 		person.membership_status = "Active"
 		person.save()
 		self.assertIsNone(person.inactive_reason)
+
+
+class TestPersonChurchEmails(FrappeTestCase):
+	def test_the_office_can_resubscribe_someone_who_unsubscribed(self):
+		person = frappe.get_doc(
+			{
+				"doctype": "Person",
+				"first_name": "_Test Resubscribe",
+				"emails": [{"email_address": "_test_resubscribe@example.com", "is_primary": 1}],
+			}
+		).insert(ignore_permissions=True)
+		set_subscribed("_test_resubscribe@example.com", email_church(person.church), False)
+		person.run_method("onload")
+		self.assertTrue(person.get_onload().has_unsubscribed)
+
+		person.resubscribe_to_church_emails()
+
+		self.assertFalse(has_unsubscribed(person))

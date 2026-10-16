@@ -43,6 +43,15 @@ frappe.ui.form.on("Person", {
 			show_background_check_status(frm);
 		}
 
+		if (frm.doc.__onload?.has_unsubscribed) {
+			frm.dashboard.add_indicator(__("Unsubscribed from Church Emails"), "orange");
+			if (frappe.model.can_write("Person")) {
+				frm.add_custom_button(__("Resubscribe to Church Emails"), () =>
+					frm.call("resubscribe_to_church_emails").then(() => frm.reload_doc())
+				);
+			}
+		}
+
 		// Add 'Person Tour' button
 		frm.add_custom_button(__("Tutorial"), function () {
 			frm.tour.init("Person").then(() => frm.tour.start());

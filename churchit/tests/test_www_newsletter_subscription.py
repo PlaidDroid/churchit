@@ -4,7 +4,6 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from churchit.church_communications.newsletter import MEMBER_EMAIL_GROUP
 from churchit.tests.helpers import ensure_user
 from churchit.www.newsletter_subscription import get_context
 
@@ -24,5 +23,4 @@ class TestNewsletterSubscriptionPage(FrappeTestCase):
 		context = frappe._dict()
 		get_context(context)
 		self.assertEqual(context.email, "_test_newsletter_page@example.com")
-		self.assertEqual(context.newsletter, MEMBER_EMAIL_GROUP)
 		self.assertIn("subscribed", context)

@@ -7,7 +7,7 @@
  "include_name_field": 0,
  "is_standard": 1,
  "list_name": "List",
- "modified": "2026-09-21 00:00:00.000000",
+ "modified": "2026-10-16 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church Setup",
  "name": "Church",
@@ -17,7 +17,7 @@
  "save_on_complete": 0,
  "steps": [
   {
-   "description": "A short abbreviation for the church name (e.g. \"GCC\" for Grace Community Church). Used as a compact identifier in reports, in the name of the church's newsletter group, and other places where space is limited.",
+   "description": "A short abbreviation for the church name (e.g. \"GCC\" for Grace Community Church). Used as a compact identifier in reports and other places where space is limited.",
    "fieldname": "abbreviation",
    "fieldtype": "Data",
    "has_next_condition": 0,

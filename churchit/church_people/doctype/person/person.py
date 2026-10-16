@@ -9,6 +9,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cstr, get_link_to_form, getdate, nowdate
 
+from churchit.church_communications import newsletter
 from churchit.church_foundations import church_access
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED, WIDOWED, WITH_SPOUSE
 from churchit.church_people.member_access import refuse_member_edits_beyond_personal_details
@@ -27,6 +28,7 @@ def years_since(date):
 class Person(Document):
 	def onload(self):
 		self.set_onload("is_primary_contact", self.is_primary_contact)
+		self.set_onload("has_unsubscribed", newsletter.has_unsubscribed(self))
 
 	def on_update(self):
 		self.sync_church_permission()
@@ -270,6 +272,13 @@ class Person(Document):
 		self.reload()
 		family_link = get_link_to_form("Family", doc.name, doc.family_name)
 		frappe.msgprint(f"👨‍👩‍👧‍👦 New family created: {family_link}")
+
+	@frappe.whitelist(methods=["POST"])
+	def resubscribe_to_church_emails(self):
+		"""Undo an unsubscribe for someone who asked the office, since only a portal login can do it otherwise."""
+		person = frappe.get_doc(self.doctype, self.name)  # the saved record, not the copy the browser sent
+		person.check_permission("write")
+		newsletter.resubscribe(person)
 
 	@frappe.whitelist()
 	def invite_to_portal(self):

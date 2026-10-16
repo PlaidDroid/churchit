@@ -86,9 +86,6 @@ def execute():
 	_clean_gender_options()
 	_hide_default_workspaces()
 
-	# Newsletter recipients: Email Group seeded from Person emails
-	_create_member_email_group()
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -862,25 +859,6 @@ def _create_default_budgets():
 			period="Annual",
 			is_active=1,
 		)
-
-
-def _create_member_email_group():
-	"""Create the church newsletter Email Group and seed it from Person emails.
-
-	The list is kept current automatically by the daily
-	``churchit.church_communications.newsletter.sync_member_email_group`` job, so
-	the recipient list is never maintained by hand.
-	"""
-	from churchit.church_communications.newsletter import (
-		MEMBER_EMAIL_GROUP,
-		sync_member_email_group,
-	)
-
-	if not frappe.db.exists("Email Group", MEMBER_EMAIL_GROUP):
-		frappe.get_doc({"doctype": "Email Group", "title": MEMBER_EMAIL_GROUP}).insert(
-			ignore_permissions=True
-		)
-	sync_member_email_group()
 
 
 def _create_contact_types():
