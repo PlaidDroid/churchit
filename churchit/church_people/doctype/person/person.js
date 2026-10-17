@@ -62,6 +62,7 @@ frappe.ui.form.on("Person", {
 // Show the most recent background check on the form dashboard so leaders can
 // see at a glance whether this person is cleared to serve.
 function show_background_check_status(frm) {
+	if (!frappe.model.can_read("Background Check")) return;
 	frappe.db
 		.get_list("Background Check", {
 			filters: { person: frm.doc.name },
