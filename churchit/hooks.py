@@ -275,7 +275,7 @@ scheduler_events = {
 		"churchit.church_ministries.doctype.function.function.create_scheduled_functions",
 		"churchit.church_missions.doctype.missionary.missionary.create_missionary_expenses",
 		"churchit.church_people.doctype.background_check.background_check.expire_background_checks",
-		"churchit.church_people.doctype.person.person.refresh_ages",
+		"churchit.church_people.derived.refresh_daily",
 		"churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment.send_team_emails",
 	],
 	"cron": {
@@ -291,11 +291,12 @@ scheduler_events = {
 
 # Overriding Methods
 # ------------------------------
-#
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "churchit.event.get_events"
-# }
-#
+
+# Connection counts on a form cover only the records the reader may see.
+override_whitelisted_methods = {
+	"frappe.desk.notifications.get_open_count": "churchit.connections.get_open_count",
+}
+
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
 # along with any modifications made in other Frappe apps

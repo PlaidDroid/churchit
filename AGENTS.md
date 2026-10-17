@@ -256,6 +256,11 @@ report right is what staff roles hold and Church User does not. Give a Custom ch
 `document_type` as well. Frappe shows a chart with neither roles nor a doctype to System
 Managers only.
 
+A report, card or page that lists people to celebrate, contact or check in must leave out the
+people who have died. `membership.living_people_filter(Person)` is the one rule: use it in
+`frappe.qb`, or as an item of a `get_list` filters list. For a couple, apply it to the spouse too,
+through a left join on `Person` as `spouse`.
+
 ## Roles
 
 Church User is the **portal member** role, with no desk access. Staff hold desk roles, bundled
@@ -396,6 +401,9 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 - **Administrator is never restricted.** User permissions do not apply to it, so it always sees every
   church. Test scoping as a Church Manager, never as Administrator.
 - **Booleans over `frappe.xcall` arrive as strings.** Use `frappe.utils.sbool`, not `cint`.
+- **Frappe's connection counts ignore permissions.** It counts with `get_all`, for every doctype
+  asked for, so `churchit.connections.get_open_count` replaces it and counts with `get_list`.
+  A connection to a confidential doctype is safe to add for that reason only.
 - **User defaults are cached per worker** and lag a write by a request; read the `DefaultValue` row
   directly when a choice must take effect immediately.
 - **Hand-edited Workspace, Report and similar JSON is skipped by migrate** unless its `modified`

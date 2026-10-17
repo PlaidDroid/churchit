@@ -9,7 +9,7 @@ import frappe
 from frappe.utils import getdate, sbool
 
 from churchit.church_foundations.doctype.church.church import ADDRESS_FIELDS, address_line
-from churchit.church_people.membership import deceased_people
+from churchit.church_people.membership import living_people_filter
 from churchit.church_scope import is_multi_church
 from churchit.church_website.footer import map_url
 from churchit.contacts import ADDRESS_DOCTYPE, EMAIL_DOCTYPE, PHONE_DOCTYPE, get_primary_values
@@ -41,7 +41,7 @@ def get_directory():
 	"""
 	people = frappe.get_list(
 		"Person",
-		filters={"name": ("not in", deceased_people().run(pluck=True))},
+		filters=[living_people_filter()],
 		fields=PERSON_FIELDS,
 		order_by="last_name asc, first_name asc",
 		limit_page_length=0,

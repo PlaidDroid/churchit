@@ -34,12 +34,6 @@
     "parent": "Church Manager",
     "parentfield": "roles",
     "parenttype": "Role Profile",
-    "role": "Newsletter Manager"
-   },
-   {
-    "parent": "Church Manager",
-    "parentfield": "roles",
-    "parenttype": "Role Profile",
     "role": "Report Manager"
    },
    {

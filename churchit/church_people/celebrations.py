@@ -11,7 +11,7 @@ import frappe
 from frappe.utils import formatdate, getdate
 
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED
-from churchit.church_people.membership import ACTIVE_MEMBER_FILTERS, deceased_people, is_active_member
+from churchit.church_people.membership import is_active_member, living_people_filter
 
 
 def birthdays(start, end, members_only=True, church=None):
@@ -25,7 +25,7 @@ def birthdays(start, end, members_only=True, church=None):
 		.on((LifeEvent.parent == Person.name) & (LifeEvent.parenttype == "Person"))
 		.select(Person.full_name, LifeEvent.date)
 		.where((LifeEvent.event_type == "Birth") & LifeEvent.date.isnotnull())
-		.where((Person.hide_from_directory == 0) & Person.name.notin(deceased_people()))
+		.where((Person.hide_from_directory == 0) & living_people_filter(Person))
 	)
 	if members_only:
 		query = query.where(is_active_member(Person))
@@ -41,25 +41,34 @@ def birthdays(start, end, members_only=True, church=None):
 
 def anniversaries(start, end, members_only=True, church=None):
 	"""Couples whose wedding anniversary falls between *start* and *end*, as (day, name), one row per couple."""
-	filters = {"marital_status": MARRIED, "anniversary": ("is", "set"), "hide_from_directory": 0}
-	if members_only:
-		filters.update(ACTIVE_MEMBER_FILTERS)
-	if church:
-		filters["church"] = church
 	# church-scope: scoped by the church the caller passes in
-	people = frappe.get_all(
-		"Person",
-		filters=filters,
-		fields=["name", "first_name", "last_name", "full_name", "spouse", "anniversary"],
+	Person = frappe.qb.DocType("Person")
+	Spouse = frappe.qb.DocType("Person").as_("spouse")
+	query = (
+		frappe.qb.from_(Person)
+		.left_join(Spouse)
+		.on(Spouse.name == Person.spouse)
+		.select(
+			Person.name,
+			Person.first_name,
+			Person.last_name,
+			Person.full_name,
+			Person.spouse,
+			Person.anniversary,
+		)
+		.where((Person.marital_status == MARRIED) & Person.anniversary.isnotnull())
+		.where((Person.hide_from_directory == 0) & living_people_filter(Person))
+		.where(Spouse.name.isnull() | ((Spouse.hide_from_directory == 0) & living_people_filter(Spouse)))
 	)
+	if members_only:
+		query = query.where(is_active_member(Person))
+	if church:
+		query = query.where(Person.church == church)
 	rows = []
 	listed = set()
-	deceased = set(deceased_people().run(pluck=True))
-	for person in people:
+	for person in query.run(as_dict=True):
 		occurrence = occurrence_between(person.anniversary, start, end)
-		if not occurrence or person.name in listed or {person.name, person.spouse} & deceased:
-			continue
-		if person.spouse and frappe.db.get_value("Person", person.spouse, "hide_from_directory"):
+		if not occurrence or person.name in listed:
 			continue
 		listed.update({person.name, person.spouse})
 		rows.append((occurrence, couple_name(person)))

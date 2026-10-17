@@ -12,7 +12,7 @@ from churchit.church_ministries.page.check_in.check_in import (
 	search_people,
 	undo_check_in,
 )
-from churchit.tests.helpers import make_function, make_person, make_primary_contact
+from churchit.tests.helpers import ensure, make_function, make_person, make_primary_contact
 
 
 class TestCheckInStation(FrappeTestCase):
@@ -32,6 +32,13 @@ class TestCheckInStation(FrappeTestCase):
 			)
 		)
 		cls.child = make_person("Zoe", "Zebrastripe", family=cls.family.name, photo="/files/zoe.jpg")
+		ensure("Life Event Type", {"type": "Death"})
+		make_person(
+			"Zara",
+			"Zebrastripe",
+			family=cls.family.name,
+			life_events=[{"event_type": "Death", "date": "2024-01-01"}],
+		)
 		cls.loner = make_person("Zack", "Zebraless")
 		frappe.get_single("Check-In Settings").save(ignore_permissions=True)
 
@@ -53,6 +60,11 @@ class TestCheckInStation(FrappeTestCase):
 	def test_phone_search_ignores_formatting(self):
 		self.assertEqual(self.members_of(search_people("5550109876")), [["Zed", "Zoe"]])
 		self.assertEqual(self.members_of(search_people("010-98")), [["Zed", "Zoe"]])
+
+	def test_people_who_have_died_are_left_out(self):
+		"""A match is expanded to the whole family, which brought a late grandparent to the station."""
+		self.assertEqual(self.members_of(search_people("zebrastripe")), [["Zed", "Zoe"]])
+		self.assertEqual(search_people("zara"), [])
 
 	def test_short_queries_return_nothing(self):
 		self.assertEqual(search_people("z"), [])

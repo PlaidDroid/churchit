@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 
-from churchit.church_people.membership import deceased_people
+from churchit.church_people.membership import living_people_filter
 from churchit.church_scope import scoped
 from churchit.contacts import primary_email_query, primary_phone_query
 from churchit.query import CurDate, DayOfMonth, Month, Year
@@ -45,7 +45,7 @@ def get_data(filters=None):
 			primary_email_query(Person).as_("email"),
 		)
 		.where(LifeEvent.date.isnotnull() & (Month(LifeEvent.date) == Month(CurDate())))
-		.where(Person.name.notin(deceased_people()))
+		.where(living_people_filter(Person))
 		.orderby(DayOfMonth(LifeEvent.date))
 		.orderby(Person.full_name)
 	)

@@ -20,19 +20,23 @@ ACTIVE = "Active"
 INACTIVE = "Inactive"
 MEMBER_STATUSES = (ACTIVE, INACTIVE)
 
-ACTIVE_MEMBER_FILTERS = {"membership": MEMBER, "membership_status": ACTIVE}
-
 
 def is_active_member(Person):
 	"""Query criterion for an active member on the Person table *Person*."""
 	return (Person.membership == MEMBER) & (Person.membership_status == ACTIVE)
 
 
-def deceased_people():
-	"""Subquery of the people with a Death life event."""
+def living_people_filter(Person=None):
+	"""Query criterion for the people who have not died, on the Person table *Person* or an alias of it.
+
+	It is the one rule for who has died, in `frappe.qb` and as an item of a `frappe.get_list` filters list.
+	"""
+	# church-scope: builds a criterion and reads nothing; the query or get_list it joins applies the scope
+	Person = Person or frappe.qb.DocType("Person")
 	LifeEvent = frappe.qb.DocType("Life Event")
-	return (
+	deaths = (
 		frappe.qb.from_(LifeEvent)
 		.select(LifeEvent.parent)
 		.where((LifeEvent.parenttype == "Person") & (LifeEvent.event_type == "Death"))
 	)
+	return Person.name.notin(deaths)

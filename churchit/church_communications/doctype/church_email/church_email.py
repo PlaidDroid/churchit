@@ -10,7 +10,7 @@ from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, email_
 from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import (
 	can_send_email,
 )
-from churchit.church_people.membership import ACTIVE, MEMBER, deceased_people
+from churchit.church_people.membership import ACTIVE, MEMBER, living_people_filter
 from churchit.church_scope import default_church, document_church, is_multi_church
 from churchit.contacts import get_primary_emails
 
@@ -102,21 +102,27 @@ class ChurchEmail(Document):
 
 	def get_people(self) -> list[str]:
 		"""The people this is for, worked out now so that nobody who died or left is included."""
-		deceased = deceased_people().run(pluck=True)
+		Person = frappe.qb.DocType("Person")
 		if self.send_to == GROUP:
+			GroupMember = frappe.qb.DocType("Group Member")
 			# church-scope: the members listed on one group, which validate keeps to this email's church
-			members = frappe.get_all(
-				"Group Member", filters={"parenttype": "Group", "parent": self.group}, pluck="person"
+			return (
+				frappe.qb.from_(GroupMember)
+				.join(Person)
+				.on(Person.name == GroupMember.person)
+				.select(Person.name)
+				.where((GroupMember.parenttype == "Group") & (GroupMember.parent == self.group))
+				.where(living_people_filter(Person))
+				.run(pluck=True)
 			)
-			return [person for person in members if person and person not in deceased]
 
-		filters = {"membership_status": ACTIVE, "name": ("not in", deceased)}
+		filters = {"membership_status": ACTIVE}
 		if self.send_to == ACTIVE_MEMBERS:
 			filters["membership"] = MEMBER
 		if is_multi_church():
 			filters["church"] = self.church
 		# church-scope: the people of this email's own church; a Person is never shared
-		return frappe.get_all("Person", filters=filters, pluck="name")
+		return frappe.get_all("Person", filters=[filters, living_people_filter(Person)], pluck="name")
 
 	def get_attachments(self) -> list[dict]:
 		files = frappe.get_all(

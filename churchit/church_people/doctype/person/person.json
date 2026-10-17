@@ -42,7 +42,8 @@
   "section_break_eqre",
   "letters",
   "notes_tab",
-  "notes"
+  "notes",
+  "connections_tab"
  ],
  "fields": [
   {
@@ -285,6 +286,12 @@
    "fieldtype": "Link",
    "label": "Marital Status",
    "options": "Marital Status"
+  },
+  {
+   "fieldname": "connections_tab",
+   "fieldtype": "Tab Break",
+   "label": "Connections",
+   "show_dashboard": 1
   }
  ],
  "grid_page_length": 50,
@@ -292,47 +299,92 @@
  "index_web_pages_for_search": 1,
  "links": [
   {
-   "link_doctype": "Prayer Request",
-   "link_fieldname": "requestor"
-  },
-  {
-   "link_doctype": "Prayer",
-   "link_fieldname": "person"
-  },
-  {
-   "link_doctype": "Collection",
-   "link_fieldname": "person"
-  },
-  {
+   "group": "Involvement",
    "link_doctype": "Function",
    "link_fieldname": "person"
   },
   {
-   "link_doctype": "Alms Request",
-   "link_fieldname": "recipient"
+   "group": "Involvement",
+   "link_doctype": "Function Sign-Up",
+   "link_fieldname": "person"
   },
   {
+   "group": "Involvement",
    "link_doctype": "Group",
    "link_fieldname": "person"
   },
   {
+   "group": "Involvement",
+   "link_doctype": "Ministry Team Assignment",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Involvement",
+   "link_doctype": "Missionary",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Involvement",
+   "link_doctype": "Background Check",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Care",
+   "link_doctype": "Prayer Request",
+   "link_fieldname": "requestor"
+  },
+  {
+   "group": "Care",
+   "link_doctype": "Prayer",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Care",
    "link_doctype": "Visitation Log",
    "link_fieldname": "person"
   },
   {
-   "link_doctype": "Member Transfer",
-   "link_fieldname": "person"
-  },
-  {
+   "group": "Care",
    "link_doctype": "Care Request",
    "link_fieldname": "person"
   },
   {
-   "link_doctype": "Background Check",
+   "group": "Care",
+   "link_doctype": "Care Assignment",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Care",
+   "link_doctype": "Counseling Case",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Care",
+   "link_doctype": "Alms Request",
+   "link_fieldname": "recipient"
+  },
+  {
+   "group": "Giving",
+   "link_doctype": "Collection",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Giving",
+   "link_doctype": "Online Donation",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Giving",
+   "link_doctype": "Giving Statement",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Membership",
+   "link_doctype": "Member Transfer",
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-15 12:00:00.000000",
+ "modified": "2026-10-16 14:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

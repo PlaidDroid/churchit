@@ -14,6 +14,7 @@ from churchit.church_ministries.doctype.function_check_in.function_check_in impo
 	is_shared_function,
 	print_name_tags,
 )
+from churchit.church_people.membership import living_people_filter
 from churchit.church_scope import (
 	church_query_filters,
 	default_church,
@@ -117,24 +118,25 @@ def find_by_phone(digits, scope):
 
 
 def group_by_family(matched, scope):
-	"""Expand matches to whole families so siblings can be checked in together."""
+	"""Expand living matches to whole families so siblings can be checked in together."""
 	if not matched:
 		return []
+	is_living = living_people_filter()
 	# church-scope: *scope* is get_people_scope's answer for this station
 	families = frappe.get_all(
 		"Person",
-		filters={"name": ["in", matched], "family": ["is", "set"], **scope},
+		filters=[{"name": ["in", matched], "family": ["is", "set"], **scope}, is_living],
 		pluck="family",
 		distinct=True,
 	)
 	or_filters = [["name", "in", matched]]
 	if families:
 		or_filters.append(["family", "in", families])
-	# The church filter is the backstop: every person the station lists passes it,
-	# whichever of the searches above found them.
+	# The church and living filters are the backstop: every person the station lists
+	# passes them, whichever of the searches above found them.
 	people = frappe.get_all(
 		"Person",
-		filters=scope,
+		filters=[scope, is_living],
 		or_filters=or_filters,
 		fields=[
 			"name",

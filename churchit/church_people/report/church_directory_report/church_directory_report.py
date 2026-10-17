@@ -14,7 +14,7 @@ from pypika import Order
 from churchit.church_missions.doctype.missionary_status.missionary_status import is_current_missionary
 from churchit.church_people.doctype.family.family import primary_contacts
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED
-from churchit.church_people.membership import ACTIVE, deceased_people, is_active_member
+from churchit.church_people.membership import ACTIVE, is_active_member, living_people_filter
 from churchit.church_people.report.church_directory_report.booklet import impose_booklet
 from churchit.church_scope import church_filter, root_church, scoped
 from churchit.contacts import primary_address_query, primary_email_query, primary_phone_query
@@ -399,7 +399,7 @@ def get_directory_html(
 			)
 			.where(Person.anniversary.isnotnull() & (Person.marital_status == MARRIED))
 			.where(Coalesce(Spouse.hide_from_directory, 0) == 0)
-			.where(Spouse.name.isnull() | Spouse.name.notin(deceased_people()))
+			.where(Spouse.name.isnull() | living_people_filter(Spouse))
 			.orderby(Month(Person.anniversary))
 			.orderby(Day(Person.anniversary))
 			.orderby(Person.last_name)
@@ -567,7 +567,7 @@ def with_home_address(query, Person):
 def listed(query, Person, filters):
 	"""*query* without the deceased, the people who asked to be left out of the directory, and those *filters* leave out."""
 	filters = filters or {}
-	query = query.where((Person.hide_from_directory == 0) & Person.name.notin(deceased_people()))
+	query = query.where((Person.hide_from_directory == 0) & living_people_filter(Person))
 	if frappe.utils.cint(filters.get("members_only")):
 		query = query.where(is_active_member(Person))
 	if frappe.utils.cint(filters.get("hide_non_active")):
@@ -579,7 +579,7 @@ def get_families_with_hidden_contact(hide_non_active=False):
 	"""Families whose primary contact is hidden, deceased, or not Active when *hide_non_active*."""
 	Family = frappe.qb.DocType("Family")
 	Person = frappe.qb.DocType("Person")
-	is_hidden = (Person.hide_from_directory == 1) | Person.name.isin(deceased_people())
+	is_hidden = (Person.hide_from_directory == 1) | ~living_people_filter(Person)
 	if hide_non_active:
 		is_hidden |= Coalesce(Person.membership_status, "") != ACTIVE
 	# church-scope: only used to shorten names of families the scoped queries already listed
@@ -630,7 +630,7 @@ def get_missionary_people(missionaries):
 			(MissionaryPerson.parenttype == "Missionary")
 			& MissionaryPerson.parent.isin(missionaries)
 			& (Person.hide_from_directory == 0)
-			& Person.name.notin(deceased_people())
+			& living_people_filter(Person)
 		)
 		.orderby(MissionaryPerson.idx)
 		.run(as_dict=True)

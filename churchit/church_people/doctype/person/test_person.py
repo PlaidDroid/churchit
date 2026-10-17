@@ -6,7 +6,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_years, getdate, nowdate
 
 from churchit.church_communications.newsletter import email_church, has_unsubscribed, set_subscribed
-from churchit.church_people.doctype.person.person import refresh_ages
+from churchit.church_people.derived import refresh_daily
 from churchit.tests.helpers import make_primary_contact
 
 
@@ -46,7 +46,7 @@ class TestPerson(FrappeTestCase):
 		)
 		frappe.db.set_value("Person", person.name, {"age": 29, "marriage_years": 9}, update_modified=False)
 
-		refresh_ages()
+		refresh_daily()
 
 		self.assertEqual(frappe.db.get_value("Person", person.name, ["age", "marriage_years"]), (30, 10))
 
@@ -309,6 +309,20 @@ class TestPerson(FrappeTestCase):
 		data = get_user_dashboard_data({"transactions": []})
 		self.assertIn({"label": "Church", "items": ["Person"]}, data["transactions"])
 		self.assertEqual(data["non_standard_fieldnames"]["Person"], "user")
+
+	def test_every_connection_names_a_field_that_points_at_a_person(self):
+		"""A connection on a field its doctype lacks counts nothing; Frappe finds the field in a child table too."""
+		for link in frappe.get_meta("Person").links:
+			meta = frappe.get_meta(link.link_doctype)
+			tables = [frappe.get_meta(table.options) for table in meta.get_table_fields()]
+			fields = [table.get_field(link.link_fieldname) for table in (meta, *tables)]
+			self.assertTrue(
+				any(
+					field and (field.options == "Person" or field.fieldtype == "Dynamic Link")
+					for field in fields
+				),
+				f"{link.link_doctype}.{link.link_fieldname}",
+			)
 
 
 class TestPersonMembership(FrappeTestCase):
