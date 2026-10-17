@@ -16,7 +16,7 @@ from churchit.church_people.household import (
 	role_of,
 	salutation,
 )
-from churchit.patches.v1_0 import fill_household_roles
+from churchit.patches.v1_0 import fill_household_roles, repair_early_household_roles
 from churchit.tests.helpers import RollbackEachTest, ensure, ensure_user, make_person, make_primary_contact
 
 
@@ -95,6 +95,27 @@ class TestHousehold(RollbackEachTest):
 			[ADULT, ADULT, CHILD, OTHER_ADULT],
 		)
 		self.assertIsNone(role_of(make_person("_Test Familyless").name))
+
+	def test_members_who_join_before_the_primary_contact_wait_for_their_roles(self):
+		"""Until someone is the primary contact, no one's relationship to them is known."""
+		family = frappe.get_doc({"doctype": "Family", "family_name": "_Test Members First"}).insert(
+			ignore_permissions=True
+		)
+		father = make_person("Ray", "First", gender="Male", family=family.name, life_events=[born(40)])
+		mother = make_person(
+			"Rae",
+			"First",
+			gender="Female",
+			family=family.name,
+			marital_status="Married",
+			spouse=father.name,
+			life_events=[born(38)],
+		)
+		self.assertEqual([role_of(father.name), role_of(mother.name)], [None, None])
+
+		make_primary_contact(father)
+
+		self.assertEqual([role_of(father.name), role_of(mother.name)], [ADULT, ADULT])
 
 	def test_an_age_is_known_from_a_birth_date_and_after_a_death_from_its_date(self):
 		frappe.db.set_value("Person", self.grandmother, {"is_deceased": 1, "deceased_date": None})
@@ -255,3 +276,28 @@ class TestFillHouseholdRolesPatch(RollbackEachTest):
 		frappe.db.set_single_value("People Settings", "adult_age", 0)
 
 		self.assertRaises(frappe.ValidationError, fill_household_roles.execute)
+
+
+class TestRepairEarlyHouseholdRolesPatch(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		set_adult_age(18)
+
+	def test_the_primary_contact_and_spouse_become_adults_and_no_one_else_changes(self):
+		family, father, mother, son, grandmother = make_household("_Test Filled Early")
+		frappe.db.sql(
+			"update `tabFamily Members` set household_role = 'Other Adult' where parent = %s and member in %s",
+			(family, (father, mother)),
+		)
+		frappe.db.set_value("Person", father, "life_stage", "Other Adult")
+		modified = frappe.db.get_value("Family", family, "modified")
+
+		repair_early_household_roles.execute()
+
+		self.assertEqual(
+			[role_of(person) for person in (father, mother, son, grandmother)],
+			[ADULT, ADULT, CHILD, OTHER_ADULT],
+		)
+		self.assertEqual(frappe.db.get_value("Person", father, "life_stage"), "Adult")
+		self.assertEqual(frappe.db.get_value("Family", family, "modified"), modified)

@@ -107,8 +107,11 @@ class Family(Document):
 	def fill_household_roles(self) -> list:
 		"""Fill each blank household role that the member's relationship and age decide, and return the rows filled.
 
-		A role someone set is never changed.
+		A role someone set is never changed. With no primary contact yet, no one's relationship to them is known,
+		so every role waits for one.
 		"""
+		if not self.primary_contact:
+			return []
 		blank = [member for member in self.members if member.member and not member.household_role]
 		ages = household.get_ages([member.member for member in blank])
 		adult_age = frappe.db.get_single_value("People Settings", "adult_age")
