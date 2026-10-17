@@ -434,6 +434,7 @@
   },
   {
    "default": "0",
+   "depends_on": "eval:doc.is_deceased",
    "fieldname": "is_deceased",
    "fieldtype": "Check",
    "label": "Deceased",
@@ -670,7 +671,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-17 16:00:00.000000",
+ "modified": "2026-10-17 17:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
