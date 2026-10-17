@@ -409,6 +409,19 @@ class TestChurchDirectoryReport(FrappeTestCase):
 			self.assertIn("_Test Rose Mourning", html)
 			self.assertNotIn("Walt", html)
 
+	def test_a_birthday_with_no_year_is_listed_by_month_and_day(self):
+		ensure("Life Event Type", {"type": "Birth"})
+		make_person(
+			"_Test Yearless",
+			"Birthday",
+			life_events=[{"event_type": "Birth", "date": "1900-07-04", "year_unknown": 1}],
+		)
+
+		html = self.render(show_birthdays="1")
+
+		birthdays = html[html.index('<div class="appendix-heading">Birthdays</div>') :]
+		self.assertRegex(birthdays, r"_Test Yearless Birthday</span>\s*<span class=\"calendar-date\">July 4<")
+
 	def test_record_values_are_escaped(self):
 		self.set_church_value("church_name", 'Saint "Mary" </style><script>x()</script>')
 		make_person("_Test", "<b>Directory Escaped</b>", photo='/files/_test.png" onerror="alert(1)')

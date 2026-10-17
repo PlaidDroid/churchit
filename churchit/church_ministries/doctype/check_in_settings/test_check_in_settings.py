@@ -27,6 +27,7 @@ class TestCheckInSettings(FrappeTestCase):
 				"label_height": 2,
 				"label_dpi": "203",
 				"security_codes": 1,
+				"print_allergies": 0,
 				"printer_host": None,
 			}
 		)
@@ -74,6 +75,37 @@ class TestCheckInSettings(FrappeTestCase):
 		zpl = self.settings.render_name_tags([self.check_in(person.name)])
 		self.assertIn("^FDCaret^FS", zpl)
 		self.assertIn("^FDTilde^FS", zpl)
+
+	def test_allergies_print_only_when_the_settings_ask_for_them(self):
+		allergic = make_person("_Test Tag", "Allergic", alergies="Peanuts")
+		for method in ("Browser", "QZ Tray"):
+			self.settings.update({"name_tag_printing": method, "print_allergies": 0})
+			self.assertNotIn(
+				"Peanuts", self.settings.render_name_tags([self.check_in(allergic.name)]), method
+			)
+
+			self.settings.print_allergies = 1
+			self.assertIn(
+				"Allergies: Peanuts", self.settings.render_name_tags([self.check_in(allergic.name)]), method
+			)
+			self.assertNotIn("Allergies", self.settings.render_name_tags([self.check_in()]), method)
+
+	def test_tags_print_the_nickname_in_place_of_the_first_name(self):
+		peggy = make_person("Margaret", "_Test Tag", nickname="Peggy")
+		check_ins = [self.check_in(peggy.name, "K7PX"), self.check_in(code="K7PX")]
+		for method in ("Browser", "QZ Tray"):
+			self.settings.name_tag_printing = method
+			tags = self.settings.render_name_tags(check_ins)
+			self.assertIn("Peggy", tags, method)
+			self.assertNotIn("Margaret", tags, method)
+		self.assertIn("Peggy, Bartholomew-Alexander", tags)
+
+	def test_html_tags_escape_what_members_type(self):
+		person = make_person("<b>Bold</b>", alergies="<script>x</script>")
+		self.settings.print_allergies = 1
+		html = self.settings.render_name_tags([self.check_in(person.name)])
+		self.assertIn("&lt;b&gt;Bold&lt;/b&gt;", html)
+		self.assertNotIn("<script>", html)
 
 	def test_browser_jobs_return_html_for_the_client(self):
 		job = self.settings.print_name_tags([self.check_in()])

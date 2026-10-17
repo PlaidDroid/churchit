@@ -57,6 +57,10 @@ class TestCheckInStation(FrappeTestCase):
 		self.assertEqual(self.members_of(search_people("zebra")), [["Zack"], ["Zed", "Zoe"]])
 		self.assertEqual(self.members_of(search_people("zebrastripe zoe")), [["Zed", "Zoe"]])
 
+	def test_search_matches_a_nickname(self):
+		make_person("Margaret", "_Test Nickname", nickname="Peggy")
+		self.assertEqual(self.members_of(search_people("peggy")), [["Margaret"]])
+
 	def test_phone_search_ignores_formatting(self):
 		self.assertEqual(self.members_of(search_people("5550109876")), [["Zed", "Zoe"]])
 		self.assertEqual(self.members_of(search_people("010-98")), [["Zed", "Zoe"]])
@@ -99,5 +103,6 @@ class TestCheckInStation(FrappeTestCase):
 		self.assertEqual(person.full_name, "Zelda Zebrastripe")
 		self.assertEqual(person.family, self.family.name)
 		self.assertEqual(person.phones[0].phone_number, "555 010 1111")
+		self.assertEqual(person.source, "Check-In")
 		self.assertEqual(self.members_of(search_people("0101111")), [["Zed", "Zelda", "Zoe"]])
 		person.delete()

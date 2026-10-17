@@ -1,16 +1,17 @@
 {#- ZPL name tag for a Function Check-In, sized from `settings` (Check-In Settings). With
     `pickup_names` set it renders the family's pickup tag instead. ^ and ~ are ZPL control
-    characters, so they are stripped from names. -#}
+    characters, so they are stripped from names and allergies. -#}
 {%- set settings = settings or frappe.get_doc("Check-In Settings") -%}
 {%- set dpi = (settings.label_dpi or 203)|int -%}
 {%- set width = ((settings.label_width or 4) * dpi)|int -%}
 {%- set height = ((settings.label_height or 2) * dpi)|int -%}
 {%- set pad = (width * 0.05)|int -%}
 {%- set inner = width - 2 * pad -%}
-{%- set person = frappe.db.get_value("Person", doc.person, ["first_name", "last_name"], as_dict=True) if doc.person else None -%}
+{%- set person = frappe.db.get_value("Person", doc.person, ["first_name", "nickname", "last_name", "alergies"], as_dict=True) if doc.person else None -%}
 {%- set function = frappe.db.get_value("Function", doc.function, ["function_name", "start_date"], as_dict=True) if doc.function else None -%}
-{%- set first_name = ((person.first_name if person else "") or "")|replace("^", "")|replace("~", "") -%}
+{%- set first_name = (((person.nickname or person.first_name) if person else "") or "")|replace("^", "")|replace("~", "") -%}
 {%- set last_name = ((person.last_name if person else "") or "")|replace("^", "")|replace("~", "") -%}
+{%- set allergies = ((person.alergies if person and settings.print_allergies else "") or "")|replace("^", "")|replace("~", "") -%}
 {%- set footer = ([function.function_name if function else "", frappe.utils.formatdate(function.start_date, "MMM d, yyyy") if function and function.start_date else ""]|select|join(" - "))|replace("^", "")|replace("~", "") -%}
 {%- set code = doc.security_code or "" -%}
 {%- set code_width = (height * 0.16 * 0.6 * 5)|int if code else 0 -%}
@@ -28,6 +29,9 @@
 {%- else %}
 ^FO{{ pad }},{{ (height * 0.14)|int }}^A0N,{{ first_size }},{{ first_size }}^FB{{ inner }},1,0,C^FD{{ first_name }}^FS
 ^FO{{ pad }},{{ (height * 0.52)|int }}^A0N,{{ (height * 0.14)|int }},{{ (height * 0.14)|int }}^FB{{ inner }},1,0,C^FD{{ last_name }}^FS
+{%- if allergies %}
+^FO{{ pad }},{{ (height * 0.67)|int }}^A0N,{{ (height * 0.08)|int }},{{ (height * 0.08)|int }}^FB{{ inner }},1,0,C^FDAllergies: {{ allergies }}^FS
+{%- endif %}
 ^FO{{ pad }},{{ (height * 0.86)|int }}^A0N,{{ (height * 0.07)|int }},{{ (height * 0.07)|int }}^FB{{ inner - code_width }},1,0,L^FD{{ footer }}^FS
 {%- if code %}
 ^FO{{ width - pad - code_width }},{{ (height * 0.76)|int }}^A0N,{{ (height * 0.16)|int }},{{ (height * 0.16)|int }}^FB{{ code_width }},1,0,R^FD{{ code }}^FS

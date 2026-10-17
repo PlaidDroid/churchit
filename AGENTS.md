@@ -261,6 +261,14 @@ people who have died. `membership.living_people_filter(Person)` is the one rule:
 `frappe.qb`, or as an item of a `get_list` filters list. For a couple, apply it to the spouse too,
 through a left join on `Person` as `spouse`.
 
+Birthdays and ages come from the Person fields, never from Life Event rows. `birth_month` and
+`birth_day` are set from the Birth event even when its year is unknown (0 when there is no
+birthday); `birth_date` and `age` need a known year. The age column stores 0 for an unknown age, so
+test `derived.has_known_age(Person)`, not the age. For a window of days use
+`celebrations.get_birthday_rows`; for this week use
+`query.month_day_this_week(Person.birth_month, Person.birth_day)`, since a week across the new year
+needs (month, day) pairs rather than a range.
+
 ## Roles
 
 Church User is the **portal member** role, with no desk access. Staff hold desk roles, bundled
@@ -285,6 +293,20 @@ through `church_people/member_access.py`. That module also limits their Person e
 Personal Details form's fields, and a prayer or alms recipient to their own church. A web form
 renders the name of every record its Link fields may list, hidden fields included, so a member
 form must not link to Person. `tests/test_portal_members.py` checks this.
+
+## People events and history
+
+`church_people/events.py` emits `membership_changed` (field, old, new), `life_event_added`
+(event_type, date) and `person_deceased` (date) from `Person.on_update`. Subscribe in an app's
+hooks.py with `churchit_people_events = {"membership_changed": ["my_app.module.handler"]}`. Each
+handler runs as its own background job after the save commits and receives `(person, **data)`.
+Install, patches and migrate emit nothing; data import does. A `frappe.db.set_value` skips
+`on_update`, so it emits nothing.
+
+Membership history is Milestone rows written by `membership.record_changes` for
+`membership.TRACKED_FIELDS`, read by `membership.changed_between` and the Membership Changes report.
+Do not add a Frappe Milestone Tracker on Person: Frappe allows one tracker per doctype, and clearing
+the tracked field fails the save.
 
 ## Notifications and email
 

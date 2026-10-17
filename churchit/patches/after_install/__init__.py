@@ -14,9 +14,11 @@ import frappe
 from churchit.church_missions.doctype.missionary_status.missionary_status import (
 	DEFAULT_STATUSES as DEFAULT_MISSIONARY_STATUSES,
 )
+from churchit.church_people.doctype.inactive_reason.inactive_reason import create_inactive_reasons
 from churchit.church_people.doctype.marital_status.marital_status import (
 	DEFAULT_STATUSES as DEFAULT_MARITAL_STATUSES,
 )
+from churchit.church_people.doctype.people_settings.people_settings import store_defaults
 from churchit.church_people.membership import MEMBER_STATUSES, MEMBERSHIP_TYPES
 
 # We define this here so we can import it from sample_data
@@ -35,6 +37,8 @@ def execute():
 	_create_member_statuses()
 	_create_membership_types()
 	_create_marital_statuses()
+	create_inactive_reasons()
+	store_defaults()
 	_create_function_types()
 	_create_function_attendance_types()
 	_create_position_types()

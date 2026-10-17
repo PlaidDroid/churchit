@@ -348,32 +348,20 @@ def get_directory_html(
 	# ── Birthdays ────────────────────────────────────────────────
 	birthdays = []
 	if show_birthdays:
-		LifeEvent = frappe.qb.DocType("Life Event")
 		birthdays_query = (
 			frappe.qb.from_(Person)
-			.join(LifeEvent)
-			.on(
-				(LifeEvent.parent == Person.name)
-				& (LifeEvent.parenttype == "Person")
-				& (LifeEvent.event_type == "Birth")
-			)
-			.select(
-				Person.full_name,
-				LifeEvent.date.as_("birthday"),
-				Month(LifeEvent.date).as_("birth_month"),
-				Day(LifeEvent.date).as_("birth_day"),
-			)
-			.where(LifeEvent.date.isnotnull())
-			.orderby(Month(LifeEvent.date))
-			.orderby(Day(LifeEvent.date))
+			.select(Person.full_name, Person.birth_month, Person.birth_day)
+			.where(Person.birth_month > 0)
+			.orderby(Person.birth_month)
+			.orderby(Person.birth_day)
 			.orderby(Person.last_name)
 			.orderby(Person.first_name)
 		)
 
 		raw_birthdays = scoped(listed(birthdays_query, Person, filters), Person, filters).run(as_dict=True)
 		for row in raw_birthdays:
-			row["month_name"] = calendar.month_name[int(row.birth_month)]
-			row["month_day"] = f"{calendar.month_name[int(row.birth_month)]} {int(row.birth_day)}"
+			row["month_name"] = calendar.month_name[row.birth_month]
+			row["month_day"] = f"{row.month_name} {row.birth_day}"
 			birthdays.append(row)
 
 	# ── Anniversaries ────────────────────────────────────────────

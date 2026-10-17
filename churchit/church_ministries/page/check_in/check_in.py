@@ -14,6 +14,7 @@ from churchit.church_ministries.doctype.function_check_in.function_check_in impo
 	is_shared_function,
 	print_name_tags,
 )
+from churchit.church_people.doctype.person.person import SOURCE_CHECK_IN
 from churchit.church_people.membership import living_people_filter
 from churchit.church_scope import (
 	church_query_filters,
@@ -52,7 +53,7 @@ def get_station_context():
 
 @frappe.whitelist()
 def search_people(query: str | None, function: str | None = None):
-	"""People matching *query* by name, family name or phone digits, grouped by family."""
+	"""People matching *query* by name, nickname, family name or phone digits, grouped by family."""
 	frappe.has_permission("Person", throw=True)
 	query = (query or "").strip()
 	if len(query) < 2:
@@ -94,7 +95,9 @@ def find_by_name(words, scope):
 	)
 	for word in words:
 		like = f"%{word}%"
-		query = query.where(person.full_name.like(like) | family.family_name.like(like))
+		query = query.where(
+			person.full_name.like(like) | person.nickname.like(like) | family.family_name.like(like)
+		)
 	if scope:
 		query = scoped(query, person, {})
 	return query.run(pluck=True)
@@ -219,6 +222,7 @@ def add_visitor(
 			"first_name": first_name.strip(),
 			"last_name": (last_name or "").strip(),
 			"family": family,
+			"source": SOURCE_CHECK_IN,
 		}
 	)
 	if phone:

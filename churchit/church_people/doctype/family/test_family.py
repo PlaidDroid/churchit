@@ -4,7 +4,9 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from churchit.tests.helpers import make_primary_contact
+from churchit.church_people.household import ADULT, CHILD, OTHER_ADULT
+from churchit.church_people.test_household import born, label, set_adult_age
+from churchit.tests.helpers import RollbackEachTest, make_person, make_primary_contact
 
 
 class TestFamily(FrappeTestCase):
@@ -159,3 +161,75 @@ class TestFamily(FrappeTestCase):
 		self.assertNotIn(bob.name, self._labels(family.name))
 		self.assertNotIn(jane.name, self._labels(family.name))
 		self.assertEqual(frappe.db.get_value("Person", jane.name, "family"), bob.family)
+
+
+class TestHouseholdRoles(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		set_adult_age(18)
+
+	def setUp(self):
+		super().setUp()
+		family = frappe.get_doc({"doctype": "Family", "family_name": "_Test Roles"}).insert(
+			ignore_permissions=True
+		)
+		self.family = family.name
+		self.father = make_primary_contact(make_person("Father", gender="Male", family=family.name)).name
+		self.mother = make_person(
+			"Mother", gender="Female", family=family.name, marital_status="Married", spouse=self.father
+		).name
+		self.boy = make_person("Boy", family=family.name, life_events=[born(10)]).name
+		self.grown_son = make_person("Grown", family=family.name, life_events=[born(25)]).name
+		self.nephew = make_person("Nephew", family=family.name, life_events=[born(8)]).name
+		self.lodger = make_person("Lodger", family=family.name).name
+		label(self.family, {self.boy: "Son", self.grown_son: "Son", self.nephew: "Nephew"})
+
+	def roles(self):
+		return {
+			member.member: member.household_role for member in frappe.get_doc("Family", self.family).members
+		}
+
+	def set_role(self, person, role):
+		family = frappe.get_doc("Family", self.family)
+		for member in family.members:
+			if member.member == person:
+				member.household_role = role
+		family.save(ignore_permissions=True)
+
+	def test_a_blank_role_is_filled_from_the_relationship_and_age(self):
+		self.assertEqual(
+			self.roles(),
+			{
+				self.father: ADULT,
+				self.mother: ADULT,
+				self.boy: CHILD,
+				self.grown_son: OTHER_ADULT,
+				self.nephew: None,
+				self.lodger: None,
+			},
+		)
+
+	def test_a_role_someone_set_is_kept(self):
+		self.set_role(self.boy, OTHER_ADULT)
+		self.set_role(self.lodger, OTHER_ADULT)
+		label(self.family, {self.boy: "Grandson"})
+
+		self.assertEqual(self.roles()[self.boy], OTHER_ADULT)
+		self.assertEqual(self.roles()[self.lodger], OTHER_ADULT)
+
+	def test_a_changed_role_sets_the_life_stage(self):
+		self.assertEqual(frappe.db.get_value("Person", self.boy, "life_stage"), CHILD)
+
+		self.set_role(self.boy, ADULT)
+		self.assertEqual(frappe.db.get_value("Person", self.boy, "life_stage"), ADULT)
+
+		self.set_role(self.lodger, OTHER_ADULT)
+		self.assertEqual(frappe.db.get_value("Person", self.lodger, "life_stage"), ADULT)
+
+	def test_a_cleared_role_is_filled_again(self):
+		self.set_role(self.boy, ADULT)
+		self.set_role(self.boy, None)
+
+		self.assertEqual(self.roles()[self.boy], CHILD)
+		self.assertEqual(frappe.db.get_value("Person", self.boy, "life_stage"), CHILD)

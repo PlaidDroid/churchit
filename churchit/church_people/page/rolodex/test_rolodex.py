@@ -63,8 +63,19 @@ class TestRolodexCards(FrappeTestCase):
 		self.assertEqual((card.phone, card.email), ("202-555-0191", "_test_rolodex_card@example.com"))
 		self.assertEqual(card.address, "12 Elm St, Springfield, IL 62701")
 		self.assertIn("openstreetmap.org", card.map_url)
-		self.assertEqual(str(card.birthday), "1980-03-14")
+		self.assertEqual(str(card.birth_date), "1980-03-14")
 		self.assertEqual(card.groups, [self.group.name])
+
+	def test_a_birthday_with_no_year_gives_the_card_a_month_and_day_but_no_age(self):
+		yearless = make_person(
+			"_Test Rolodex",
+			"Yearless",
+			life_events=[{"event_type": "Birth", "date": "1900-07-04", "year_unknown": 1}],
+		)
+
+		card = card_for(get_directory(), yearless.name)
+
+		self.assertEqual((card.birth_month, card.birth_day, card.birth_date, card.age), (7, 4, None, 0))
 
 	def test_people_who_have_died_get_no_card(self):
 		ensure("Life Event Type", {"type": "Death"})

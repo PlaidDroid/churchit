@@ -93,6 +93,18 @@ class TestCelebrations(FrappeTestCase):
 		rows = celebrations.birthdays(START, END, members_only=False)
 		self.assertIn("Visiting _Test Everyone", [row.name for row in rows])
 
+	def test_a_birthday_with_no_year_is_listed(self):
+		make_person(
+			"Yearless",
+			"_Test Birthday",
+			membership=self.member,
+			life_events=[{"event_type": "Birth", "date": "1900-07-04", "year_unknown": 1}],
+		)
+
+		rows = [(row.day, row.name) for row in celebrations.birthdays("2031-07-01", "2031-07-07")]
+
+		self.assertIn(("Jul 4", "Yearless _Test Birthday"), rows)
+
 	def test_anniversaries_list_each_couple_once(self):
 		# Person links spouses both ways on save.
 		sarah = make_person("Sarah", "_Test Smith", membership=self.member)

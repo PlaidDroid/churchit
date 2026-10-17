@@ -25,6 +25,7 @@ from churchit.patches.v1_0 import (
 	add_missionary_statuses,
 	add_personal_details_and_care_requests_to_portal,
 	add_unsynced_default_records,
+	clear_unknown_person_sources,
 	list_missionary_people_in_a_table,
 	move_copied_function_schedules,
 	move_email_template_bodies_to_html,
@@ -38,6 +39,7 @@ from churchit.patches.v1_0 import (
 	scope_website_pages_to_church,
 	seed_naming_series_counters,
 	set_church_website,
+	set_display_names,
 	setup_bulletins,
 	split_membership_from_member_status,
 	update_default_navbar,
@@ -1057,3 +1059,22 @@ class TestReplaceHeadOfHouseholdWithPrimaryContact(RollbackEachTest):
 			frappe.db.get_value("Notification", "Anniversary Greeting", "condition"),
 			"doc.emails and doc.is_primary_contact",
 		)
+
+
+class TestPersonProfilePatches(RollbackEachTest):
+	def test_existing_people_get_the_display_name_they_go_by(self):
+		person = make_person("_Test Robert", "Patch", nickname="Bob", suffix="Jr.")
+		frappe.db.set_value("Person", person.name, "display_name", None, update_modified=False)
+
+		set_display_names.execute()
+
+		self.assertEqual(frappe.db.get_value("Person", person.name, "display_name"), "Bob Patch Jr.")
+
+	def test_existing_people_have_no_source_rather_than_a_guessed_one(self):
+		"""The new column gave everyone its default, Desk, though nobody knows how they were added."""
+		person = make_person("_Test Unknown", "Source")
+		self.assertEqual(person.source, "Desk")
+
+		clear_unknown_person_sources.execute()
+
+		self.assertIsNone(frappe.db.get_value("Person", person.name, "source"))

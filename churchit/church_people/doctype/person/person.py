@@ -6,16 +6,27 @@ from collections import Counter
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cstr, get_link_to_form
+from frappe.utils import cstr, get_link_to_form, today
 
 from churchit.church_communications import newsletter
 from churchit.church_foundations import church_access
+from churchit.church_people import events, membership
 from churchit.church_people.derived import sync_derived, years_since
+from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED, WIDOWED, WITH_SPOUSE
 from churchit.church_people.member_access import refuse_member_edits_beyond_personal_details
 from churchit.church_people.membership import INACTIVE, MEMBER
 from churchit.church_scope import is_multi_church
 from churchit.contacts import primary_email, validate_contact_tables
+
+# How a Person was first created; Desk is the field's default.
+SOURCE_IMPORT = "Import"
+SOURCE_CHECK_IN = "Check-In"
+
+
+def get_display_name(first_name, last_name=None, nickname=None, suffix=None) -> str:
+	"""The name a person goes by: the nickname or first name, the last name and the suffix ("Bob Smith Jr.")."""
+	return " ".join(filter(None, (nickname or first_name, last_name, suffix)))
 
 
 class Person(Document):
@@ -27,6 +38,8 @@ class Person(Document):
 		self.sync_church_permission()
 		self.sync_family_church()
 		self.sync_family_members()
+		events.emit_changes(self)
+		membership.record_changes(self)
 
 	def sync_family_members(self):
 		"""Put this person on their family's roster, bringing a newly linked or moving spouse along.
@@ -85,12 +98,18 @@ class Person(Document):
 		if frappe.db.get_value("Family", self.family, "church") != self.church:
 			frappe.db.set_value("Family", self.family, "church", self.church)
 
+	def before_insert(self):
+		if frappe.flags.in_import:
+			self.source = SOURCE_IMPORT
+
 	def before_save(self):
 		# We set this here since virtual fields do not work with
 		#   View Settings -> Title Field as of 2025-08-26
 		self.full_name = f"{self.first_name}" + ((" " + self.last_name) if self.last_name else "")
+		self.display_name = get_display_name(self.first_name, self.last_name, self.nickname, self.suffix)
 		sync_derived(self)
 		self.update_membership_from_life_events()
+		self.update_inactive_details()
 
 	def update_membership_from_life_events(self):
 		"""Make a person with a new Membership event a Member, and one with a new Death event Inactive.
@@ -102,10 +121,16 @@ class Person(Document):
 			self.membership = MEMBER
 		if "Death" in added:
 			self.membership_status = INACTIVE
-			self.inactive_reason = self.inactive_reason or _("Deceased")
+			self.inactive_reason = self.inactive_reason or DECEASED
 			self.widow_spouse()
+
+	def update_inactive_details(self):
+		"""Date the change to Inactive, and clear the reason and the date once the person is not Inactive."""
 		if self.membership_status != INACTIVE:
 			self.inactive_reason = None
+			self.inactive_since = None
+		elif self.has_value_changed("membership_status"):
+			self.inactive_since = today()
 
 	def widow_spouse(self):
 		"""Make the spouse of a person who has died Widowed, when they are still married to them."""

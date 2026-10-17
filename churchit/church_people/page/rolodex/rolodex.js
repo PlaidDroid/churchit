@@ -333,7 +333,7 @@ class Rolodex {
 				__("Groups"),
 				person.groups.map((name) => e(this.group_titles[name] || name)).join(", "),
 			],
-			[__("Birthday"), person.birthday && with_age(person)],
+			[__("Birthday"), birthday_text(person)],
 			[
 				__("Anniversary"),
 				person.anniversary && frappe.datetime.str_to_user(person.anniversary),
@@ -964,8 +964,14 @@ function membership_text(person) {
 	return [person.membership, status].filter(Boolean).join(" · ");
 }
 
-function with_age(person) {
-	const born = frappe.datetime.str_to_user(person.birthday);
+// A birthday whose year is unknown shows its month and day only, with no age.
+function birthday_text(person) {
+	if (!person.birth_date) {
+		return person.birth_month
+			? `${moment.months(person.birth_month - 1)} ${person.birth_day}`
+			: "";
+	}
+	const born = frappe.datetime.str_to_user(person.birth_date);
 	return person.age ? `${born} · ${__("age {0}", [person.age])}` : born;
 }
 

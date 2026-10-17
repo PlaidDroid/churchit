@@ -42,7 +42,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Person Reports",
-   "link_count": 16,
+   "link_count": 17,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -160,6 +160,16 @@
   {
    "hidden": 0,
    "is_query_report": 1,
+   "label": "Membership Changes",
+   "link_count": 0,
+   "link_to": "Membership Changes",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
    "label": "Member Demographics",
    "link_count": 0,
    "link_to": "Member Demographics",
@@ -212,7 +222,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Person Documents",
-   "link_count": 21,
+   "link_count": 23,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -300,6 +310,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Inactive Reasons",
+   "link_count": 0,
+   "link_to": "Inactive Reason",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Position Types",
    "link_count": 0,
    "link_to": "Position Type",
@@ -333,6 +353,16 @@
    "label": "Life Event Types",
    "link_count": 0,
    "link_to": "Life Event Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "People Settings",
+   "link_count": 0,
+   "link_to": "People Settings",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -428,7 +458,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-15 13:00:00.000000",
+ "modified": "2026-10-16 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "People",

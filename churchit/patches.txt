@@ -45,3 +45,10 @@ churchit.patches.v1_0.add_personal_details_and_care_requests_to_portal
 churchit.patches.v1_0.restore_shipped_people_charts
 churchit.patches.v1_0.remove_duplicate_new_members_chart
 churchit.patches.v1_0.remove_email_group_onboarding
+churchit.patches.v1_0.add_inactive_reasons
+churchit.patches.v1_0.set_inactive_since_from_history
+churchit.patches.v1_0.derive_birth_death_and_life_stage
+churchit.patches.v1_0.fill_household_roles
+churchit.patches.v1_0.record_membership_history
+churchit.patches.v1_0.set_display_names
+churchit.patches.v1_0.clear_unknown_person_sources

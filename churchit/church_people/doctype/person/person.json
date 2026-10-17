@@ -11,8 +11,10 @@
  "field_order": [
   "personal_information_section",
   "first_name",
+  "middle_name",
   "last_name",
   "full_name",
+  "nickname",
   "church",
   "gender",
   "family",
@@ -20,16 +22,31 @@
   "spouse",
   "anniversary",
   "marriage_years",
+  "age",
+  "birth_date",
+  "birth_month",
+  "birth_day",
+  "life_stage",
+  "is_deceased",
+  "deceased_date",
   "column_break_agva",
   "membership",
   "membership_status",
   "inactive_reason",
+  "inactive_since",
+  "source",
   "photo",
   "alergies",
+  "medical_notes",
   "user",
   "hide_from_directory",
   "team_calendar_key",
-  "age",
+  "other_names_section",
+  "prefix",
+  "suffix",
+  "column_break_names",
+  "previous_last_name",
+  "display_name",
   "life_events_section",
   "life_events",
   "section_break_osjz",
@@ -81,7 +98,8 @@
    "search_index": 1
   },
   {
-   "description": "Calculated from the Birth event in Life Events.",
+   "depends_on": "eval:doc.birth_date && (!doc.is_deceased || doc.deceased_date)",
+   "description": "Calculated from the Birth event in Life Events, up to the Death event when there is one.",
    "fieldname": "age",
    "fieldtype": "Int",
    "label": "Age",
@@ -137,6 +155,7 @@
    "label": "Contact"
   },
   {
+   "description": "Members can change this on their Personal Details page. Check-In Settings can print it on name tags.",
    "fieldname": "alergies",
    "fieldtype": "Data",
    "label": "Allergies",
@@ -169,10 +188,11 @@
   },
   {
    "depends_on": "eval:doc.membership_status == \"Inactive\"",
-   "description": "For example: Moved away, Deceased, Transferred to another church.",
+   "description": "Why this person is no longer active. A Death life event sets Deceased, and a confirmed Member Transfer out sets Transferred to another church. Add your own reasons to the Inactive Reason list.",
    "fieldname": "inactive_reason",
-   "fieldtype": "Data",
-   "label": "Inactive Reason"
+   "fieldtype": "Link",
+   "label": "Inactive Reason",
+   "options": "Inactive Reason"
   },
   {
    "description": "Birth, baptism, marriage, death, salvation, etc.",
@@ -292,6 +312,120 @@
    "fieldtype": "Tab Break",
    "label": "Connections",
    "show_dashboard": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "other_names_section",
+   "fieldtype": "Section Break",
+   "label": "Other Names"
+  },
+  {
+   "description": "A title such as Mr., Mrs., Dr. or Rev.",
+   "fieldname": "prefix",
+   "fieldtype": "Link",
+   "label": "Prefix",
+   "options": "Salutation"
+  },
+  {
+   "fieldname": "middle_name",
+   "fieldtype": "Data",
+   "label": "Middle Name"
+  },
+  {
+   "fieldname": "suffix",
+   "fieldtype": "Select",
+   "label": "Suffix",
+   "options": "\nJr.\nSr.\nII\nIII\nIV"
+  },
+  {
+   "fieldname": "column_break_names",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The name this person goes by, when it is not their first name. Display Name uses it, and a search for the person finds it.",
+   "fieldname": "nickname",
+   "fieldtype": "Data",
+   "label": "Nickname"
+  },
+  {
+   "description": "A maiden name or other earlier last name. A search for the person finds it.",
+   "fieldname": "previous_last_name",
+   "fieldtype": "Data",
+   "label": "Previous Last Name"
+  },
+  {
+   "description": "The name this person goes by: the nickname (or else the first name), the last name and the suffix.",
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "label": "Display Name",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.membership_status == \"Inactive\"",
+   "description": "The day the Status changed to Inactive.",
+   "fieldname": "inactive_since",
+   "fieldtype": "Date",
+   "label": "Inactive Since",
+   "read_only": 1
+  },
+  {
+   "default": "Desk",
+   "description": "How this person was first added: in the desk, by a Data Import, or at the Check-In Station. Blank for people added before Churchit recorded it.",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Desk\nImport\nCheck-In",
+   "read_only": 1,
+   "set_only_once": 1
+  },
+  {
+   "description": "Only Church Manager, Church Office and Church Check-In Volunteer logins can see these notes. Members cannot see them on their Personal Details page.",
+   "fieldname": "medical_notes",
+   "fieldtype": "Small Text",
+   "label": "Medical Notes",
+   "permlevel": 1,
+   "print_hide": 1
+  },
+  {
+   "fieldname": "birth_date",
+   "fieldtype": "Date",
+   "label": "Birth Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "birth_month",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Birth Month",
+   "read_only": 1
+  },
+  {
+   "fieldname": "birth_day",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Birth Day",
+   "read_only": 1
+  },
+  {
+   "fieldname": "life_stage",
+   "fieldtype": "Select",
+   "label": "Life Stage",
+   "options": "\nAdult\nChild",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_deceased",
+   "fieldtype": "Check",
+   "label": "Deceased",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.is_deceased",
+   "fieldname": "deceased_date",
+   "fieldtype": "Date",
+   "label": "Deceased Date",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -384,7 +518,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-16 14:00:00.000000",
+ "modified": "2026-10-17 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
@@ -448,16 +582,40 @@
    "report": 1,
    "role": "Church Check-In",
    "select": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "Church Manager",
+   "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "Church People Editor",
+   "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "Church Check-In"
   }
  ],
  "route": "church-personz",
  "row_format": "Dynamic",
- "search_fields": "last_name, first_name",
+ "search_fields": "last_name, first_name, nickname, previous_last_name",
  "show_preview_popup": 1,
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
  "title_field": "full_name",
- "track_changes": 1
+ "track_changes": 1,
+ "track_views": 1
 }

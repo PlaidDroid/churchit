@@ -24,6 +24,9 @@ PERSON_FIELDS = [
 	"membership",
 	"membership_status",
 	"age",
+	"birth_date",
+	"birth_month",
+	"birth_day",
 	"anniversary",
 	"church",
 ]
@@ -128,31 +131,13 @@ def get_address_lines(names):
 
 
 def add_card_backs(people, groups):
-	"""Birthday, current positions and group memberships for the back of each card."""
+	"""Current positions and group memberships for the back of each card."""
 	names = [person.name for person in people]
-	birthdays = get_birthdays(names)
 	positions = get_current_positions(names)
 	memberships = get_memberships(names, [group.name for group in groups])
 	for person in people:
-		person.birthday = birthdays.get(person.name)
 		person.positions = positions.get(person.name, [])
 		person.groups = memberships.get(person.name, [])
-
-
-def get_birthdays(names):
-	if not names:
-		return {}
-	rows = frappe.get_all(
-		"Life Event",
-		filters={
-			"parenttype": "Person",
-			"parent": ("in", names),
-			"event_type": "Birth",
-			"date": ("is", "set"),
-		},
-		fields=["parent", "date"],
-	)
-	return {row.parent: row.date for row in rows}
 
 
 def get_current_positions(names):

@@ -3,6 +3,7 @@
 
 import frappe
 
+from churchit.church_people.doctype.inactive_reason.inactive_reason import TRANSFERRED
 from churchit.tests.helpers import RollbackEachTest, ensure, make_person
 
 
@@ -14,6 +15,7 @@ class TestMemberTransfer(RollbackEachTest):
 		ensure("Member Status", {"status": "Inactive"})
 		ensure("Membership Type", {"type": "Member"})
 		ensure("Membership Type", {"type": "Contact"})
+		ensure("Inactive Reason", {"reason": TRANSFERRED})
 
 	def transfer_out(self, person, status):
 		return self.transfer(person, "Out", status)
@@ -63,4 +65,4 @@ class TestMemberTransfer(RollbackEachTest):
 		person.reload()
 		self.assertEqual(person.membership, "Contact")
 		self.assertEqual(person.membership_status, "Inactive")
-		self.assertEqual(person.inactive_reason, "Transferred to _Test Elsewhere Church")
+		self.assertEqual(person.inactive_reason, TRANSFERRED)

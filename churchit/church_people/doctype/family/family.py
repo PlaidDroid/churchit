@@ -6,6 +6,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import escape_html
 
+from churchit.church_people import household
+from churchit.church_people.derived import life_stage_for
 from churchit.church_people.family_relations import (
 	ROLE_TYPES,
 	get_gendered_type,
@@ -26,6 +28,7 @@ class Family(Document):
 			self.relabel_members(previous)
 		self.label_primary_contact_and_spouse()
 		self.label_spouses_of_members()
+		self.fill_household_roles()
 		if previous:
 			old_family_name = self.family_name
 			self.rename_after_primary_contact()
@@ -101,6 +104,23 @@ class Family(Document):
 			):
 				member.relationship_to_primary_contact = label
 
+	def fill_household_roles(self) -> list:
+		"""Fill each blank household role that the member's relationship and age decide, and return the rows filled.
+
+		A role someone set is never changed.
+		"""
+		blank = [member for member in self.members if member.member and not member.household_role]
+		ages = household.get_ages([member.member for member in blank])
+		adult_age = frappe.db.get_single_value("People Settings", "adult_age")
+		for member in blank:
+			member.household_role = household.get_household_role(
+				member.member == self.primary_contact,
+				member.relationship_to_primary_contact,
+				ages.get(member.member),
+				adult_age,
+			)
+		return [member for member in blank if member.household_role]
+
 	def rename_after_primary_contact(self):
 		"""Put the primary contact's first name after the last dash, "Doe - John" to "Doe - Jane"."""
 		first_name = frappe.db.get_value("Person", self.primary_contact, "first_name")
@@ -144,6 +164,25 @@ class Family(Document):
 				)
 		for member in members:
 			frappe.db.set_value("Person", member, "family", self.name, update_modified=False)
+
+	def on_update(self):
+		before = self.get_doc_before_save()
+		roles = {member.member: member.household_role or None for member in before.members} if before else {}
+		self.set_life_stages(
+			[member for member in self.members if (member.household_role or None) != roles.get(member.member)]
+		)
+
+	def set_life_stages(self, rows):
+		"""Give the member of each of *rows* the life stage their household role implies."""
+		ages = household.get_ages([row.member for row in rows])
+		for row in rows:
+			frappe.db.set_value(
+				"Person",
+				row.member,
+				"life_stage",
+				life_stage_for(row.household_role or None, ages.get(row.member)),
+				update_modified=False,
+			)
 
 
 def primary_contacts():

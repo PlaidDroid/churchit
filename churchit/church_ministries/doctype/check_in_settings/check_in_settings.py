@@ -97,17 +97,14 @@ class CheckInSettings(Document):
 		)
 
 	def pickup_groups(self, check_ins):
-		"""One (first check-in, first names) pair per security code in the batch."""
+		"""One (first check-in, names the people go by) pair per security code in the batch."""
 		if not self.security_codes:
 			return []
 		groups = {}
 		for doc in check_ins:
 			if doc.security_code:
 				groups.setdefault(doc.security_code, []).append(doc)
-		return [
-			(docs[0], [frappe.db.get_value("Person", d.person, "first_name") for d in docs])
-			for docs in groups.values()
-		]
+		return [(docs[0], [name_gone_by(doc.person) for doc in docs]) for docs in groups.values()]
 
 	def send_to_network_printer(self, zpl):
 		host, port = self.printer_host, self.printer_port or 9100
@@ -116,3 +113,9 @@ class CheckInSettings(Document):
 				connection.sendall(zpl.encode("utf-8"))
 		except OSError as error:
 			frappe.throw(_("Could not reach printer {0}:{1} ({2}).").format(host, port, str(error)))
+
+
+def name_gone_by(person: str) -> str:
+	"""*person*'s nickname, else their first name, as their name tag prints it."""
+	first_name, nickname = frappe.db.get_value("Person", person, ["first_name", "nickname"])
+	return nickname or first_name

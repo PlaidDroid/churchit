@@ -2,12 +2,17 @@
 # and is licensed under MIT No Attribution (MIT-0).
 
 import frappe
+from frappe.desk.form.load import getdoc
+from frappe.desk.search import search_link
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_years, getdate, nowdate
 
 from churchit.church_communications.newsletter import email_church, has_unsubscribed, set_subscribed
 from churchit.church_people.derived import refresh_daily
-from churchit.tests.helpers import make_primary_contact
+from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
+from churchit.church_people.doctype.person.person import SOURCE_IMPORT
+from churchit.patches.v1_0 import set_inactive_since_from_history
+from churchit.tests.helpers import ensure_user, make_person, make_primary_contact
 
 
 def _ensure(doctype, filters, values):
@@ -28,6 +33,35 @@ class TestPerson(FrappeTestCase):
 	def test_full_name_with_only_first_name(self):
 		person = self._make_person(first_name="Madonna")
 		self.assertEqual(person.full_name, "Madonna")
+
+	def test_display_name_is_the_name_a_person_goes_by(self):
+		person = self._make_person(first_name="Robert", last_name="Smith", nickname="Bob", suffix="Jr.")
+		self.assertEqual(person.display_name, "Bob Smith Jr.")
+		self.assertEqual(person.full_name, "Robert Smith")
+
+		person.nickname = None
+		person.save()
+		self.assertEqual(person.display_name, "Robert Smith Jr.")
+
+	def test_display_name_with_only_first_name(self):
+		self.assertEqual(self._make_person(first_name="Cher").display_name, "Cher")
+
+	def test_link_search_finds_the_nickname_and_the_previous_last_name(self):
+		person = self._make_person(
+			first_name="Margaret",
+			last_name="_Test Wedded",
+			nickname="_Test Peggy",
+			previous_last_name="_Test Maiden",
+		)
+		for text in ("_Test Peggy", "_Test Maiden"):
+			self.assertIn(person.name, [result["value"] for result in search_link("Person", text)], text)
+
+	def test_desk_views_of_a_person_are_logged(self):
+		person = self._make_person(first_name="_Test Viewed")
+		getdoc("Person", person.name)
+		self.assertTrue(
+			frappe.db.exists("View Log", {"reference_doctype": "Person", "reference_name": person.name})
+		)
 
 	def test_age_computed_from_birth_life_event(self):
 		_ensure("Life Event Type", {"type": "Birth"}, {"type": "Birth"})
@@ -52,7 +86,7 @@ class TestPerson(FrappeTestCase):
 
 	def test_age_cleared_without_birth_event(self):
 		person = self._make_person(first_name="Ageless")
-		self.assertIsNone(person.age)
+		self.assertEqual(person.age, 0)
 
 	def test_setting_family_adds_person_to_family_members(self):
 		family = frappe.get_doc({"doctype": "Family", "family_name": "Smith Household"}).insert(
@@ -335,6 +369,8 @@ class TestPersonMembership(FrappeTestCase):
 			_ensure("Membership Type", {"type": membership_type}, {"type": membership_type})
 		for event_type in ("Membership", "Death"):
 			_ensure("Life Event Type", {"type": event_type}, {"type": event_type})
+		for reason in (DECEASED, "Moved away"):
+			_ensure("Inactive Reason", {"reason": reason}, {"reason": reason})
 
 	def test_a_new_person_is_active(self):
 		person = frappe.get_doc({"doctype": "Person", "first_name": "_Test Newcomer"}).insert()
@@ -382,7 +418,8 @@ class TestPersonMembership(FrappeTestCase):
 		person.append("life_events", {"event_type": "Death", "date": nowdate()})
 		person.save()
 		self.assertEqual(person.membership_status, "Inactive")
-		self.assertEqual(person.inactive_reason, "Deceased")
+		self.assertEqual(person.inactive_reason, DECEASED)
+		self.assertEqual(getdate(person.inactive_since), getdate(nowdate()))
 
 	def test_the_inactive_reason_goes_when_the_person_is_active_again(self):
 		person = frappe.get_doc(
@@ -396,6 +433,166 @@ class TestPersonMembership(FrappeTestCase):
 		person.membership_status = "Active"
 		person.save()
 		self.assertIsNone(person.inactive_reason)
+
+	def test_becoming_inactive_records_the_day(self):
+		person = frappe.get_doc({"doctype": "Person", "first_name": "_Test Leaver"}).insert()
+		self.assertIsNone(person.inactive_since)
+
+		person.membership_status = "Inactive"
+		person.save()
+		self.assertEqual(getdate(person.inactive_since), getdate(nowdate()))
+
+		person.membership_status = "Active"
+		person.save()
+		self.assertIsNone(person.inactive_since)
+
+	def test_a_person_added_as_inactive_is_dated_too(self):
+		person = frappe.get_doc(
+			{"doctype": "Person", "first_name": "_Test Lapsed", "membership_status": "Inactive"}
+		).insert()
+		self.assertEqual(getdate(person.inactive_since), getdate(nowdate()))
+
+	def test_saving_an_inactive_person_again_keeps_the_day(self):
+		person = frappe.get_doc(
+			{"doctype": "Person", "first_name": "_Test Long Gone", "membership_status": "Inactive"}
+		).insert()
+		frappe.db.set_value("Person", person.name, "inactive_since", "2020-01-01")
+		person.reload()
+
+		person.notes = "Still inactive."
+		person.save()
+
+		self.assertEqual(getdate(person.inactive_since), getdate("2020-01-01"))
+
+
+class TestInactiveSinceFromHistory(FrappeTestCase):
+	"""People already Inactive take the day of the tracked change that made them so."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		for status in ("Active", "Inactive"):
+			_ensure("Member Status", {"status": status}, {"status": status})
+
+	def set_status(self, person, status, day):
+		"""Save *status* on *person* and date the tracked change *day*."""
+		person.membership_status = status
+		person.save(ignore_version=False)
+		version = frappe.get_all(
+			"Version",
+			filters={"ref_doctype": "Person", "docname": person.name},
+			order_by="creation desc",
+			limit=1,
+			pluck="name",
+		)[0]
+		frappe.db.set_value("Version", version, "creation", day)
+
+	def test_the_latest_change_to_inactive_gives_the_day(self):
+		person = frappe.get_doc({"doctype": "Person", "first_name": "_Test Wanderer"}).insert()
+		self.set_status(person, "Inactive", "2020-01-01 10:00:00")
+		self.set_status(person, "Active", "2021-01-01 10:00:00")
+		self.set_status(person, "Inactive", "2022-03-04 10:00:00")
+		frappe.db.set_value("Person", person.name, "inactive_since", None)
+
+		set_inactive_since_from_history.execute()
+
+		self.assertEqual(frappe.db.get_value("Person", person.name, "inactive_since"), getdate("2022-03-04"))
+
+	def test_a_person_with_no_such_change_stays_undated(self):
+		person = frappe.get_doc(
+			{"doctype": "Person", "first_name": "_Test Undated", "membership_status": "Inactive"}
+		).insert()
+		frappe.db.set_value("Person", person.name, "inactive_since", None)
+
+		set_inactive_since_from_history.execute()
+
+		self.assertIsNone(frappe.db.get_value("Person", person.name, "inactive_since"))
+
+
+class TestPersonSource(FrappeTestCase):
+	"""How a person was first added, kept as it was."""
+
+	def make_imported_person(self, first_name):
+		frappe.flags.in_import = True
+		try:
+			return make_person(first_name)
+		finally:
+			frappe.flags.in_import = False
+
+	def test_a_person_added_in_the_desk_comes_from_the_desk(self):
+		self.assertEqual(make_person("_Test Typed In").source, "Desk")
+
+	def test_a_data_import_marks_the_people_it_adds(self):
+		self.assertEqual(self.make_imported_person("_Test Imported").source, SOURCE_IMPORT)
+
+	def test_saving_never_changes_the_source(self):
+		person = self.make_imported_person("_Test Imported Then Edited")
+		person.notes = "Edited later in the desk."
+		person.save()
+		self.assertEqual(frappe.db.get_value("Person", person.name, "source"), SOURCE_IMPORT)
+
+		person.source = "Desk"
+		with self.assertRaises(frappe.CannotChangeConstantError):
+			person.save()
+
+	def test_a_person_added_before_the_source_was_recorded_keeps_it_blank(self):
+		person = make_person("_Test Old Timer")
+		frappe.db.set_value("Person", person.name, "source", None)
+		person.reload()
+
+		person.notes = "Saved again."
+		person.save()
+
+		self.assertIsNone(frappe.db.get_value("Person", person.name, "source"))
+
+
+class TestPersonMedicalNotes(FrappeTestCase):
+	"""Managers, the office and check-in volunteers read medical notes; only the first two change them."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.person = make_person("_Test Patient", medical_notes="_Test Diabetic")
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def as_role(self, role, person=None):
+		"""*person* as a user holding only *role* loads them."""
+		frappe.set_user(ensure_user(f"_test_medical_{frappe.scrub(role)}@example.com", role, roles=(role,)))
+		return frappe.get_doc("Person", (person or self.person).name)
+
+	def test_who_reads_the_medical_notes(self):
+		for role, notes in (
+			("Church Manager", "_Test Diabetic"),
+			("Church People Editor", "_Test Diabetic"),
+			("Church Check-In", "_Test Diabetic"),
+			("Church Staff", None),
+		):
+			person = self.as_role(role)
+			person.apply_fieldlevel_read_permissions()
+			self.assertEqual(person.get("medical_notes"), notes, role)
+
+	def test_who_changes_the_medical_notes(self):
+		for role, can_change in (
+			("Church Manager", True),
+			("Church People Editor", True),
+			("Church Check-In", False),
+		):
+			person = self.as_role(role)
+			self.assertEqual(
+				person.has_permlevel_access_to("medical_notes", permission_type="write"), can_change
+			)
+
+	def test_the_office_saves_a_change(self):
+		person = self.as_role(
+			"Church People Editor", make_person("_Test Insulin", medical_notes="_Test Diabetic")
+		)
+		person.medical_notes = "_Test Diabetic, carries insulin"
+		person.save()
+		self.assertEqual(
+			frappe.db.get_value("Person", person.name, "medical_notes"), "_Test Diabetic, carries insulin"
+		)
 
 
 class TestPersonChurchEmails(FrappeTestCase):
@@ -414,3 +611,96 @@ class TestPersonChurchEmails(FrappeTestCase):
 		person.resubscribe_to_church_emails()
 
 		self.assertFalse(has_unsubscribed(person))
+
+
+class TestPersonDerivedFields(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		for event_type in ("Birth", "Death"):
+			_ensure("Life Event Type", {"type": event_type}, {"type": event_type})
+		settings = frappe.get_single("People Settings")
+		settings.adult_age = 18
+		settings.save(ignore_permissions=True)
+
+	def _make_person(self, first_name, *life_events, **values):
+		return frappe.get_doc(
+			{"doctype": "Person", "first_name": first_name, "life_events": list(life_events), **values}
+		).insert(ignore_permissions=True)
+
+	def _stored(self, person, *fields):
+		return frappe.db.get_value("Person", person.name, fields, as_dict=True)
+
+	def test_the_birth_event_gives_the_birth_date(self):
+		person = self._make_person("_Test Born", {"event_type": "Birth", "date": "1990-05-01"})
+
+		self.assertEqual(
+			self._stored(person, "birth_date", "birth_month", "birth_day"),
+			{"birth_date": getdate("1990-05-01"), "birth_month": 5, "birth_day": 1},
+		)
+
+	def test_a_birthday_without_a_year_gives_no_birth_date_or_age(self):
+		person = self._make_person(
+			"_Test Yearless", {"event_type": "Birth", "date": "1990-07-04", "year_unknown": 1}
+		)
+
+		self.assertEqual(
+			self._stored(person, "birth_date", "birth_month", "birth_day", "age"),
+			{"birth_date": None, "birth_month": 7, "birth_day": 4, "age": 0},
+		)
+
+	def test_removing_the_birth_event_clears_the_birth_fields(self):
+		person = self._make_person("_Test Unborn", {"event_type": "Birth", "date": "1990-05-01"})
+		person.life_events = []
+		person.save()
+
+		self.assertEqual(
+			self._stored(person, "birth_date", "birth_month", "birth_day", "age"),
+			{"birth_date": None, "birth_month": 0, "birth_day": 0, "age": 0},
+		)
+
+	def test_saving_someone_with_no_known_age_records_no_age_change(self):
+		"""An unknown age stays 0 in memory as in the column, so a save logged a change from 0 to nothing."""
+		person = self._make_person("_Test Quiet")
+		person.alergies = "_Test Pollen"
+		person.save(ignore_version=False)
+
+		versions = frappe.get_all(
+			"Version", filters={"ref_doctype": "Person", "docname": person.name}, pluck="data"
+		)
+		changed = [change[0] for data in versions for change in frappe.parse_json(data).get("changed", [])]
+		self.assertIn("alergies", changed)
+		self.assertNotIn("age", changed)
+
+	def test_a_death_event_marks_the_person_deceased_and_stops_their_age(self):
+		person = self._make_person("_Test Mortal", {"event_type": "Birth", "date": "1950-03-01"})
+		person.append("life_events", {"event_type": "Death", "date": "2000-02-28"})
+		person.save()
+
+		self.assertEqual(
+			self._stored(person, "is_deceased", "deceased_date", "age"),
+			{"is_deceased": 1, "deceased_date": getdate("2000-02-28"), "age": 49},
+		)
+
+	def test_without_a_household_role_the_life_stage_follows_the_age(self):
+		child = self._make_person("_Test Young", {"event_type": "Birth", "date": add_years(nowdate(), -10)})
+		adult = self._make_person("_Test Grown", {"event_type": "Birth", "date": add_years(nowdate(), -18)})
+		unknown = self._make_person("_Test Unknown Age")
+
+		self.assertEqual((child.life_stage, adult.life_stage, unknown.life_stage), ("Child", "Adult", None))
+
+	def test_the_household_role_comes_before_the_age(self):
+		family = frappe.get_doc({"doctype": "Family", "family_name": "_Test Role Household"}).insert(
+			ignore_permissions=True
+		)
+		person = self._make_person(
+			"_Test Dependent", {"event_type": "Birth", "date": "1990-05-01"}, family=family.name
+		)
+		frappe.db.set_value(
+			"Family Members", {"parent": family.name, "member": person.name}, "household_role", "Child"
+		)
+
+		person.reload()
+		person.save()
+
+		self.assertEqual(person.life_stage, "Child")

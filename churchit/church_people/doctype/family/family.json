@@ -12,8 +12,9 @@
   "family_name",
   "church",
   "primary_contact",
-  "photo",
   "column_break_pmch",
+  "photo",
+  "members_section",
   "members",
   "contact_information_section",
   "addresses",
@@ -92,6 +93,10 @@
    "fieldtype": "Table",
    "label": "Family Members",
    "options": "Family Members"
+  },
+  {
+   "fieldname": "members_section",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
@@ -107,7 +112,7 @@
    "link_fieldname": "recipient"
   }
  ],
- "modified": "2026-10-12 00:10:00.000000",
+ "modified": "2026-10-17 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Family",

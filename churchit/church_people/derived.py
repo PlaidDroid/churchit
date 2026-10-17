@@ -3,49 +3,126 @@
 
 """Person fields worked out from other fields, never typed in.
 
-`sync_derived` sets them on every save. `refresh_daily` keeps the ones that change with the date current between saves.
+`sync_derived` sets them on every save. `refresh_daily` brings every person up to date between saves.
 """
 
 import frappe
 from dateutil.relativedelta import relativedelta
 from frappe.utils import getdate, nowdate
 
+from churchit.church_people import household
+
+ADULT = "Adult"
+CHILD = "Child"
+BIRTH = "Birth"
+DEATH = "Death"
+DERIVED_FIELDS = (
+	"birth_date",
+	"birth_month",
+	"birth_day",
+	"is_deceased",
+	"deceased_date",
+	"age",
+	"life_stage",
+)
+
+
+def years_between(start, end) -> int:
+	"""Whole years from *start* to *end*, never below 0."""
+	return max(relativedelta(getdate(end), getdate(start)).years, 0)
+
 
 def years_since(date):
 	"""Whole years from ``date`` until today; 0 when ``date`` is empty."""
 	if not date:
 		return 0
-	return max(relativedelta(getdate(nowdate()), getdate(date)).years, 0)
+	return years_between(date, nowdate())
 
 
-def sync_derived(person):
-	"""Set *person*'s age from their first dated Birth event, cleared without one, and their years married."""
-	birth = next((row for row in person.life_events or [] if row.event_type == "Birth" and row.date), None)
-	person.age = years_since(birth.date) if birth else None
+def sync_derived(person) -> None:
+	"""Set *person*'s fields that come from their life events, household role and anniversary."""
+	# A new or changed family has no roster row for this person until on_update adds it.
+	role = None if person.has_value_changed("family") else household.role_of(person.name)
+	person.update(get_derived_values(person.life_events or [], role))
 	person.marriage_years = years_since(person.anniversary)
 
 
+def get_derived_values(life_events, role) -> dict:
+	"""Birth, death, age and life stage from a person's *life_events* rows and household *role*, as stored.
+
+	The first dated Birth row is the birth. Its month and day always count, its year only when it is known.
+	An unknown age is 0, like a baby's, so `birth_date` and the death fields tell whether the age is known.
+	"""
+	birth = next((row for row in life_events if row.event_type == BIRTH and row.date), None)
+	deaths = [row for row in life_events if row.event_type == DEATH]
+	deceased_date = next((row.date for row in deaths if row.date), None)
+	birth_date = birth.date if birth and not birth.year_unknown else None
+	age = get_age(birth_date, bool(deaths), deceased_date)
+	return {
+		"birth_date": birth_date,
+		"birth_month": getdate(birth.date).month if birth else 0,
+		"birth_day": getdate(birth.date).day if birth else 0,
+		"is_deceased": int(bool(deaths)),
+		"deceased_date": deceased_date,
+		"age": age or 0,
+		"life_stage": life_stage_for(role, age),
+	}
+
+
+def has_known_age(Person):
+	"""Query criterion for the people whose stored age is real, on the Person table *Person*.
+
+	It is the rule `get_age` follows: the birth year is known, and so is the date of death of anyone who died.
+	"""
+	return Person.birth_date.isnotnull() & ((Person.is_deceased == 0) | Person.deceased_date.isnotnull())
+
+
+def get_age(birth_date, is_deceased: bool, deceased_date) -> int | None:
+	"""Whole years from *birth_date* to today, or to the death; None when either end is unknown."""
+	if not birth_date or (is_deceased and not deceased_date):
+		return None
+	return years_between(birth_date, deceased_date or nowdate())
+
+
+def life_stage_for(role, age):
+	"""Adult or Child from a household *role*, else from *age* against People Settings' adult age; None when neither is known."""
+	if role:
+		return CHILD if role == CHILD else ADULT
+	if age is None:
+		return None
+	return ADULT if age >= frappe.db.get_single_value("People Settings", "adult_age") else CHILD
+
+
 def refresh_daily():
-	"""Daily scheduler: bring each stored age and years married up to today.
+	"""Daily scheduler, and the backfill for a newly derived field: bring every person's derived fields up to date.
 
 	It compares every person rather than only today's birthdays, so a day the scheduler missed is caught up.
 	"""
+	life_events = get_birth_and_death_events()
 	# church-scope: scheduled daily job: recomputes stored figures, shows nobody anything
-	births = frappe.get_all(
-		"Life Event",
-		filters={"parenttype": "Person", "event_type": "Birth", "date": ("is", "set")},
-		fields=["parent", "date"],
-		order_by="idx asc",
+	people = frappe.get_all(
+		"Person", fields=["name", "family", "anniversary", "marriage_years", *DERIVED_FIELDS]
 	)
-	birth_dates = {}
-	for birth in births:
-		birth_dates.setdefault(birth.parent, birth.date)
-
-	for person in frappe.get_all("Person", fields=["name", "age", "anniversary", "marriage_years"]):
-		current = {
-			"age": years_since(birth_dates.get(person.name)),
-			"marriage_years": years_since(person.anniversary),
+	for person in people:
+		role = household.role_of(person.name) if person.family else None
+		current = get_derived_values(life_events.get(person.name, []), role)
+		current["marriage_years"] = years_since(person.anniversary)
+		changed = {
+			field: value for field, value in current.items() if (person[field] or None) != (value or None)
 		}
-		changed = {field: value for field, value in current.items() if (person[field] or 0) != value}
 		if changed:
 			frappe.db.set_value("Person", person.name, changed, update_modified=False)
+
+
+def get_birth_and_death_events() -> dict[str, list]:
+	"""Every person's Birth and Death rows in table order, by person."""
+	rows = frappe.get_all(
+		"Life Event",
+		filters={"parenttype": "Person", "event_type": ("in", (BIRTH, DEATH))},
+		fields=["parent", "event_type", "date", "year_unknown"],
+		order_by="parent asc, idx asc",
+	)
+	by_person = {}
+	for row in rows:
+		by_person.setdefault(row.parent, []).append(row)
+	return by_person

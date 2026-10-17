@@ -51,9 +51,7 @@ def refuse_member_edits_beyond_personal_details(person):
 	if not is_portal_member() or person.is_new():
 		return
 	before = person.get_doc_before_save()
-	allowed = {
-		field.fieldname for field in frappe.get_cached_doc("Web Form", PERSONAL_DETAILS).web_form_fields
-	}
+	allowed = personal_details_fields()
 	changed = [
 		df.label or df.fieldname
 		for df in person.meta.fields
@@ -64,6 +62,22 @@ def refuse_member_edits_beyond_personal_details(person):
 			_("Ask the church office to change {0}.").format(", ".join(_(label) for label in changed)),
 			frappe.PermissionError,
 		)
+
+
+def personal_details_fields():
+	return {field.fieldname for field in frappe.get_cached_doc("Web Form", PERSONAL_DETAILS).web_form_fields}
+
+
+def limit_to_personal_details(context):
+	"""Send the Personal Details page only the form's own fields.
+
+	Frappe hands a signed-in visitor the whole record, which would put the
+	office's notes and the medical notes in the page source.
+	"""
+	if not context.reference_doc:
+		return
+	allowed = {"name", "doctype", *personal_details_fields()}
+	context.reference_doc = {key: value for key, value in context.reference_doc.items() if key in allowed}
 
 
 def get_comparable(doc, df):
