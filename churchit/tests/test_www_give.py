@@ -7,7 +7,7 @@ import frappe
 from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 
-from churchit.tests.helpers import ensure, ensure_user, make_person
+from churchit.tests.helpers import RollbackEachTest, ensure, ensure_user, make_person, make_two_churches
 from churchit.www.give import get_context, start_donation
 
 
@@ -138,3 +138,54 @@ class TestGivePage(FrappeTestCase):
 		)
 		self.assertEqual(gift.person, person)
 		self.assertEqual(gift.payment_gateway, self.gateway)
+
+
+class TestGivingAtABranch(RollbackEachTest):
+	"""A gift belongs to the church whose gateway takes the money."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+		frappe.db.set_value("Church", cls.branch_b, "publish", 1)
+		cls.shared_gateway = ensure("Payment Gateway", {"gateway": "_Test Shared Gateway"})
+		cls.branch_gateway = ensure("Payment Gateway", {"gateway": "_Test Branch B Gateway"})
+		settings = frappe.get_doc("Giving Settings")
+		settings.update({"enabled": 1, "allow_anonymous": 1, "gateways": []})
+		settings.append("gateways", {"payment_gateway": cls.shared_gateway})
+		settings.append("gateways", {"payment_gateway": cls.branch_gateway, "church": cls.branch_b})
+		settings.save(ignore_permissions=True)
+		cls.branch_fund = ensure(
+			"Fund",
+			{"fund": "_Test Branch B Fund"},
+			{"fund": "_Test Branch B Fund", "allow_giving": 1, "church": cls.branch_b},
+		)
+		cls.shared_fund = ensure(
+			"Fund",
+			{"fund": "_Test Shared Giving Fund"},
+			{"fund": "_Test Shared Giving Fund", "allow_giving": 1, "is_shared": 1},
+		)
+
+	def give(self, fund, user="Guest", **form):
+		frappe.set_user(user)
+		frappe.local.form_dict = frappe._dict(form)
+		controller = MagicMock(spec=["get_payment_url"])
+		with patch("payments.utils.get_payment_gateway_controller", return_value=controller):
+			start_donation(10, fund, donor_name="Anon", email="anon@example.com")
+		return frappe.get_doc(
+			"Online Donation", controller.get_payment_url.call_args.kwargs["reference_docname"]
+		)
+
+	def test_a_gift_to_a_branch_fund_belongs_to_that_branch(self):
+		gift = self.give(self.branch_fund)
+
+		self.assertEqual((gift.church, gift.payment_gateway), (self.branch_b, self.branch_gateway))
+
+	def test_a_shared_fund_gift_belongs_to_the_branch_whose_page_took_it(self):
+		user = ensure_user("_test_branch_a_giver@example.com", "_Test Branch A Giver")
+		make_person("_Test Branch A", "Giver", user=user, church=self.branch_a)
+
+		gift = self.give(self.shared_fund, user=user, church=self.branch_b)
+
+		self.assertEqual((gift.church, gift.payment_gateway), (self.branch_b, self.branch_gateway))

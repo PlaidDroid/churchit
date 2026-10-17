@@ -93,14 +93,14 @@ frappe.ready(function () {
 
 		frappe.call({
 			method: 'churchit.www.give.start_donation',
-			args: {
+			args: churchit.with_church({
 				amount: document.getElementById('give-amount').value,
 				fund: document.getElementById('give-fund').value,
 				payment_gateway: (document.getElementById('give-gateway') || {}).value,
 				donor_name: document.getElementById('give-name').value,
 				email: document.getElementById('give-email').value,
 				notes: document.getElementById('give-notes').value,
-			},
+			}),
 			callback: function (r) {
 				if (r.message) {
 					window.location.href = r.message;

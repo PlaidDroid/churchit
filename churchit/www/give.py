@@ -80,8 +80,8 @@ def start_donation(
 	if amount <= 0:
 		frappe.throw(_("Please enter an amount greater than zero."))
 
-	# The fund settles which church the gift belongs to, and Online Donation fetches
-	# its church from it, so an offered gateway is one that church offers.
+	# The fund settles which church the gift belongs to, else the page that took it.
+	# The gift records that church, so it matches the gateway that takes the money.
 	fund_row = frappe.db.get_value("Fund", fund, ["allow_giving", "church"], as_dict=True) if fund else None
 	if not fund_row or not fund_row.allow_giving:
 		frappe.throw(_("Please choose a valid fund."))
@@ -111,6 +111,7 @@ def start_donation(
 	gift = frappe.get_doc(
 		{
 			"doctype": "Online Donation",
+			"church": church,
 			"amount": amount,
 			"fund": fund,
 			"person": person,
