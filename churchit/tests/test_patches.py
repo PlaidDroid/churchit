@@ -8,6 +8,7 @@ import tempfile
 from unittest import mock
 
 import frappe
+from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 from frappe.model.naming import NamingSeries
 from frappe.modules.patch_handler import update_patch_log
 from frappe.tests.utils import FrappeTestCase
@@ -31,6 +32,7 @@ from churchit.patches.v1_0 import (
 	move_email_template_bodies_to_html,
 	move_to_the_apps_screen_and_dock,
 	redesign_home_page,
+	remove_avery_label_format,
 	remove_duplicate_new_members_chart,
 	remove_email_group_onboarding,
 	remove_knowledge_base,
@@ -1078,3 +1080,27 @@ class TestPersonProfilePatches(RollbackEachTest):
 		clear_unknown_person_sources.execute()
 
 		self.assertIsNone(frappe.db.get_value("Person", person.name, "source"))
+
+
+class TestRemoveAveryLabelFormat(RollbackEachTest):
+	def test_the_format_and_a_family_default_naming_it_are_removed(self):
+		name = remove_avery_label_format.AVERY_LABELS
+		if not frappe.db.exists("Print Format", name):
+			frappe.get_doc(
+				{
+					"doctype": "Print Format",
+					"name": name,
+					"doc_type": "Family",
+					"module": "Church People",
+					"standard": "No",
+					"custom_format": 1,
+					"print_format_type": "Jinja",
+					"html": "<div>{{ doc.family_name }}</div>",
+				}
+			).insert(ignore_permissions=True)
+		make_property_setter("Family", None, "default_print_format", name, "Data", for_doctype=True)
+
+		remove_avery_label_format.execute()
+
+		self.assertFalse(frappe.db.exists("Print Format", name))
+		self.assertFalse(frappe.db.exists("Property Setter", {"doc_type": "Family", "value": name}))

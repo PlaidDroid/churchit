@@ -54,3 +54,4 @@ churchit.patches.v1_0.set_display_names
 churchit.patches.v1_0.clear_unknown_person_sources
 churchit.patches.v1_0.fill_person_summaries
 churchit.patches.v1_0.repair_early_household_roles
+churchit.patches.v1_0.remove_avery_label_format
