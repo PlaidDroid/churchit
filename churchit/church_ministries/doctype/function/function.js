@@ -205,7 +205,9 @@ function email_the_team(frm) {
 			if (without_email.length) {
 				frappe.show_alert(
 					{
-						message: __("No email address for {0}", [without_email.join(", ")]),
+						message: __("No email address for {0}", [
+							without_email.map(frappe.utils.escape_html).join(", "),
+						]),
 						indicator: "orange",
 					},
 					10
