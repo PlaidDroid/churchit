@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from frappe.query_builder.functions import Count
 from frappe.utils import (
 	add_days,
@@ -53,6 +54,18 @@ def count_people(filters: str | list | dict | None = None):
 def count_families(filters: str | list | dict | None = None):
 	"""Number card: families matching the card's filters in the reader's churches."""
 	return count_in_readers_churches("Family", filters)
+
+
+def count_people_in_list(report_name: str) -> dict:
+	"""Number card: people a saved Person list shows in the reader's churches; the card opens that list."""
+	report = frappe.get_cached_doc("Report", report_name)
+	if not report.is_permitted():
+		frappe.throw(_("You cannot open {0}.").format(report_name), frappe.PermissionError)
+
+	count = count_in_readers_churches("Person", frappe.parse_json(report.json).get("filters"))
+	count["route"] = ["List", "Person", "Report", report_name]
+	count["route_options"] = {field: list(condition) for field, condition in church_query_filters({}).items()}
+	return count
 
 
 def count_in_readers_churches(doctype, filters):

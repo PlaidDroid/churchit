@@ -52,3 +52,4 @@ churchit.patches.v1_0.fill_household_roles
 churchit.patches.v1_0.record_membership_history
 churchit.patches.v1_0.set_display_names
 churchit.patches.v1_0.clear_unknown_person_sources
+churchit.patches.v1_0.fill_person_summaries

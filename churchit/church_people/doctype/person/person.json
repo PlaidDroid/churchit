@@ -60,14 +60,33 @@
   "letters",
   "notes_tab",
   "notes",
-  "connections_tab"
+  "connections_tab",
+  "involvement_section",
+  "first_attended_on",
+  "last_attended_on",
+  "times_attended_90d",
+  "column_break_involvement",
+  "last_served_on",
+  "times_served_90d",
+  "group_count",
+  "groups",
+  "giving_section",
+  "first_gift_on",
+  "column_break_giving",
+  "last_gift_on",
+  "is_lapsed_giver",
+  "care_section",
+  "open_care_requests",
+  "last_visited_on",
+  "column_break_care",
+  "background_check_status",
+  "background_check_expires_on"
  ],
  "fields": [
   {
    "allow_in_quick_entry": 1,
    "fieldname": "first_name",
    "fieldtype": "Data",
-   "in_standard_filter": 1,
    "label": "First Name",
    "reqd": 1
   },
@@ -75,7 +94,6 @@
    "allow_in_quick_entry": 1,
    "fieldname": "last_name",
    "fieldtype": "Data",
-   "in_standard_filter": 1,
    "label": "Last Name"
   },
   {
@@ -409,6 +427,7 @@
   {
    "fieldname": "life_stage",
    "fieldtype": "Select",
+   "in_standard_filter": 1,
    "label": "Life Stage",
    "options": "\nAdult\nChild",
    "read_only": 1
@@ -425,6 +444,139 @@
    "fieldname": "deceased_date",
    "fieldtype": "Date",
    "label": "Deceased Date",
+   "read_only": 1
+  },
+  {
+   "description": "Worked out from attendance, groups and ministry teams at this person's church and kept up to date. Filter the Person list or report on these fields to build a list of people.",
+   "fieldname": "involvement_section",
+   "fieldtype": "Section Break",
+   "label": "Involvement"
+  },
+  {
+   "fieldname": "first_attended_on",
+   "fieldtype": "Date",
+   "label": "First Attended",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_attended_on",
+   "fieldtype": "Date",
+   "label": "Last Attended",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Functions attended as Confirmed, Assumed or Checked-In.",
+   "fieldname": "times_attended_90d",
+   "fieldtype": "Int",
+   "label": "Times Attended (90 Days)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_involvement",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "From accepted ministry team assignments.",
+   "fieldname": "last_served_on",
+   "fieldtype": "Date",
+   "label": "Last Served",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "times_served_90d",
+   "fieldtype": "Int",
+   "label": "Times Served (90 Days)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "group_count",
+   "fieldtype": "Int",
+   "label": "Group Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "groups",
+   "fieldtype": "Table MultiSelect",
+   "label": "Groups",
+   "options": "Person Group",
+   "read_only": 1
+  },
+  {
+   "description": "Gifts on submitted collections at this person's church, paid online gifts included. Only finance users see this section.",
+   "fieldname": "giving_section",
+   "fieldtype": "Section Break",
+   "label": "Giving"
+  },
+  {
+   "fieldname": "first_gift_on",
+   "fieldtype": "Date",
+   "label": "First Gift",
+   "permlevel": 2,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_giving",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_gift_on",
+   "fieldtype": "Date",
+   "label": "Last Gift",
+   "permlevel": 2,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Gave in the last 12 months, but not in the last 90 days.",
+   "fieldname": "is_lapsed_giver",
+   "fieldtype": "Check",
+   "label": "Lapsed Giver",
+   "permlevel": 2,
+   "read_only": 1
+  },
+  {
+   "description": "Open care requests, the latest completed visit and the most recent background check at this person's church. Only pastoral care users see this section.",
+   "fieldname": "care_section",
+   "fieldtype": "Section Break",
+   "label": "Care"
+  },
+  {
+   "default": "0",
+   "description": "Not yet Resolved or Closed.",
+   "fieldname": "open_care_requests",
+   "fieldtype": "Int",
+   "label": "Open Care Requests",
+   "permlevel": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_visited_on",
+   "fieldtype": "Date",
+   "label": "Last Visited",
+   "permlevel": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_care",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "A cleared check past its expiry date shows as Expired.",
+   "fieldname": "background_check_status",
+   "fieldtype": "Select",
+   "label": "Background Check",
+   "options": "\nRequested\nPending\nCleared\nNot Cleared\nExpired",
+   "permlevel": 3,
+   "read_only": 1
+  },
+  {
+   "fieldname": "background_check_expires_on",
+   "fieldtype": "Date",
+   "label": "Background Check Expires",
+   "permlevel": 3,
    "read_only": 1
   }
  ],
@@ -518,7 +670,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-17 11:00:00.000000",
+ "modified": "2026-10-17 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
@@ -605,6 +757,36 @@
    "permlevel": 1,
    "read": 1,
    "role": "Church Check-In"
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "System Manager"
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "Church Manager"
+  },
+  {
+   "permlevel": 2,
+   "read": 1,
+   "role": "Church Finance"
+  },
+  {
+   "permlevel": 3,
+   "read": 1,
+   "role": "System Manager"
+  },
+  {
+   "permlevel": 3,
+   "read": 1,
+   "role": "Church Manager"
+  },
+  {
+   "permlevel": 3,
+   "read": 1,
+   "role": "Church Pastoral Care"
   }
  ],
  "route": "church-personz",

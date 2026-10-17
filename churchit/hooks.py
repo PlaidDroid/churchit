@@ -229,12 +229,18 @@ permission_query_conditions = {
 
 # Every doctype with a `church` Link gets it defaulted (or refused) on save, a
 # new login is scoped to the church it was created in rather than seeing them all,
-# a desk user opens Summary after login, and publishing, un-publishing or deleting
-# a Web Page adds it to or removes it from the menu.
+# a desk user opens Summary after login, publishing, un-publishing or deleting
+# a Web Page adds it to or removes it from the menu, and a saved or deleted record
+# queues a refresh of the person summary fields it changes.
 doc_events = {
 	"*": {
 		"validate": "churchit.church_scope.ensure_church",
-		"on_trash": "churchit.church_scope.refuse_deleting_another_churches_record",
+		"on_update": "churchit.church_people.summaries.on_change",
+		"on_cancel": "churchit.church_people.summaries.on_change",
+		"on_trash": [
+			"churchit.church_scope.refuse_deleting_another_churches_record",
+			"churchit.church_people.summaries.on_change",
+		],
 	},
 	"User": {
 		"validate": "churchit.church_summary.home.land_on_summary",
@@ -277,6 +283,7 @@ scheduler_events = {
 		"churchit.church_missions.doctype.missionary.missionary.create_missionary_expenses",
 		"churchit.church_people.doctype.background_check.background_check.expire_background_checks",
 		"churchit.church_people.derived.refresh_daily",
+		"churchit.church_people.summaries.refresh_daily",
 		"churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment.send_team_emails",
 	],
 	"cron": {

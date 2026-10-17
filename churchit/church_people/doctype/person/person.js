@@ -66,7 +66,7 @@ function show_background_check_status(frm) {
 		.get_list("Background Check", {
 			filters: { person: frm.doc.name },
 			fields: ["check_type", "status", "expires_on"],
-			order_by: "requested_on desc",
+			order_by: "requested_on desc, creation desc",
 			limit: 1,
 		})
 		.then((rows) => {

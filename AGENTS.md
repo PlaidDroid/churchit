@@ -308,6 +308,24 @@ Membership history is Milestone rows written by `membership.record_changes` for
 Do not add a Frappe Milestone Tracker on Person: Frappe allows one tracker per doctype, and clearing
 the tracked field fails the save.
 
+## Person summary fields and smart lists
+
+A smart list is a saved Report Builder report on Person, so Frappe scopes and refreshes it. To
+filter on records kept elsewhere, Person carries read-only summary fields (attendance, groups,
+serving, giving, care) from `church_people/summaries/`. One module there is one area, found by
+itself; its docstring is the contract (`FIELDS`, `SOURCES`, `compute`). A wildcard doc_events hook
+queues a refresh of the people a save, cancel or delete changes, and a daily job recomputes rolling
+windows. To add a figure, add a read-only Person field and an area module; don't add a hook.
+
+An area counts only the person's own church's records and shared ones (`summaries.same_church`).
+The directory is shared, so a stored figure would otherwise show one church what a person did at
+another. Giving and care figures carry permlevels 2 and 3 for the same reason.
+
+The standard lists ship as Report Builder JSON under `report/`, which migrate syncs. The Report view
+runs the Person `listview_settings` too, so every saved list gets the Person list's Actions. Their
+server side, `church_people/list_actions.py`, takes names from the browser and checks the right on
+every record: `email` to read addresses, `write` to change them.
+
 ## Notifications and email
 
 `Notification` is overridden by `churchit/church_communications/scoped_notification.py`. Recipients
