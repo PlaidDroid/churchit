@@ -14,6 +14,14 @@ from churchit.church_people.family_relations import (
 	get_rebased_labels,
 	get_spouse_label,
 )
+from churchit.church_people.merge import (
+	adopt_contact_rows,
+	adopt_rows,
+	fill_blanks,
+	refuse_all_but_a_merge,
+	take_import_id,
+	typed_fields,
+)
 from churchit.church_scope import is_multi_church
 from churchit.contacts import validate_contact_tables
 
@@ -151,6 +159,30 @@ class Family(Document):
 		church = contact and frappe.db.get_value("Person", contact, "church")
 		if church:
 			self.church = church
+
+	def before_rename(self, old, new, merge=False):
+		"""A family's ID changes only by a merge into another family."""
+		refuse_all_but_a_merge(self, frappe.get_doc("Family", new) if merge else None)
+
+	def after_rename(self, old, new, merge=False):
+		"""Take over a merged family's members, contact rows and blank fields.
+
+		A member's relationship is to the primary contact, so a member who comes from a family with another
+		primary contact loses it, and validate fills what it can work out again. A household role stays.
+		"""
+		if not merge:
+			return
+		removed = frappe.get_doc("Family", old)
+		same_contact = not self.primary_contact or self.primary_contact == removed.primary_contact
+		moved = adopt_rows(self, removed, "members", lambda row: row.member)
+		adopt_contact_rows(self, removed)
+		self.reload()
+		fill_blanks(self, removed, typed_fields(self))
+		take_import_id(self, removed)
+		for member in self.members:
+			if member.name in moved and not same_contact:
+				member.relationship_to_primary_contact = None
+		self.save(ignore_permissions=True)
 
 	def before_save(self):
 		"""Point each member at this family, and clear it on people dropped who have not moved elsewhere."""

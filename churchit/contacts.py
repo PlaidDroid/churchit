@@ -243,8 +243,9 @@ def primary_address_query(parent, parenttype="Person"):
 def validate_contact_tables(doc):
 	"""Keep the three contact tables internally consistent.
 
-	Trims values, rejects duplicates within a record, and makes sure each table
-	has exactly one primary row (and, for addresses, at most one mailing row).
+	Trims values, rejects duplicates within a record, makes sure each table
+	has exactly one primary row (and, for addresses, at most one mailing row),
+	and keeps each phone number's digits.
 	Flags are corrected rather than rejected so that data imports and the sample
 	data loader never fail on a missing checkbox.
 	"""
@@ -270,6 +271,8 @@ def validate_contact_tables(doc):
 		default_to_first=False,
 	)
 	sync_notification_addresses(doc.get(EMAIL_FIELD) or [])
+	for row in doc.get(PHONE_FIELD) or []:
+		row.digits = phone_digits(row.phone_number)
 
 
 def _flagged_before(before, fieldname, flag):
@@ -300,10 +303,15 @@ def _trim_values(rows, value_field):
 			row.set(value_field, value.strip())
 
 
+def phone_digits(value: str | None) -> str:
+	"""The digits of a phone number, which Phone Number keeps in `digits` so it can be found however it was typed."""
+	return re.sub(r"\D", "", value or "")
+
+
 def contact_key(child_doctype, value):
 	"""Comparison key for a contact value: a phone number by its digits, anything else case-insensitively."""
 	if child_doctype == PHONE_DOCTYPE:
-		digits = re.sub(r"\D", "", value)
+		digits = phone_digits(value)
 		if digits:
 			return digits
 	return value.lower()

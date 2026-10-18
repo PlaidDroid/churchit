@@ -4,6 +4,7 @@ import calendar
 
 import frappe
 from frappe import _
+from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.query_builder.functions import Coalesce
 from frappe.utils import today as frappe_today
 from frappe.utils.pdf import inline_private_images
@@ -525,6 +526,7 @@ def download_directory_pdf(**options):
 	if booklet_printing:
 		pdf = impose_booklet(pdf)
 
+	make_access_log(report_name=REPORT, file_type="PDF", method="Print", filters=options)
 	frappe.local.response.filename = f"{_('Church Directory')}.pdf"
 	frappe.local.response.filecontent = pdf
 	frappe.local.response.type = "pdf"

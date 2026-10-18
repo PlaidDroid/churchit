@@ -10,18 +10,43 @@ from frappe.utils import cstr, get_link_to_form, today
 
 from churchit.church_communications import newsletter
 from churchit.church_foundations import church_access
-from churchit.church_people import events, membership
-from churchit.church_people.derived import sync_derived, years_since
+from churchit.church_people import events, matching, membership, summaries
+from churchit.church_people.derived import BIRTH, DEATH, sync_derived, years_since
 from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED, WIDOWED, WITH_SPOUSE
 from churchit.church_people.member_access import refuse_member_edits_beyond_personal_details
 from churchit.church_people.membership import INACTIVE, MEMBER
+from churchit.church_people.merge import (
+	adopt_contact_rows,
+	adopt_rows,
+	fill_blanks,
+	refuse_all_but_a_merge,
+	remove_repeated_roster_rows,
+	take_import_id,
+	typed_fields,
+)
 from churchit.church_scope import is_multi_church
 from churchit.contacts import primary_email, validate_contact_tables
 
 # How a Person was first created; Desk is the field's default.
 SOURCE_IMPORT = "Import"
 SOURCE_CHECK_IN = "Check-In"
+UNKNOWN_GENDER = "Unknown"
+
+
+def life_event_key(row) -> tuple:
+	"""A person is born once and dies once; any other life event matches on its type and date."""
+	if row.event_type in (BIRTH, DEATH):
+		return (row.event_type,)
+	return (row.event_type, cstr(row.date))
+
+
+# The tables besides contact details that a merge carries over, by what makes two rows the same.
+MERGED_TABLES = {
+	"life_events": life_event_key,
+	"positions": lambda row: (row.position, cstr(row.start_date)),
+	"letters": lambda row: (cstr(row.date), row.file, row.content),
+}
 
 
 def get_display_name(first_name, last_name=None, nickname=None, suffix=None) -> str:
@@ -154,6 +179,64 @@ class Person(Document):
 		# A bulk delete takes the Family out first, and then there is no member row left to remove.
 		if self.family:
 			self.remove_from_family(self.family)
+
+	def before_rename(self, old, new, merge=False):
+		"""A person's ID changes only by a merge into another person, and the merge must lose no login or marriage."""
+		kept = frappe.get_doc("Person", new) if merge else None
+		refuse_all_but_a_merge(self, kept)
+		names = frappe.bold(self.full_name), frappe.bold(kept.full_name)
+		if self.user and kept.user and self.user != kept.user:
+			frappe.throw(
+				_("{0} and {1} each have a Portal User. Remove one of them before you merge.").format(*names),
+				title=_("Not Merged"),
+			)
+		if self.spouse == kept.name or kept.spouse == self.name:
+			frappe.throw(
+				_("{0} and {1} are married to each other, so they are two people.").format(*names),
+				title=_("Not Merged"),
+			)
+		if self.spouse and kept.spouse and self.spouse != kept.spouse:
+			frappe.throw(
+				_("{0} and {1} have different spouses. Correct one of them before you merge.").format(*names),
+				title=_("Not Merged"),
+			)
+
+	def after_rename(self, old, new, merge=False):
+		"""Take over a merged person: blank fields, contact rows, life events, positions, letters, login and history.
+
+		Frappe has pointed every link at this person already. The removed person is deleted next, and its
+		on_trash finds its spouse and family pointing here, so it changes nothing.
+		"""
+		if not merge:
+			return
+		removed = frappe.get_doc("Person", old)
+		# One login and one calendar link name one person, and the calendar link is unique.
+		frappe.db.set_value("Person", old, {"user": None, "team_calendar_key": None}, update_modified=False)
+		adopt_contact_rows(self, removed)
+		for fieldname, key in MERGED_TABLES.items():
+			adopt_rows(self, removed, fieldname, key)
+		frappe.db.set_value(
+			"Milestone",
+			{"reference_type": "Person", "reference_name": old},
+			"reference_name",
+			new,
+			update_modified=False,
+		)
+		self.reload()
+		self.take_details_from(removed)
+		remove_repeated_roster_rows(self.name, self.family)
+		self.save(ignore_permissions=True)
+		matching.resolve_merged(self.name)
+		summaries.refresh([self.name])
+
+	def take_details_from(self, removed):
+		"""Fill this person's blank fields from *removed*. A spouse comes with the marital status that goes with them."""
+		if not self.spouse and removed.spouse:
+			self.spouse, self.marital_status = removed.spouse, removed.marital_status
+		if self.gender == UNKNOWN_GENDER:
+			self.gender = removed.gender
+		fill_blanks(self, removed, [*typed_fields(self), "team_calendar_key"])
+		take_import_id(self, removed)
 
 	def validate(self):
 		refuse_member_edits_beyond_personal_details(self)

@@ -35,6 +35,8 @@
   "inactive_reason",
   "inactive_since",
   "source",
+  "legacy_system",
+  "legacy_id",
   "photo",
   "alergies",
   "medical_notes",
@@ -94,7 +96,8 @@
    "allow_in_quick_entry": 1,
    "fieldname": "last_name",
    "fieldtype": "Data",
-   "label": "Last Name"
+   "label": "Last Name",
+   "search_index": 1
   },
   {
    "fieldname": "full_name",
@@ -397,6 +400,23 @@
    "set_only_once": 1
   },
   {
+   "depends_on": "eval:doc.legacy_id",
+   "description": "The system this record was imported from.",
+   "fieldname": "legacy_system",
+   "fieldtype": "Data",
+   "label": "Imported From",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.legacy_id",
+   "description": "This record's ID in the system it was imported from, so a later import updates it instead of adding it again.",
+   "fieldname": "legacy_id",
+   "fieldtype": "Data",
+   "label": "Imported ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
    "description": "Only Church Manager, Church Office and Church Check-In Volunteer logins can see these notes. Members cannot see them on their Personal Details page.",
    "fieldname": "medical_notes",
    "fieldtype": "Small Text",
@@ -408,7 +428,8 @@
    "fieldname": "birth_date",
    "fieldtype": "Date",
    "label": "Birth Date",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "birth_month",
@@ -671,7 +692,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-17 17:00:00.000000",
+ "modified": "2026-10-17 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

@@ -65,6 +65,11 @@ GLOBAL_DOCTYPES = {
 		"Memory Session",
 	},
 	"the church tree itself": {"Church"},
+	"virtual import targets that store nothing; the people they make take the importer's church": {
+		"People Import",
+		"Planning Center Import",
+		"Rock RMS Import",
+	},
 }
 
 # Reads that carry no permission filter of their own. frappe.get_list is left

@@ -229,8 +229,10 @@ permission_query_conditions = {
 # Every doctype with a `church` Link gets it defaulted (or refused) on save, a
 # new login is scoped to the church it was created in rather than seeing them all,
 # a desk user opens Summary after login, publishing, un-publishing or deleting
-# a Web Page adds it to or removes it from the menu, and a saved or deleted record
-# queues a refresh of the person summary fields it changes.
+# a Web Page adds it to or removes it from the menu, a saved or deleted record
+# queues a refresh of the person summary fields it changes, a deleted person
+# takes their Possible Duplicate pairs along, and an approved data deletion request
+# anonymizes the member's Person.
 doc_events = {
 	"*": {
 		"validate": "churchit.church_scope.ensure_church",
@@ -240,6 +242,12 @@ doc_events = {
 			"churchit.church_scope.refuse_deleting_another_churches_record",
 			"churchit.church_people.summaries.on_change",
 		],
+	},
+	"Person": {
+		"on_trash": "churchit.church_people.duplicates.drop_pairs",
+	},
+	"Personal Data Deletion Request": {
+		"on_change": "churchit.church_people.privacy.anonymize_on_data_deletion",
 	},
 	"User": {
 		"validate": "churchit.church_summary.home.land_on_summary",
@@ -285,6 +293,7 @@ scheduler_events = {
 		"churchit.church_people.summaries.refresh_daily",
 		"churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment.send_team_emails",
 	],
+	"weekly_long": ["churchit.church_people.duplicates.scan"],
 	"cron": {
 		"*/5 * * * *": ["churchit.church_communications.doctype.church_email.church_email.send_scheduled"],
 	},
@@ -299,9 +308,22 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 
-# Connection counts on a form cover only the records the reader may see.
+# Connection counts on a form cover only the records the reader may see, and Data Import's
+# Export Data writes an Access Log entry like Frappe's other exports.
 override_whitelisted_methods = {
 	"frappe.desk.notifications.get_open_count": "churchit.connections.get_open_count",
+	"frappe.core.doctype.data_import.data_import.download_template": "churchit.exports.download_template",
+}
+
+# A Person Link field also finds people by phone number or email address.
+standard_queries = {"Person": "churchit.church_people.search.search_people"}
+
+# Data Import targets that read another system's people export, or Churchit's own spreadsheet,
+# and build Address, Family and Person records from each row.
+data_import_providers = {
+	"People Import": "churchit.church_people.imports.people.PeopleImportProvider",
+	"Planning Center Import": "churchit.church_people.imports.planning_center.PlanningCenterImportProvider",
+	"Rock RMS Import": "churchit.church_people.imports.rock_rms.RockRMSImportProvider",
 }
 
 # each overriding function accepts a `data` argument;
@@ -331,26 +353,12 @@ override_doctype_dashboards = {"User": "churchit.church_people.doctype.person.pe
 # User Data Protection
 # --------------------
 
-# user_data_fields = [
-# 	{
-# 		"doctype": "{doctype_1}",
-# 		"filter_by": "{filter_by}",
-# 		"redact_fields": ["{field_1}", "{field_2}"],
-# 		"partial": 1,
-# 	},
-# 	{
-# 		"doctype": "{doctype_2}",
-# 		"filter_by": "{filter_by}",
-# 		"partial": 1,
-# 	},
-# 	{
-# 		"doctype": "{doctype_3}",
-# 		"strict": False,
-# 	},
-# 	{
-# 		"doctype": "{doctype_4}"
-# 	}
-# ]
+# A member's data download includes their Person and the email rows holding their address. Their other
+# rows carry only the Person's ID, so a deletion request anonymizes the whole Person through doc_events.
+user_data_fields = [
+	{"doctype": "Person", "filter_by": "user"},
+	{"doctype": "Email Address", "filter_by": "email_address"},
+]
 
 # Authentication and authorization
 # --------------------------------

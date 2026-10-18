@@ -331,6 +331,46 @@ runs the Person `listview_settings` too, so every saved list gets the Person lis
 server side, `church_people/list_actions.py`, takes names from the browser and checks the right on
 every record: `email` to read addresses, `write` to change them.
 
+## Duplicates, merging and anonymizing
+
+`church_people/matching.find_matches` is the one matcher: the new-Person warning, the weekly scan
+(`duplicates.scan`) and the imports all call it, and its weights are in `WEIGHTS`. It reads every
+church unless it is given one, so anything that shows a match to a user must first filter it
+through `frappe.get_list`, as `get_possible_matches` does. Phone Number keeps `digits`, filled by
+`contacts.validate_contact_tables`; match or search phones on that column, never on `phone_number`.
+
+A merge is Frappe's own rename with merge. `church_people/merge.py` and the Rename dialog run the
+same Person and Family `before_rename` and `after_rename`. Frappe repoints every Link and Dynamic
+Link but not a Data field that stores a Person ID (`Milestone.reference_name`), so
+`Person.after_rename` moves those; a new Data field holding a Person ID needs the same. A new child
+table that lists each person once goes in `person_data_map.ROSTERS`, and a new Person table a merge
+carries over goes in `MERGED_TABLES`. `person_data_map.linked_records` finds every record naming a
+person from field metadata; use it instead of a list of doctypes. `privacy.anonymize_person` keeps
+the record and clears `PERSONAL_FIELDS`, so a new Person field holding personal data goes there.
+
+Frappe logs list and Report Builder exports, prints and PDFs. A new export or print path for
+personal data must call `make_access_log`, as the Church Directory PDF and `churchit/exports.py` do.
+
+Frappe 16.50 joins a linked table once for all `link.field` fetches, so a list view with two Links
+to one doctype shows the first link's title in both columns. Show Data name fields instead, as
+Possible Duplicate does.
+
+## People imports
+
+Imports run through Frappe's Data Import. Each source is a virtual DocType in Church People whose
+fields are the export's columns, labelled exactly as the export heads them, with Churchit's
+fieldnames. A provider in `church_people/imports/` is registered for it under
+`data_import_providers` in hooks.py: its `validate` adds row warnings and its `import_row` builds
+Person, Family and Address through `imports/record.py`. A person is found again by
+`legacy_system` and `legacy_id`, and a family by its household ID, only in the importer's
+churches. To add a source, add a virtual DocType that keeps Churchit's fieldnames, a
+`SourceProvider` subclass and one hook line.
+
+While `frappe.flags.in_import` is set, Frappe applies no field defaults and skips Select
+validation, so a record made from a Person save during an import must set its mandatory fields
+itself. Frappe's `import_labels` aliases work only on child-table fields, so a parent column
+matches only its label or fieldname.
+
 ## Notifications and email
 
 `Notification` is overridden by `churchit/church_communications/scoped_notification.py`. Recipients

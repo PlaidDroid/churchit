@@ -6,7 +6,8 @@
  "documentation": "/app/manual%3A-people",
  "engine": "InnoDB",
  "field_order": [
-  "adult_age"
+  "adult_age",
+  "match_threshold"
  ],
  "fields": [
   {
@@ -17,12 +18,19 @@
    "label": "Adult Age",
    "non_negative": 1,
    "reqd": 1
+  },
+  {
+   "default": "80",
+   "description": "How alike two people must be, from 0 to 100, before Churchit warns that a new person may already exist or lists them as a possible duplicate.",
+   "fieldname": "match_threshold",
+   "fieldtype": "Int",
+   "label": "Duplicate Match Threshold"
   }
  ],
  "grid_page_length": 50,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-16 15:00:00.000000",
+ "modified": "2026-10-17 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "People Settings",

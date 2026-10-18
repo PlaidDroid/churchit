@@ -340,3 +340,25 @@ class TestDefaultContactTypes(FrappeTestCase):
 		)
 		for doctype, name in (("Email Type", "Home"), ("Phone Type", "Mobile"), ("Address Type", "Other")):
 			self.assertTrue(frappe.db.exists(doctype, name))
+
+
+class TestPhoneDigits(RollbackEachTest):
+	def test_each_phone_keeps_its_digits(self):
+		person = make_person("_Test Digits", "Kept", phones=[{"phone_number": "+1 (217) 555-0210"}])
+		self.assertEqual(person.phones[0].digits, "12175550210")
+
+		person.phones[0].phone_number = "217.555.0211"
+		person.save()
+		self.assertEqual(frappe.db.get_value("Phone Number", person.phones[0].name, "digits"), "2175550211")
+
+	def test_the_patch_fills_the_digits_saved_before_they_were_kept(self):
+		from churchit.patches.v1_0 import fill_phone_digits
+
+		person = make_person("_Test Digits", "Patched", phones=[{"phone_number": "(217) 555-0212"}])
+		row = person.phones[0].name
+		frappe.db.set_value("Phone Number", row, "digits", None)
+
+		fill_phone_digits.execute()
+		fill_phone_digits.execute()
+
+		self.assertEqual(frappe.db.get_value("Phone Number", row, "digits"), "2175550212")
