@@ -22,6 +22,7 @@ from churchit.query import Day, Month
 from churchit.scripture import get_printable_passage
 from churchit.utils import set_report_link_titles
 
+REPORT = "Church Directory Report"
 ADDRESS_FIELDS = ("address_line1", "address_line2", "city", "state", "pincode")
 
 
@@ -133,6 +134,12 @@ def get_data(filters):
 	return result
 
 
+def refuse_readers_without_the_report():
+	"""The whitelisted directory methods answer only users whose roles may open the report."""
+	if not frappe.get_cached_doc("Report", REPORT).is_permitted():
+		frappe.throw(_("You cannot open the Church Directory."), frappe.PermissionError)
+
+
 @frappe.whitelist()
 def get_directory_html(
 	members_only: bool = 0,
@@ -160,6 +167,7 @@ def get_directory_html(
 	church: str | None = None,
 ):
 	"""Generate the full HTML for the church directory, ready to print."""
+	refuse_readers_without_the_report()
 	filters = {"church": church, "members_only": members_only, "hide_non_active": hide_non_active}
 	group_by_family = frappe.utils.cint(group_by_family)
 	show_photos = frappe.utils.cint(show_photos)
@@ -506,6 +514,7 @@ def get_directory_html(
 @frappe.whitelist()
 def download_directory_pdf(**options):
 	"""The directory as a PDF, rendered here because only Chromium prints page numbers and footers."""
+	refuse_readers_without_the_report()
 	booklet_printing = frappe.utils.cint(options.get("booklet_printing"))
 	document = get_paginated_directory(options)
 	if booklet_printing and len(document.pages) % 4:

@@ -19,6 +19,7 @@ from churchit.church_people.report.church_directory_report.church_directory_repo
 from churchit.tests.helpers import (
 	ensure,
 	ensure_root_church,
+	ensure_user,
 	make_address,
 	make_person,
 	make_primary_contact,
@@ -44,6 +45,15 @@ class TestChurchDirectoryReport(FrappeTestCase):
 		original = frappe.db.get_single_value("Church Features", "enable_website")
 		frappe.db.set_single_value("Church Features", "enable_website", enabled)
 		self.addCleanup(frappe.db.set_single_value, "Church Features", "enable_website", original)
+
+	def test_only_users_the_report_allows_get_the_directory(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.set_user(ensure_user("_test_directory_member@example.com", "Member", roles=("Church User",)))
+
+		with self.assertRaises(frappe.PermissionError):
+			self.render()
+		with self.assertRaises(frappe.PermissionError):
+			download_directory_pdf(church=self.church)
 
 	def test_cover_shows_the_church_verse_and_website(self):
 		translation = make_translation(self, "_TDV", [("JOS", 24, 15, "We will serve the LORD.")])
