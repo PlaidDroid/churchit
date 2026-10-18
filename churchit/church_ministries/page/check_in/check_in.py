@@ -22,6 +22,7 @@ from churchit.church_scope import (
 	is_people_directory_private,
 	scoped,
 )
+from churchit.contacts import phone_digits
 
 RESULT_LIMIT = 12
 
@@ -59,7 +60,7 @@ def search_people(query: str | None, function: str | None = None):
 	if len(query) < 2:
 		return []
 	scope = get_people_scope(function)
-	digits = re.sub(r"\D", "", query)
+	digits = phone_digits(query)
 	if len(digits) >= 4 and not re.search(r"[a-zA-Z]", query):
 		matched = find_by_phone(digits, scope)
 	else:
@@ -104,11 +105,10 @@ def find_by_name(words, scope):
 
 
 def find_by_phone(digits, scope):
-	"""Match phone numbers however they are formatted by allowing anything between digits."""
-	pattern = "%" + "%".join(digits) + "%"
+	"""Match phone numbers on their stored digits, however they are formatted."""
 	phones = frappe.get_all(
 		"Phone Number",
-		filters={"phone_number": ["like", pattern], "parenttype": ["in", ["Person", "Family"]]},
+		filters={"digits": ["like", f"%{digits}%"], "parenttype": ["in", ["Person", "Family"]]},
 		fields=["parent", "parenttype"],
 		limit=RESULT_LIMIT,
 	)

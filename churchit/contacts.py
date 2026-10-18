@@ -423,15 +423,15 @@ def search_holders(doctype, txt, searchfield, start, page_len, filters):
 def get_holders(parenttype, child_doctype, value_field, value, **filters):
 	"""Names of the *parenttype* records holding *value*, oldest row first.
 
-	Phone numbers match however they are formatted, the way check-in search does:
-	the query finds every number with the same digits in order, and the key
-	comparison then drops the ones with extra digits.
+	Phone numbers match on their stored digits, however they are formatted.
 	"""
 	key = contact_key(child_doctype, value)
-	candidate = ("like", "%" + "%".join(key) + "%") if key.isdigit() else value
+	field, candidate = (
+		("digits", key) if child_doctype == PHONE_DOCTYPE and key.isdigit() else (value_field, value)
+	)
 	rows = frappe.get_all(
 		child_doctype,
-		filters={"parenttype": parenttype, value_field: candidate, **filters},
+		filters={"parenttype": parenttype, field: candidate, **filters},
 		fields=["parent", value_field],
 		order_by="creation asc",
 	)
