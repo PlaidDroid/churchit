@@ -3,7 +3,7 @@
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.website.doctype.web_form.web_form import has_link_option, process_link_field
+from frappe.website.doctype.web_form.web_form import accept, has_link_option, process_link_field
 
 from churchit.church_ministries.web_form.function_sign_up.function_sign_up import (
 	get_function_sign_up_items,
@@ -87,6 +87,30 @@ class TestPortalMembers(FrappeTestCase):
 		self.assertIn("first_name", context.reference_doc)
 		self.assertNotIn("notes", context.reference_doc)
 		self.assertNotIn("medical_notes", context.reference_doc)
+
+	def test_a_member_cannot_add_a_person(self):
+		"""Frappe's web form saves a new record without checking the member's rights."""
+		frappe.set_user(self.member)
+		before = frappe.db.count("Person")
+
+		with self.assertRaises(frappe.PermissionError):
+			accept(
+				"personal-details",
+				frappe.as_json({"doctype": "Person", "first_name": "_Test", "last_name": "Newcomer"}),
+			)
+		self.assertEqual(frappe.db.count("Person"), before)
+
+	def test_personal_details_opens_the_members_own_record_instead_of_a_new_one(self):
+		self.addCleanup(setattr, frappe.local, "path", getattr(frappe.local, "path", None))
+		frappe.set_user(self.member)
+		frappe.local.form_dict = frappe._dict(is_new=1)
+		frappe.local.path = "personal-details/new"
+		web_form = frappe.get_doc("Web Form", "personal-details")
+
+		self.assertFalse(web_form.allow_multiple)
+		with self.assertRaises(frappe.Redirect):
+			web_form.get_context(frappe._dict())
+		self.assertEqual(frappe.local.flags.redirect_location, f"/personal-details/{self.own.name}/edit")
 
 	def test_the_recipient_search_offers_names_from_the_members_church(self):
 		frappe.set_user(self.member)

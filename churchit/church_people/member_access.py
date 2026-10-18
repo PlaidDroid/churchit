@@ -46,10 +46,13 @@ def refuse_member_edits_beyond_personal_details(person):
 	"""A member edits their own Person through the Personal Details form, so only its fields may change.
 
 	The form sets nothing else, so anything more came straight through the API:
-	a membership status, a family or a spouse set by the member.
+	a membership status, a family or a spouse set by the member. Nor may a member add
+	a person: Frappe's web form saves a new record without checking their rights.
 	"""
-	if not is_portal_member() or person.is_new():
+	if not is_portal_member():
 		return
+	if person.is_new():
+		frappe.throw(_("Ask the church office to add a person."), frappe.PermissionError)
 	before = person.get_doc_before_save()
 	allowed = personal_details_fields()
 	changed = [
@@ -66,6 +69,15 @@ def refuse_member_edits_beyond_personal_details(person):
 
 def personal_details_fields():
 	return {field.fieldname for field in frappe.get_cached_doc("Web Form", PERSONAL_DETAILS).web_form_fields}
+
+
+def open_own_personal_details():
+	"""Send a visitor who asks for a new Personal Details form to their own record, or to the list without one."""
+	person = session_person()
+	frappe.local.flags.redirect_location = (
+		f"/{PERSONAL_DETAILS}/{person}/edit" if person else f"/{PERSONAL_DETAILS}/list"
+	)
+	raise frappe.Redirect
 
 
 def limit_to_personal_details(context):
