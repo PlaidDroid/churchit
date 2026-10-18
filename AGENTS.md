@@ -294,6 +294,11 @@ Personal Details form's fields, and a prayer or alms recipient to their own chur
 renders the name of every record its Link fields may list, hidden fields included, so a member
 form must not link to Person. `tests/test_portal_members.py` checks this.
 
+Rights on a Frappe doctype, such as Church Manager on Data Import or Role Profile, live in that
+doctype's `church_customizations/custom/<doctype>.json` under `custom_perms`. A Custom DocPerm
+replaces the doctype's standard permissions, and migrate replaces every Custom DocPerm of that
+doctype with the file's rows, so the file lists System Manager's rows too.
+
 ## People events and history
 
 `church_people/events.py` emits `membership_changed` (field, old, new), `life_event_added`
