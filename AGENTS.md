@@ -534,6 +534,9 @@ Run the whole suite before committing anything broad: `bench --site <site> run-t
   assert_scoped(self, "Prayer Request", manager_a, request_in_a, request_in_b)
   ```
 - Run `ruff format` only on the files you changed; the pinned version reformats older files.
+- A test that sets a site default (`country`) restores it with `addClassCleanup`; the test site may
+  have none. A test that calls Frappe's `get_open_count` resets `frappe.db.set_execution_timeout(0)`,
+  because it limits the session to 1 second and later tests share the connection.
 
 ## Desk navigation
 

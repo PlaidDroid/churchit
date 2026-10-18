@@ -31,6 +31,8 @@ class TestConnectionCounts(FrappeTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		# Frappe's get_open_count limits the session's statements to 1 second, meant to end with the request.
+		frappe.db.set_execution_timeout(0)
 
 	def counts_for(self, user):
 		frappe.set_user(user)
