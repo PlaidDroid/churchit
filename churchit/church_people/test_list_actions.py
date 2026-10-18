@@ -292,6 +292,13 @@ class TestMailingLabels(FrappeTestCase):
 		self.assertIn("1 Rue Haute", html)
 		self.assertIn("France", html)
 
+	def test_an_address_whose_mail_came_back_is_left_off(self):
+		row = frappe.get_doc("Person", self.traveller).addresses[0].name
+		frappe.db.set_value("Postal Address", row, "is_returned_mail", 1)
+		self.addCleanup(frappe.db.set_value, "Postal Address", row, "is_returned_mail", 0)
+
+		self.assertNotIn("1 Rue Haute", frappe.get_print("Person", self.traveller, "Mailing Label"))
+
 	def test_a_household_label_is_addressed_to_its_adults(self):
 		html = frappe.get_print("Family", self.family, "Household Label")
 
