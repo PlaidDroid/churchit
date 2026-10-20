@@ -56,3 +56,9 @@ churchit.patches.v1_0.fill_person_summaries
 churchit.patches.v1_0.repair_early_household_roles
 churchit.patches.v1_0.remove_avery_label_format
 churchit.patches.v1_0.fill_phone_digits
+churchit.patches.v1_0.add_note_categories_and_move_person_notes
+churchit.patches.v1_0.rename_care_request_assigned_to
+churchit.patches.v1_0.add_child_safety_training_check_type
+churchit.patches.v1_0.add_communication_purposes
+churchit.patches.v1_0.record_consent_from_unsubscribes
+churchit.patches.v1_0.add_connection_card_interests

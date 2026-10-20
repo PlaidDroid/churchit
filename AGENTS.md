@@ -24,7 +24,8 @@ belong to another church. That is why the rules below are enforced by
 
 Access rides on native Frappe **User Permissions** on `Church`. A user's `Person.church` drives the
 permission; `hide_descendants` is the "include branch churches" switch. `permission_query_conditions`
-is deliberately unused.
+is never used for church scoping. Person (a member lists only their own record), Person Note (Note
+Category roles) and Follow-up Card (the follow-up role) use it for other rules.
 
 The directory is the one custom piece. The `church` Link on `Person` and `Family` ships with
 `ignore_user_permissions: 1`, so User Permissions do not filter them. A User Permission cannot
@@ -371,6 +372,54 @@ validation, so a record made from a Person save during an import must set its ma
 itself. Frappe's `import_labels` aliases work only on child-table fields, so a parent column
 matches only its label or fieldname.
 
+## Person Notes
+
+A Person Note's category decides who reads it (`notes.has_note_permission` and
+`notes.note_query_conditions`). Church scoping does not cover categories, so read notes only with
+`frappe.get_list`, or `get_doc` plus a permission check, never `get_all` or `qb`, even for a person
+the reader can see. In Frappe a share overrides both hooks, so Person Note has no `share` right: do
+not add one, and do not assign notes. Person Note does not track changes, because every System
+Manager can read Version records. A Person's timeline does not show records linked to the person;
+notes reach it through `additional_timeline_content`.
+
+## Care and child safety
+
+`background_check.is_cleared(person, on_date, check_types)` is the one rule for "cleared to
+serve". A Care Request's caregiver is assigned the request through `assign_to`, which shares it only
+when the session user has the share right, so `CareRequest.assign` shares first with
+`ignore_share_permission` after checking `has_church_access`, to give a clear message.
+
+## Follow-up cards
+
+`followup.add_card` is the one way code opens a card, and `followup.start_cards` the one way a
+trigger reaches the workflows that start on it. A person has one open card per workflow: `add_card`
+locks the Person row, and the card's `validate` refuses a second one. Anything more a church wants
+on a step, an email or a desk alert, is its own Notification on Follow-up Card, not code.
+
+The workflow owns its Kanban Board: `FollowupWorkflow.sync_board` rewrites its columns and filters
+on every save, so never edit the board by hand. `Follow-up Card.step` is a Data field the card
+checks against its workflow's steps; Kanban v2 takes columns from the board, not from Select
+options. Frappe checks a Dynamic Link before `validate`, so a trigger's `value_type` is set in the
+workflow's `_validate_links` override from `followup.VALUE_TYPES`. Moving a card closes its ToDos and
+assigns through `assign_to._add(ignore_permissions=True)`, as Assignment Rule does.
+`has_card_permission` reads `_assign` from the database: a form sends none, and a caller could send
+a forged one.
+
+## Connection Cards
+
+The Connection Card web form saves as Guest, and `ConnectionCard.process` runs as a job after the
+commit, as the sender, writing with `ignore_permissions`; anything it reaches (`start_cards`,
+`add_card`, the Follow-up Card hooks) must work as Guest. Guest input never changes an existing
+Person: a card links only on `is_strong_match` and otherwise adds a Visitor and records Possible
+Duplicates. The honeypot is checked in the job, because `accept` returns the saved document to the
+sender.
+
+A web form's hidden church field is Data, not Link: a Link field puts every record name into the
+page. Frappe fills web form fields from the query string but drops it when it redirects
+`/<route>` to `/<route>/new`, so a link carrying `?church=` points at `/new`. Web Form Field has no
+Table MultiSelect: the form shows the table as a Table field and draws checkboxes from the options
+Frappe lists for its Link column (`connection_card.js`).
+
 ## Notifications and email
 
 `Notification` is overridden by `churchit/church_communications/scoped_notification.py`. Recipients
@@ -384,6 +433,13 @@ A Church Email works out its recipients when it is sent, from its own church's p
 that church's groups. Unsubscribes are Email Unsubscribe records against a church, and
 `newsletter.email_church` is the one place that says which church: the root church on a
 single-church site, where records carry none.
+
+Consent is answered only by `consent.allowed`, or `consent.allowed_people` for a list. A
+Notification has no purpose, so only consent for every purpose counts, and staff (System Users)
+are never dropped. An address or number is refused only when every Person holding it is refused. A
+withdrawal applies to every holder of an address; a Given is recorded only for the person who
+asked. An Email Unsubscribe made with `db_insert` runs no hooks, so call
+`consent.record_unsubscribe` after it, as `newsletter.set_subscribed` does.
 
 A shipped Notification with a `condition` sets `"condition_type": "Python"` in its JSON. Migrate
 syncs it without field defaults, and Frappe ignores a condition whose type is empty.
@@ -489,6 +545,12 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 - **Administrator is never restricted.** User permissions do not apply to it, so it always sees every
   church. Test scoping as a Church Manager, never as Administrator.
 - **Booleans over `frappe.xcall` arrive as strings.** Use `frappe.utils.sbool`, not `cint`.
+- **Never name a field `assigned_to`.** Frappe's `assign_to` writes the assignee's User ID into any
+  field with that name and clears it when the assignment goes. Care Request's Person link is
+  `caregiver` for that reason.
+- **Frappe checks create before `fetch_from` fills `church`.** A doctype that takes its church from a
+  Person link checks the person's church in `validate`, as
+  `CommunicationConsent.refuse_another_churches_person` does.
 - **Assigning a record shares it.** Frappe's `assign_to` shares a record with an assignee who cannot
   read it, and the Share menu shares on purpose. `church_access.refuse_sharing_outside_the_church`
   (DocShare `validate`) refuses both when the user cannot see the record's church, and refuses

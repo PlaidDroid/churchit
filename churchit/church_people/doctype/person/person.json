@@ -60,8 +60,6 @@
   "addresses",
   "section_break_eqre",
   "letters",
-  "notes_tab",
-  "notes",
   "connections_tab",
   "involvement_section",
   "first_attended_on",
@@ -264,18 +262,6 @@
    "options": "Person"
   },
   {
-   "fieldname": "notes_tab",
-   "fieldtype": "Tab Break",
-   "in_preview": 1,
-   "label": "Notes"
-  },
-  {
-   "fieldname": "notes",
-   "fieldtype": "Text Editor",
-   "label": "Notes",
-   "print_hide": 1
-  },
-  {
    "default": "0",
    "description": "Leave this person out of the printed Church Directory, and out of the birthdays and anniversaries in the bulletin. Members can set this themselves on their Personal Details page.",
    "fieldname": "hide_from_directory",
@@ -391,11 +377,11 @@
   },
   {
    "default": "Desk",
-   "description": "How this person was first added: in the desk, by a Data Import, or at the Check-In Station. Blank for people added before Churchit recorded it.",
+   "description": "How this person was first added: in the desk, by a Data Import, at the Check-In Station or from a Connection Card. Blank for people added before Churchit recorded it.",
    "fieldname": "source",
    "fieldtype": "Select",
    "label": "Source",
-   "options": "Desk\nImport\nCheck-In",
+   "options": "Desk\nImport\nCheck-In\nConnection Card",
    "read_only": 1,
    "set_only_once": 1
   },
@@ -672,6 +658,11 @@
    "link_fieldname": "recipient"
   },
   {
+   "group": "Care",
+   "link_doctype": "Person Note",
+   "link_fieldname": "person"
+  },
+  {
    "group": "Giving",
    "link_doctype": "Collection",
    "link_fieldname": "person"
@@ -690,9 +681,24 @@
    "group": "Membership",
    "link_doctype": "Member Transfer",
    "link_fieldname": "person"
+  },
+  {
+   "group": "Membership",
+   "link_doctype": "Communication Consent",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Follow-up",
+   "link_doctype": "Follow-up Card",
+   "link_fieldname": "person"
+  },
+  {
+   "group": "Follow-up",
+   "link_doctype": "Connection Card",
+   "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-17 19:00:00.000000",
+ "modified": "2026-10-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

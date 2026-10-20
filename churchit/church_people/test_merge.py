@@ -7,6 +7,8 @@ import frappe
 from frappe.model.rename_doc import update_document_title
 from frappe.tests.classes.context_managers import patch_hooks
 
+from churchit.church_people.doctype.follow_up_card.test_follow_up_card import make_workflow
+from churchit.church_people.followup import CARD, CLOSED, OPEN, add_card
 from churchit.church_people.matching import MERGED, Match, get_pairs, record_possible_duplicates
 from churchit.church_people.merge import merge_families, merge_people
 from churchit.tests.helpers import (
@@ -48,14 +50,14 @@ class TestMergePeople(RollbackEachTest):
 	def test_the_kept_values_win_and_blank_fields_are_filled(self):
 		kept = make_person("_Test Kept", "Merge", nickname="Kit", gender="Unknown")
 		removed = make_person(
-			"_Test Removed", "Merge", nickname="Remy", middle_name="Quinn", gender="Female", notes="Kind"
+			"_Test Removed", "Merge", nickname="Remy", middle_name="Quinn", gender="Female", alergies="Kiwi"
 		)
 
 		merge_people(kept.name, removed.name)
 
 		kept.reload()
 		self.assertEqual((kept.first_name, kept.nickname), ("_Test Kept", "Kit"))
-		self.assertEqual((kept.middle_name, kept.gender, kept.notes), ("Quinn", "Female", "Kind"))
+		self.assertEqual((kept.middle_name, kept.gender, kept.alergies), ("Quinn", "Female", "Kiwi"))
 		self.assertFalse(frappe.db.exists("Person", removed.name))
 		self.assertTrue(
 			frappe.db.exists("Deleted Document", {"deleted_doctype": "Person", "deleted_name": removed.name})
@@ -265,6 +267,20 @@ class TestMergePeople(RollbackEachTest):
 
 		self.assertEqual(frappe.db.get_value("Possible Duplicate", pair, "status"), MERGED)
 		self.assertEqual([row.name for row in get_pairs(kept.name)], [pair])
+
+	def test_one_follow_up_card_stays_open_per_workflow(self):
+		kept = make_person("_Test Kept", "Followed")
+		removed = make_person("_Test Removed", "Followed")
+		workflow = make_workflow("_Test Merge Welcome", [("Call", None, 2)]).name
+		first = add_card(kept.name, workflow)
+		second = add_card(removed.name, workflow)
+
+		merge_people(kept.name, removed.name)
+
+		self.assertEqual(
+			frappe.get_all(CARD, filters={"person": kept.name, "status": OPEN}, pluck="name"), [first]
+		)
+		self.assertEqual(frappe.db.get_value(CARD, second, ["person", "status"]), (kept.name, CLOSED))
 
 	def test_the_pair_survives_the_hook_that_drops_a_deleted_persons_pairs(self):
 		kept = make_person("_Test Kept", "Hooked")

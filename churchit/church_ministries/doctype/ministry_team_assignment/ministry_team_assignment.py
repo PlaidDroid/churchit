@@ -12,7 +12,10 @@ from frappe.utils import format_date, format_time, get_url, get_url_to_form, get
 
 from churchit.church_ministries.doctype.function.function import TIME_FORMAT, get_time_window
 from churchit.church_ministries.doctype.ministry_team_block.ministry_team_block import get_blocks_covering
-from churchit.church_people.doctype.background_check.background_check import is_cleared
+from churchit.church_people.doctype.background_check.background_check import (
+	get_current_check_types,
+	is_cleared,
+)
 from churchit.church_scope import refuse_another_churches_record, scoped
 from churchit.contacts import get_primary_email, get_primary_emails
 
@@ -35,6 +38,7 @@ class MinistryTeamAssignment(Document):
 			self.refuse_a_person_not_on_the_position()
 			self.refuse_a_repeat()
 			refuse_another_churches_record(self, "Ministry Team Position", self.position)
+			self.refuse_without_checks()
 			self.warn_about_conflicts()
 
 		self.title = f"{self.person_name} as {self.position_doc.position_name} at {self.function_doc.title}"
@@ -74,6 +78,28 @@ class MinistryTeamAssignment(Document):
 				_("{0} is already assigned to this position at this function.").format(self.person_name)
 			)
 
+	def refuse_without_checks(self):
+		if not self.position_doc.block_without_checks:
+			return
+		problem = self.get_check_problem(get_time_window(self.function_doc)[0].date())
+		if problem:
+			frappe.throw(problem, title=_("Not cleared to serve"))
+
+	def get_check_problem(self, on_date) -> str | None:
+		"""Why the person lacks the checks the position needs on *on_date*, or None."""
+		position = self.position_doc
+		required = [row.check_type for row in position.required_checks]
+		if not position.needs_background_check or is_cleared(self.person, on_date, required):
+			return None
+		if not required:
+			return _("{0} needs a current, cleared Background Check, and {1} has none.").format(
+				position.title, self.person_name
+			)
+		missing = sorted(set(required) - get_current_check_types(self.person, on_date))
+		return _(
+			"{0} needs these checks, cleared and current on the day of the function: {1}. {2} is missing {3}."
+		).format(position.title, ", ".join(sorted(required)), self.person_name, ", ".join(missing))
+
 	def warn_about_conflicts(self):
 		warnings = self.get_warnings()
 		if warnings:
@@ -93,12 +119,9 @@ class MinistryTeamAssignment(Document):
 			_("{0} already serves at {1} at the same time.").format(self.person_name, other.title)
 			for other in self.get_overlapping_assignments(start, end)
 		]
-		if self.position_doc.needs_background_check and not is_cleared(self.person, start.date()):
-			warnings.append(
-				_("{0} needs a current, cleared Background Check, and {1} has none.").format(
-					self.position_doc.title, self.person_name
-				)
-			)
+		check_problem = self.get_check_problem(start.date())
+		if check_problem:
+			warnings.append(check_problem)
 		if not get_primary_email("Person", self.person):
 			warnings.append(
 				_("{0} has no email address, so the request shows only in their portal.").format(

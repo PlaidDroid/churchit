@@ -10,7 +10,7 @@ from frappe.utils import cstr, get_link_to_form, today
 
 from churchit.church_communications import newsletter
 from churchit.church_foundations import church_access
-from churchit.church_people import events, matching, membership, summaries
+from churchit.church_people import events, followup, matching, membership, summaries
 from churchit.church_people.derived import BIRTH, DEATH, sync_derived, years_since
 from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED, WIDOWED, WITH_SPOUSE
@@ -227,6 +227,7 @@ class Person(Document):
 		remove_repeated_roster_rows(self.name, self.family)
 		self.save(ignore_permissions=True)
 		matching.resolve_merged(self.name)
+		followup.close_repeated_cards(self.name)
 		summaries.refresh([self.name])
 
 	def take_details_from(self, removed):

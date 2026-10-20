@@ -6,6 +6,14 @@ from frappe import _
 from frappe.utils import cint
 from frappe.utils.verified_command import verify_request
 
+from churchit.church_communications.doctype.communication_consent.communication_consent import (
+	DESK,
+	EMAIL,
+	GIVEN,
+	MEMBER_PORTAL,
+	record,
+)
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
 from churchit.church_scope import is_multi_church, root_church, session_church, session_person
 from churchit.contacts import get_primary_email, primary_email
 
@@ -35,7 +43,13 @@ def is_subscribed(email: str, church: str) -> bool:
 
 
 def set_subscribed(email: str, church: str, subscribed: bool):
-	"""Start or stop *church*'s emails to *email*."""
+	"""Start or stop *church*'s emails to *email*.
+
+	Stopping them withdraws Church News from each of the church's people holding the address.
+	Starting them again records no consent here: the caller records the one person who asked.
+	"""
+	from churchit.church_communications import consent  # consent imports this module
+
 	filters = unsubscribe_filters(email, church)
 	if subscribed:
 		frappe.db.delete("Email Unsubscribe", filters)
@@ -44,6 +58,8 @@ def set_subscribed(email: str, church: str, subscribed: bool):
 		unsubscribe = frappe.get_doc({"doctype": "Email Unsubscribe", **filters})
 		unsubscribe.set_user_and_timestamp()
 		unsubscribe.db_insert()
+		# db_insert runs no hooks, so the consent hook is run here.
+		consent.record_unsubscribe(unsubscribe)
 
 
 def unsubscribe_filters(email, church):
@@ -107,6 +123,8 @@ def set_subscription(subscribed: bool):
 
 	subscribe = bool(cint(subscribed))
 	set_subscribed(email, church, subscribe)
+	if subscribe and (person := session_person()):
+		record([person], EMAIL, GIVEN, CHURCH_NEWS, MEMBER_PORTAL)
 	return {"subscribed": subscribe}
 
 
@@ -120,3 +138,4 @@ def resubscribe(person):
 	"""Let the church email the loaded *person* again, for someone who cannot do it in the portal."""
 	if email := primary_email(person):
 		set_subscribed(email, email_church(person.church), True)
+		record([person.name], EMAIL, GIVEN, CHURCH_NEWS, DESK)

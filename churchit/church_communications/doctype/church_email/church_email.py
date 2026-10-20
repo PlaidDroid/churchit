@@ -6,6 +6,9 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_to_date, create_batch, get_datetime, now_datetime, validate_email_address
 
+from churchit.church_communications.consent import allowed_people
+from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
 from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, email_church, unsubscribed_emails
 from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import (
 	can_send_email,
@@ -95,8 +98,9 @@ class ChurchEmail(Document):
 			self.db_set("status", DRAFT)
 
 	def get_recipients(self) -> list[str]:
-		"""Primary email of everyone this is for, without anyone who unsubscribed."""
-		emails = {email for email in get_primary_emails("Person", self.get_people()).values() if email}
+		"""Primary email of everyone this is for who may get Church News, without anyone who unsubscribed."""
+		people = allowed_people(self.get_people(), EMAIL, CHURCH_NEWS)
+		emails = {email for email in get_primary_emails("Person", people).values() if email}
 		valid = {email for email in emails if validate_email_address(email)}
 		return sorted(valid - unsubscribed_emails(self.sending_church))
 

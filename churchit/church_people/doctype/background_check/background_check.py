@@ -42,10 +42,22 @@ def expire_background_checks():
 		frappe.db.set_value("Background Check", name, "status", "Expired")
 
 
-def is_cleared(person: str, on_date) -> bool:
-	"""True when *person* has a cleared check that has not expired by *on_date*."""
-	# church-scope: answers yes or no about the one person being placed, wherever their church is
-	expiries = frappe.get_all(
-		"Background Check", filters={"person": person, "status": "Cleared"}, pluck="expires_on"
+def get_current_check_types(person: str, on_date) -> set[str]:
+	"""The types of *person*'s cleared checks that have not expired by *on_date*."""
+	# church-scope: answers about the one person being placed, wherever their church is
+	checks = frappe.get_all(
+		"Background Check",
+		filters={"person": person, "status": "Cleared"},
+		fields=["check_type", "expires_on"],
 	)
-	return any(not expiry or getdate(expiry) >= getdate(on_date) for expiry in expiries)
+	return {
+		check.check_type
+		for check in checks
+		if not check.expires_on or getdate(check.expires_on) >= getdate(on_date)
+	}
+
+
+def is_cleared(person: str, on_date, check_types: list[str] | None = None) -> bool:
+	"""True when *person* holds a cleared check, current on *on_date*, of each of *check_types*, or of any type when none are given."""
+	current = get_current_check_types(person, on_date)
+	return set(check_types) <= current if check_types else bool(current)

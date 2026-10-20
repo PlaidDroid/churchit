@@ -84,7 +84,7 @@ def limit_to_personal_details(context):
 	"""Send the Personal Details page only the form's own fields.
 
 	Frappe hands a signed-in visitor the whole record, which would put the
-	office's notes and the medical notes in the page source.
+	medical notes and the office's summary fields in the page source.
 	"""
 	if not context.reference_doc:
 		return

@@ -14,13 +14,24 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, get_last_day, getdate
 
+from churchit.church_communications.doctype.communication_consent.communication_consent import (
+	EMAIL,
+	GIVEN,
+	WITHDRAWN,
+)
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED
+from churchit.church_people.doctype.note_category.note_category import GENERAL, PASTORAL_CARE
+from churchit.church_people.followup import add_card
 from churchit.church_people.membership import MEMBER, REGULAR_ATTENDER
+from churchit.contacts import get_primary_email
 from churchit.patches.after_install import DEFAULT_CHURCH_NAME
 
 # Ordered deletion steps: (is_submittable, doctype, filters).
 # Prayer Request comments are handled separately after this list runs.
 _DELETE_STEPS = [
+	# A to-do updates the record it is about when deleted, so it goes before that record.
+	(False, "ToDo", {"reference_type": ["in", ["Follow-up Card", "Care Request"]]}),
 	# Leaf docs that link to functions / people / rooms. Delete these first.
 	(False, "Bulletin", {}),
 	(False, "Meeting Minutes", {}),
@@ -61,6 +72,11 @@ _DELETE_STEPS = [
 	(False, "Missionary", {}),
 	(False, "Missionary Agency", {}),
 	(False, "Background Check", {}),
+	(False, "Connection Card", {}),
+	(False, "Person Note", {}),
+	(False, "Communication Consent", {}),
+	(False, "Follow-up Card", {}),
+	(False, "Follow-up Workflow", {}),
 	(False, "Family", {}),
 	(False, "Person", {}),
 ]
@@ -167,6 +183,12 @@ def create_sample_data():
 
 	_create_church_tasks()
 	_create_assignments(people)
+
+	# After the check-ins, so the newcomer workflow does not start on them.
+	_create_follow_up(people)
+	_create_person_notes(people)
+	_create_consents(people)
+	_create_connection_cards(people)
 
 
 def delete_sample_data():
@@ -2822,3 +2844,136 @@ def _create_room_bookings(rooms, people):
 		if frappe.db.exists("Room Booking", {"room": b["room"], "start_datetime": b["start_datetime"]}):
 			continue
 		frappe.get_doc({"doctype": "Room Booking", **b}).insert(ignore_permissions=True)
+
+
+# ---------------------------------------------------------------------------
+# Follow-up, notes, consent and connection cards
+# ---------------------------------------------------------------------------
+
+_NEWCOMER_WORKFLOW = "Newcomer Follow-up"
+
+
+def _create_follow_up(people):
+	"""A newcomer workflow that starts on a first check-in or a connection card, with a card part way along."""
+	if not frappe.db.exists("Follow-up Workflow", _NEWCOMER_WORKFLOW):
+		frappe.get_doc(
+			{
+				"doctype": "Follow-up Workflow",
+				"workflow_name": _NEWCOMER_WORKFLOW,
+				"description": "Welcome someone new and help them find their place.",
+				"steps": [
+					{"step": "Welcome Call", "assign_to": _CHURCH_MANAGER_EMAIL, "due_in_days": 2},
+					{
+						"step": "Coffee Invitation",
+						"assign_to": "david.thompson@example.com",
+						"due_in_days": 7,
+					},
+					{"step": "Connect to a Group", "due_in_days": 14},
+				],
+				"triggers": [{"trigger": "First Check-In"}, {"trigger": "Connection Card"}],
+			}
+		).insert(ignore_permissions=True)
+
+	card = frappe.get_doc(
+		"Follow-up Card",
+		add_card(people["Samuel Brooks"], _NEWCOMER_WORKFLOW, reason="Has been coming for a month"),
+	)
+	if card.step == "Welcome Call":
+		card.step = "Coffee Invitation"
+		card.save(ignore_permissions=True)
+
+
+_PERSON_NOTES = [
+	# (person, category, contact, alert, pinned, note)
+	(
+		"James Wilson",
+		GENERAL,
+		"Call",
+		0,
+		0,
+		"Called to thank him for leading the men's breakfast. He would like to start a Tuesday study.",
+	),
+	(
+		"Martha Evans",
+		PASTORAL_CARE,
+		"Visit",
+		0,
+		1,
+		"Visited after her sister's memorial. Still grieving; plans to join the grief support group.",
+	),
+	("Thomas Reed", GENERAL, None, 1, 0, "Hard of hearing. Face him when you speak."),
+	("Rachel Cooper", GENERAL, None, 0, 1, "Prefers a text message to a phone call."),
+]
+
+
+def _create_person_notes(people):
+	for person, category, contact, alert, pinned, note in _PERSON_NOTES:
+		_insert_if_missing(
+			"Person Note",
+			{"person": people[person], "category": category},
+			person=people[person],
+			category=category,
+			contact_method=contact,
+			is_alert=alert,
+			is_pinned=pinned,
+			note=note,
+		)
+
+
+def _create_consents(people):
+	"""One person who asked for no email, and one who agreed to Church News on a paper card."""
+	for person, purpose, status, method in (
+		("Rachel Cooper", None, WITHDRAWN, "Verbal"),
+		("Michael Grant", CHURCH_NEWS, GIVEN, "Paper Form"),
+	):
+		_insert_if_missing(
+			"Communication Consent",
+			{"person": people[person], "channel": EMAIL},
+			person=people[person],
+			channel=EMAIL,
+			purpose=purpose,
+			status=status,
+			method=method,
+		)
+
+
+def _create_connection_cards(people):
+	"""A new guest, a returning one already in the directory, and a robot's card that becomes Spam.
+
+	Each card is processed here, since the job queued on insert runs only after a commit.
+	"""
+	samuel = frappe.db.get_value("Person", people["Samuel Brooks"], ["first_name", "last_name"], as_dict=True)
+	cards = [
+		{
+			"first_name": "Grace",
+			"last_name": "Miller",
+			"email": "grace.miller@example.com",
+			"visit": "First-Time Guest",
+			"how_heard": "A friend invited me",
+			"interests": [{"interest": "Join a group"}],
+		},
+		{
+			**samuel,
+			"email": get_primary_email("Person", people["Samuel Brooks"]),
+			"visit": "Returning Guest",
+			"message": "Could someone tell me about baptism?",
+			"interests": [{"interest": "Learn about baptism"}],
+		},
+		{
+			"first_name": "Cheap",
+			"last_name": "Offers",
+			"email": "offers@example.com",
+			"website": "https://example.com",
+		},
+	]
+	for card in cards:
+		if frappe.db.exists("Connection Card", {"email": card["email"]}):
+			continue
+		interests = [
+			row
+			for row in card.get("interests", [])
+			if frappe.db.exists("Connection Card Interest", row["interest"])
+		]
+		doc = frappe.get_doc({"doctype": "Connection Card", **card, "interests": interests})
+		doc.insert(ignore_permissions=True)
+		doc.process()

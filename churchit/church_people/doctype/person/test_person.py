@@ -210,7 +210,7 @@ class TestPerson(FrappeTestCase):
 		wife.marital_status = "Widowed"
 		wife.save(ignore_permissions=True)
 		husband.reload()
-		husband.notes = "Saving the late husband leaves the widow alone."
+		husband.alergies = "Pollen"
 		husband.save(ignore_permissions=True)
 
 		self.assertEqual(wife.spouse, husband.name)
@@ -459,7 +459,7 @@ class TestPersonMembership(FrappeTestCase):
 		frappe.db.set_value("Person", person.name, "inactive_since", "2020-01-01")
 		person.reload()
 
-		person.notes = "Still inactive."
+		person.alergies = "Pollen"
 		person.save()
 
 		self.assertEqual(getdate(person.inactive_since), getdate("2020-01-01"))
@@ -527,7 +527,7 @@ class TestPersonSource(FrappeTestCase):
 
 	def test_saving_never_changes_the_source(self):
 		person = self.make_imported_person("_Test Imported Then Edited")
-		person.notes = "Edited later in the desk."
+		person.alergies = "Pollen"
 		person.save()
 		self.assertEqual(frappe.db.get_value("Person", person.name, "source"), SOURCE_IMPORT)
 
@@ -540,7 +540,7 @@ class TestPersonSource(FrappeTestCase):
 		frappe.db.set_value("Person", person.name, "source", None)
 		person.reload()
 
-		person.notes = "Saved again."
+		person.alergies = "Pollen"
 		person.save()
 
 		self.assertIsNone(frappe.db.get_value("Person", person.name, "source"))

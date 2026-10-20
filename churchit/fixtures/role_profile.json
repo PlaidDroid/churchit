@@ -187,5 +187,26 @@
     "role": "Inbox User"
    }
   ]
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Role Profile",
+  "modified": "2026-10-17 21:00:00",
+  "name": "Church Follow-up Team",
+  "role_profile": "Church Follow-up Team",
+  "roles": [
+   {
+    "parent": "Church Follow-up Team",
+    "parentfield": "roles",
+    "parenttype": "Role Profile",
+    "role": "Church Follow-up"
+   },
+   {
+    "parent": "Church Follow-up Team",
+    "parentfield": "roles",
+    "parenttype": "Role Profile",
+    "role": "Inbox User"
+   }
+  ]
  }
 ]

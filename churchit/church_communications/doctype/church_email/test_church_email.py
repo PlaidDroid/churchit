@@ -8,6 +8,17 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from churchit.church_communications.doctype.church_email.church_email import deliver, send_scheduled
+from churchit.church_communications.doctype.communication_consent.communication_consent import (
+	EMAIL,
+	GIVEN,
+	WITHDRAWN,
+	record,
+)
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
+	CHURCH_NEWS,
+	PASTORAL_CARE,
+	create_communication_purposes,
+)
 from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, set_subscribed
 from churchit.tests.helpers import (
 	RollbackEachTest,
@@ -42,6 +53,7 @@ class TestChurchEmail(RollbackEachTest):
 		for membership in ("Member", "Visitor"):
 			ensure("Membership Type", {"type": membership})
 		ensure("Life Event Type", {"type": "Death"})
+		create_communication_purposes()
 		cls.member = make_reader("Member", membership="Member")
 		cls.visitor = make_reader("Visitor", membership="Visitor")
 		cls.inactive = make_reader("Inactive", membership="Member", membership_status="Inactive")
@@ -80,6 +92,20 @@ class TestChurchEmail(RollbackEachTest):
 			self.assertIn(email_of(person), recipients)
 		for person in (self.inactive, self.departed, unsubscribed):
 			self.assertNotIn(email_of(person), recipients)
+
+	def test_people_who_withdrew_church_news_are_left_out(self):
+		record([self.member.name], EMAIL, WITHDRAWN, CHURCH_NEWS)
+		record([self.visitor.name], EMAIL, WITHDRAWN, PASTORAL_CARE)
+
+		recipients = self.make_email().get_recipients()
+
+		self.assertNotIn(email_of(self.member), recipients)
+		self.assertIn(email_of(self.visitor), recipients)
+
+	def test_a_church_that_asks_first_emails_only_people_who_agreed(self):
+		frappe.db.set_value("Church", self.church, "contact_only_with_consent", 1)
+		record([self.visitor.name], EMAIL, GIVEN, CHURCH_NEWS)
+		self.assertEqual(self.make_email().get_recipients(), [email_of(self.visitor)])
 
 	def test_active_members_leave_out_visitors(self):
 		recipients = self.make_email(send_to="Active Members").get_recipients()

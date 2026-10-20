@@ -71,9 +71,9 @@ class TestPortalMembers(FrappeTestCase):
 		self.assertIsNone(person.get("medical_notes"))
 
 	def test_the_personal_details_page_sends_only_its_own_fields(self):
-		"""Frappe gives a signed-in visitor's page the whole record, the office's notes included."""
+		"""Frappe gives a signed-in visitor's page the whole record, the office's fields included."""
 		frappe.db.set_value(
-			"Person", self.own.name, {"notes": "_Test Office Note", "medical_notes": "_Test Private"}
+			"Person", self.own.name, {"legacy_id": "_Test Office ID", "medical_notes": "_Test Private"}
 		)
 		self.addCleanup(setattr, frappe.local, "path", getattr(frappe.local, "path", None))
 		frappe.set_user(self.member)
@@ -85,7 +85,7 @@ class TestPortalMembers(FrappeTestCase):
 
 		self.assertEqual(context.reference_doc["name"], self.own.name)
 		self.assertIn("first_name", context.reference_doc)
-		self.assertNotIn("notes", context.reference_doc)
+		self.assertNotIn("legacy_id", context.reference_doc)
 		self.assertNotIn("medical_notes", context.reference_doc)
 
 	def test_a_member_cannot_add_a_person(self):

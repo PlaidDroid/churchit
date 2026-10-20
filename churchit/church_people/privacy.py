@@ -4,7 +4,7 @@
 """Remove a person's personal data and keep their record, so their giving and attendance still count.
 
 `anonymize` names the person Anonymized and clears what says who they are: names, contact details, letters,
-photo, notes, medical notes, anniversary, the login and the IDs of an import. The person leaves their family and
+photo, medical notes, anniversary, the login and the IDs of an import. The person leaves their family and
 their spouse, because named relatives would say who they are. A family left with no one in it is anonymized too,
 since its name and contact details were the person's.
 
@@ -12,7 +12,8 @@ A Birth life event goes, because a birth date identifies a person. The other lif
 date, so the number of baptisms or new members in a year stays right, and lose their location and notes.
 
 The records that name the person keep the link and lose the copies of the person's name and email addresses in
-their text (titles, fetched names, donor emails). The person's change history, comments and attachments are
+their text (titles, fetched names, donor emails). Their notes and connection cards are deleted outright, since
+everything in them is about the person and nothing in them is counted. The person's change history, comments and attachments are
 deleted, because they hold the old values.
 
 A member's Personal Data Deletion Request anonymizes their Person once Frappe has deleted their login
@@ -41,7 +42,6 @@ PERSONAL_FIELDS = (
 	"prefix",
 	"suffix",
 	"photo",
-	"notes",
 	"medical_notes",
 	"alergies",
 	"anniversary",
@@ -55,6 +55,8 @@ PERSONAL_FIELDS = (
 )
 # Person tables whose every row is personal.
 PERSONAL_TABLES = ("emails", "phones", "addresses", "letters")
+# Records wholly about the person, by the field naming them, deleted rather than kept.
+PERSONAL_DOCTYPES = (("Person Note", "person"), ("Connection Card", "person"))
 # Field types where a record that names the person can hold a copy of their name or email address.
 TEXT_FIELDTYPES = ("Data", "Small Text", "Text", "Long Text", "Text Editor")
 MANAGERS = ("Church Manager", "System Manager")
@@ -91,8 +93,17 @@ def anonymize(person: str) -> None:
 			None,
 			update_modified=False,
 		)
+	delete_personal_records(person)
 	remove_copies(linked_records(person), names, emails)
 	doc.add_comment("Info", _("Personal data removed."))
+
+
+def delete_personal_records(person: str) -> None:
+	"""Delete the notes and connection cards about *person*, leaving no copy in Deleted Documents."""
+	for doctype, fieldname in PERSONAL_DOCTYPES:
+		# church-scope: every record about the one person being anonymized, whichever church holds it
+		for name in frappe.get_all(doctype, filters={fieldname: person}, pluck="name"):
+			frappe.delete_doc(doctype, name, ignore_permissions=True, delete_permanently=True)
 
 
 def get_identity(doc: Document) -> tuple[set[str], set[str]]:

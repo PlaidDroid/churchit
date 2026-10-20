@@ -27,6 +27,7 @@
   "mission_statement",
   "church_verse",
   "default_bible_translation",
+  "contact_only_with_consent",
   "section_break_nxne",
   "about",
   "hidden_fields_section",
@@ -118,6 +119,13 @@
   },
   {
    "default": "0",
+   "description": "Tick this where people must agree before the church contacts them, as in the UK and the EU. When it is not ticked, the church may contact people until they ask it to stop.",
+   "fieldname": "contact_only_with_consent",
+   "fieldtype": "Check",
+   "label": "Contact People Only With Their Consent"
+  },
+  {
+   "default": "0",
    "description": "Check this to show this church on the public website.",
    "fieldname": "publish",
    "fieldtype": "Check",
@@ -193,7 +201,7 @@
  "index_web_pages_for_search": 1,
  "is_tree": 1,
  "links": [],
- "modified": "2026-10-11 10:34:19.925447",
+ "modified": "2026-10-18 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church Foundations",
  "name": "Church",

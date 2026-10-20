@@ -98,6 +98,8 @@ doctype_js = {
 	"Payment Gateway": "public/js/payment_gateway.js",
 	# Offers to un-publish the Web Page behind a removed navbar/footer link.
 	"Website Settings": "public/js/website_settings.js",
+	# A QR code of a web form's address, to print on a bulletin or a welcome card.
+	"Web Form": "public/js/web_form_qr.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -219,11 +221,26 @@ has_permission = {
 		"churchit.church_people.member_access.refuse_other_people_to_members",
 	],
 	"Family": "churchit.church_scope.refuse_changing_another_churches_people",
+	"Person Note": "churchit.church_people.notes.has_note_permission",
+	"Follow-up Card": "churchit.church_people.followup.has_card_permission",
 }
 
-# A portal member lists only their own Person. Church scoping never uses this.
+# A portal member lists only their own Person, a Note Category limits who reads its
+# notes, and the follow-up role lists only the cards assigned to it. Church scoping
+# never uses this.
 permission_query_conditions = {
 	"Person": "churchit.church_people.member_access.person_query_conditions",
+	"Person Note": "churchit.church_people.notes.note_query_conditions",
+	"Follow-up Card": "churchit.church_people.followup.card_query_conditions",
+}
+
+# A person's notes show on their timeline, to the users who may read them.
+additional_timeline_content = {"Person": ["churchit.church_people.notes.get_timeline_notes"]}
+
+# Follow-up workflows that start when a person's membership changes or a life event is added.
+churchit_people_events = {
+	"membership_changed": ["churchit.church_people.followup.on_membership_changed"],
+	"life_event_added": ["churchit.church_people.followup.on_life_event_added"],
 }
 
 # Every doctype with a `church` Link gets it defaulted (or refused) on save, a
@@ -246,6 +263,12 @@ doc_events = {
 	},
 	"DocShare": {
 		"validate": "churchit.church_foundations.church_access.refuse_sharing_outside_the_church",
+	},
+	"Email Unsubscribe": {
+		"after_insert": "churchit.church_communications.consent.record_unsubscribe",
+	},
+	"Function Check-In": {
+		"after_insert": "churchit.church_people.followup.on_check_in",
 	},
 	"Person": {
 		"on_trash": "churchit.church_people.duplicates.drop_pairs",
@@ -296,6 +319,8 @@ scheduler_events = {
 		"churchit.church_people.derived.refresh_daily",
 		"churchit.church_people.summaries.refresh_daily",
 		"churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment.send_team_emails",
+		"churchit.church_people.followup.wake_snoozed_cards",
+		"churchit.church_people.followup.start_smart_list_cards",
 	],
 	"weekly_long": ["churchit.church_people.duplicates.scan"],
 	"cron": {

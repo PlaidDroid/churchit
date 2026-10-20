@@ -41,6 +41,7 @@ frappe.ui.form.on("Person", {
 
 		if (!frm.is_new()) {
 			show_background_check_status(frm);
+			show_alert_notes(frm);
 		}
 
 		if (frm.doc.__onload?.has_unsubscribed) {
@@ -53,6 +54,7 @@ frappe.ui.form.on("Person", {
 		}
 
 		if (!frm.is_new()) {
+			add_note_menu_item(frm);
 			add_merge_menu_item(frm);
 			add_remove_personal_data_menu_item(frm);
 		}
@@ -85,6 +87,52 @@ function show_background_check_status(frm) {
 			}
 			frm.dashboard.add_indicator(label, colors[check.status] || "orange");
 		});
+}
+
+// The alert notes this user may read, at the top of the form. The server leaves out the others.
+function show_alert_notes(frm) {
+	if (!frappe.model.can_read("Person Note")) return;
+	const person = frm.doc.name;
+	frappe.xcall("churchit.church_people.notes.get_alert_notes", { person }).then((notes) => {
+		if (!notes.length || frm.doc.name !== person) return;
+		const lines = notes.map((note) => {
+			const category = frappe.utils.escape_html(__(note.category));
+			const link = frappe.utils.get_form_link("Person Note", note.name, true, category);
+			const text = frappe.utils.escape_html(frappe.utils.html2text(note.note));
+			return `<div>${link}: ${text}</div>`;
+		});
+		frm.set_intro(lines.join(""), "red");
+	});
+}
+
+// A dialog keeps the person's unsaved changes; the Activity list and the alerts then load the new note.
+function add_note_menu_item(frm) {
+	if (!frappe.model.can_create("Person Note")) return;
+	frm.page.add_menu_item(__("Add Person Note"), () => {
+		const note = frappe.model.get_new_doc("Person Note");
+		note.person = frm.doc.name;
+		const after_insert = () => {
+			frappe
+				.xcall("frappe.desk.form.load.get_docinfo", {
+					doctype: frm.doctype,
+					name: frm.docname,
+				})
+				.then(() => frm.timeline.refresh());
+			show_alert_notes(frm);
+		};
+		const set_category_query = (dialog) => {
+			dialog.fields_dict.category.get_query = () => ({
+				query: "churchit.church_people.notes.search_categories_to_add",
+			});
+		};
+		frappe.ui.form.make_quick_entry(
+			"Person Note",
+			after_insert,
+			set_category_query,
+			note,
+			true
+		);
+	});
 }
 
 // Once a new person has a first name and an email or phone, note the people they may already be, without

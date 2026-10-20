@@ -11,13 +11,23 @@ from pathlib import Path
 
 import frappe
 
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
+	create_communication_purposes,
+)
 from churchit.church_missions.doctype.missionary_status.missionary_status import (
 	DEFAULT_STATUSES as DEFAULT_MISSIONARY_STATUSES,
+)
+from churchit.church_people.doctype.background_check_type.background_check_type import (
+	create_background_check_types,
+)
+from churchit.church_people.doctype.connection_card_interest.connection_card_interest import (
+	create_connection_card_interests,
 )
 from churchit.church_people.doctype.inactive_reason.inactive_reason import create_inactive_reasons
 from churchit.church_people.doctype.marital_status.marital_status import (
 	DEFAULT_STATUSES as DEFAULT_MARITAL_STATUSES,
 )
+from churchit.church_people.doctype.note_category.note_category import create_note_categories
 from churchit.church_people.doctype.people_settings.people_settings import store_defaults
 from churchit.church_people.membership import MEMBER_STATUSES, MEMBERSHIP_TYPES
 
@@ -84,7 +94,13 @@ def execute():
 	_create_default_care_request_types()
 
 	# Background Check Type lookups (referenced by Background Check)
-	create_default_background_check_types()
+	create_background_check_types()
+
+	# Note Categories (referenced by Person Note), Communication Purposes (referenced by consent)
+	# and the interests a guest ticks on a Connection Card
+	create_note_categories()
+	create_communication_purposes()
+	create_connection_card_interests()
 
 	# Cleanup
 	_clean_gender_options()
@@ -805,26 +821,6 @@ def _create_default_case_types():
 		return
 	for case_type in ("Marriage", "Premarital", "Grief", "Financial", "Spiritual", "Family", "Other"):
 		_insert_if_missing("Case Type", {"type": case_type}, type=case_type)
-
-
-def create_default_background_check_types():
-	"""Seed the standard Background Check Type lookup values."""
-	if not frappe.db.exists("DocType", "Background Check Type"):
-		return
-	for check_type, valid_for_years in (
-		("Criminal Background", 3),
-		("Sex Offender Registry", 3),
-		("Child Abuse Clearance", 5),
-		("Driving Record", 3),
-	):
-		if not frappe.db.exists("Background Check Type", check_type):
-			frappe.get_doc(
-				{
-					"doctype": "Background Check Type",
-					"type": check_type,
-					"valid_for_years": valid_for_years,
-				}
-			).insert(ignore_permissions=True)
 
 
 def _create_default_care_request_types():

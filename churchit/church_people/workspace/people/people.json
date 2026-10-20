@@ -42,7 +42,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Person Reports",
-   "link_count": 24,
+   "link_count": 27,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -295,11 +295,44 @@
    "type": "Link"
   },
   {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "People with Open Care Requests",
+   "link_count": 0,
+   "link_to": "People with Open Care Requests",
+   "link_type": "Report",
+   "onboard": 0,
+   "report_ref_doctype": "Person",
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Members Not Seen Lately",
+   "link_count": 0,
+   "link_to": "Members Not Seen Lately",
+   "link_type": "Report",
+   "onboard": 0,
+   "report_ref_doctype": "Person",
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Members by Last Visit",
+   "link_count": 0,
+   "link_to": "Members by Last Visit",
+   "link_type": "Report",
+   "onboard": 0,
+   "report_ref_doctype": "Person",
+   "type": "Link"
+  },
+  {
    "description": "Click on shortcuts below to see full lists.",
    "hidden": 0,
    "is_query_report": 0,
    "label": "Person Documents",
-   "link_count": 24,
+   "link_count": 30,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -543,9 +576,69 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Person Notes",
+   "link_count": 0,
+   "link_to": "Person Note",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Note Categories",
+   "link_count": 0,
+   "link_to": "Note Category",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Follow-up Cards",
+   "link_count": 0,
+   "link_to": "Follow-up Card",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Follow-up Workflows",
+   "link_count": 0,
+   "link_to": "Follow-up Workflow",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Connection Cards",
+   "link_count": 0,
+   "link_to": "Connection Card",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Connection Card Interests",
+   "link_count": 0,
+   "link_to": "Connection Card Interest",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-10-17 19:00:00.000000",
+ "modified": "2026-10-18 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "People",
