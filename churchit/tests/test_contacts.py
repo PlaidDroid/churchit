@@ -196,6 +196,27 @@ class TestValidateContactTables(RollbackEachTest):
 		)
 		self.assertEqual([row.notification_address for row in person.emails], [None, "b@example.com"])
 
+	def test_a_new_address_on_a_bounced_row_unticks_email_bounced(self):
+		person = self._person("Bounced", emails=[{"email_address": "old@example.com"}])
+		frappe.db.set_value("Email Address", person.emails[0].name, "is_bounced", 1)
+		person.reload()
+
+		person.emails[0].email_address = "new@example.com"
+		person.save(ignore_permissions=True)
+
+		self.assertEqual(frappe.db.get_value("Email Address", person.emails[0].name, "is_bounced"), 0)
+
+	def test_email_bounced_stays_while_the_address_is_the_same(self):
+		person = self._person("Kept", emails=[{"email_address": "kept@example.com"}])
+		frappe.db.set_value("Email Address", person.emails[0].name, "is_bounced", 1)
+		person.reload()
+
+		person.emails[0].email_address = "KEPT@example.com"
+		person.append("emails", {"email_address": "second@example.com", "is_bounced": 1})
+		person.save(ignore_permissions=True)
+
+		self.assertEqual([row.is_bounced for row in person.emails], [1, 1])
+
 
 class TestContactDetailsBelongToOneRecord(RollbackEachTest):
 	"""An unshared email or phone may sit on one record of each doctype only."""

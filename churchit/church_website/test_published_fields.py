@@ -104,8 +104,8 @@ class TestPublishedFields(FrappeTestCase):
 	def test_a_page_template_and_its_python_are_one_route(self):
 		pages = www_routes(www_directory())
 		self.assertEqual(
-			{path.name for path in pages["newsletter-subscription"]},
-			{"newsletter_subscription.py", "newsletter-subscription.html"},
+			{path.name for path in pages["ministry-team"]},
+			{"ministry_team.py", "ministry-team.html"},
 		)
 
 	def test_fields_shown_by_a_published_web_form(self):
@@ -120,8 +120,10 @@ class TestPublishedFields(FrappeTestCase):
 		self.assertIn("statements", routes(published, "Church", "tax_id"))
 
 	def test_fields_read_through_an_imported_helper(self):
-		# www/newsletter-subscription reads the church's name through church_communications.newsletter.
-		self.assertIn("newsletter-subscription", routes(published_field_map(), "Church", "church_name"))
+		# www/preferences reads each purpose and the church's name through church_communications.preferences.
+		published = published_field_map()
+		self.assertIn("preferences", routes(published, "Church", "church_name"))
+		self.assertIn("preferences", routes(published, "Communication Purpose", "description"))
 
 	def test_every_www_page_is_scanned(self):
 		"""A page added under www/ later is scanned without touching the scanner."""
@@ -145,6 +147,7 @@ class TestPublishedFields(FrappeTestCase):
 		access = {source["route"]: source["access"] for source, _ in code_sources()}
 		self.assertEqual(access["statements"], MEMBERS)
 		self.assertEqual(access["memorize"], MEMBERS)
+		self.assertEqual(access["preferences"], MEMBERS)
 		self.assertEqual(access["calendar"], PUBLIC)
 		# /give sends guests to login only while anonymous giving is off, so it still serves them.
 		self.assertEqual(access["give"], PUBLIC)

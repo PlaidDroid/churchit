@@ -78,6 +78,22 @@ class TestPeopleDataQuality(RollbackEachTest):
 
 		self.assertEqual(problems(), {(person, "Mail Returned", address)})
 
+	def test_a_bounced_email_names_the_address(self):
+		person = frappe.get_doc(
+			"Person",
+			self.make(
+				"Bounced",
+				emails=[
+					{"email_address": "gone.quality@example.com"},
+					{"email_address": "kept.quality@example.com"},
+				],
+			),
+		)
+		frappe.db.set_value("Email Address", person.emails[0].name, "is_bounced", 1)
+
+		self.assertEqual(problems(), {(person.name, "Email Bounced", "gone.quality@example.com")})
+		self.assertEqual(problems({"problem": "Mail Returned"}), set())
+
 	def test_both_people_in_an_open_possible_duplicate_are_listed(self):
 		ruth = self.make("Ruth", emails=[{"email_address": "ruth.quality@example.com"}])
 		other = self.make("Ruth", emails=[{"email_address": "ruth2.quality@example.com"}])

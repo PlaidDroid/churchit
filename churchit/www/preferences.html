@@ -1,0 +1,115 @@
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("Communication Preferences") }}{% endblock %}
+
+{% block head_include %}
+<style>
+	.preferences-table { width: 100%; border-collapse: collapse; }
+	.preferences-table th, .preferences-table td { padding: 14px 0; vertical-align: middle;
+		border-bottom: 1px solid var(--border-color, #e5e7eb); }
+	.preferences-table thead th { padding-top: 0; font-weight: 600; color: var(--text-muted, #6b7280); }
+	.preferences-table .channel { width: 4.5rem; text-align: center; }
+	.preferences-table .purpose { padding-right: 12px; text-align: left; overflow-wrap: anywhere; }
+	.preferences-table .purpose-name { font-weight: 600; }
+	/* the switch draws its track in its own left padding, so it centres as one inline block */
+	.preferences-table .custom-switch { display: inline-block; min-height: 1.5rem; }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="my-account-container">
+	<h3 class="my-account-header mb-1">{{ _("Communication Preferences") }}</h3>
+	<p class="text-muted">
+		{{ _("Choose how {0} may contact you.").format(church_name or _("your church")) | e }}
+	</p>
+
+	{% if not person %}
+		<p class="text-muted">
+			{{ _("Your account is not linked to a member record yet. Please contact the church office.") }}
+		</p>
+	{% else %}
+		{% if email or phone %}
+			<p class="mb-4">{{ email | e if email }}{{ " · " if email and phone }}{{ phone | e if phone }}</p>
+		{% endif %}
+
+		{% if not email %}
+			<div class="alert alert-warning">
+				{{ _("There is no email address on file for you, so you cannot choose emails here. Please contact the church office to add one.") }}
+			</div>
+		{% elif is_globally_unsubscribed %}
+			<div class="alert alert-info" id="preferences-stopped">
+				{{ _("You stopped every email to {0}. When you turn on an email switch, emails to this address start again.").format(email) | e }}
+			</div>
+		{% endif %}
+
+		{% if channels %}
+			<table class="preferences-table">
+				<thead>
+					<tr>
+						<th scope="col" class="purpose"><span class="sr-only">{{ _("Purpose") }}</span></th>
+						{% for channel in channels %}
+							<th scope="col" class="channel">{{ channel_labels[channel] }}</th>
+						{% endfor %}
+					</tr>
+				</thead>
+				<tbody>
+					{% for row in purposes %}
+						{% set row_index = loop.index %}
+						<tr>
+							<th scope="row" class="purpose">
+								<div class="purpose-name">{{ _(row.purpose) | e }}</div>
+								{% if row.description %}
+									<div class="small text-muted">{{ _(row.description) | e }}</div>
+								{% endif %}
+							</th>
+							{% for channel in channels %}
+								<td class="channel">
+									<div class="custom-control custom-switch">
+										<input type="checkbox" class="custom-control-input preference-switch"
+											id="preference-{{ row_index }}-{{ loop.index }}"
+											data-channel="{{ channel | e }}" data-purpose="{{ row.purpose | e }}"
+											{{ "checked" if row.allowed[channel] }}>
+										<label class="custom-control-label" for="preference-{{ row_index }}-{{ loop.index }}">
+											<span class="sr-only">{{ _("{0} by {1}").format(_(row.purpose), channel_labels[channel]) | e }}</span>
+										</label>
+									</div>
+								</td>
+							{% endfor %}
+						</tr>
+					{% endfor %}
+				</tbody>
+			</table>
+		{% endif %}
+	{% endif %}
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+frappe.ready(function () {
+	document.querySelectorAll(".preference-switch").forEach(function (input) {
+		input.addEventListener("change", function () {
+			input.disabled = true;
+			frappe.call({
+				method: "churchit.church_communications.preferences.set_preference",
+				args: {
+					channel: input.dataset.channel,
+					purpose: input.dataset.purpose,
+					allow: input.checked ? 1 : 0,
+				},
+				callback: function (r) {
+					input.disabled = false;
+					frappe.show_alert({ message: r.message.message, indicator: input.checked ? "green" : "blue" });
+					var stopped = document.getElementById("preferences-stopped");
+					if (stopped && !r.message.is_globally_unsubscribed) stopped.remove();
+				},
+				error: function () {
+					input.disabled = false;
+					input.checked = !input.checked;
+				},
+			});
+		});
+	});
+});
+</script>
+{% endblock %}

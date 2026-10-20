@@ -5,6 +5,16 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
+from churchit.church_communications.consent import latest_statuses
+from churchit.church_communications.doctype.communication_consent.communication_consent import (
+	EMAIL,
+	GIVEN,
+	SMS,
+	WEB_FORM,
+	WITHDRAWN,
+	record,
+)
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
 from churchit.church_people.doctype.person.person import get_display_name
 from churchit.church_people.followup import start_cards
 from churchit.church_people.matching import Match, find_matches, record_possible_duplicates
@@ -56,6 +66,7 @@ class ConnectionCard(Document):
 
 		person = self.find_or_add_person()
 		self.db_set({"person": person, "status": PROCESSED, "processed_on": now_datetime()})
+		self.record_consent(person)
 		# A trigger row with no value matches any card, so a card with no interests still starts those.
 		for interest in [row.interest for row in self.interests] or [None]:
 			start_cards(CONNECTION_CARD, person, self.church, value=interest, source=self)
@@ -70,6 +81,22 @@ class ConnectionCard(Document):
 		person = self.add_person()
 		record_possible_duplicates(person, matches)
 		return person
+
+	def record_consent(self, person: str):
+		"""Record Church News by email, or by text, for each box ticked beside an address or number.
+
+		A tick never overrides a withdrawal on record, because anyone can type a name and a number.
+		"""
+		for channel, is_ticked, contact in (
+			(EMAIL, self.email_consent, self.email),
+			(SMS, self.sms_consent, self.phone),
+		):
+			if (
+				is_ticked
+				and contact
+				and latest_statuses([person], channel, CHURCH_NEWS).get(person) != WITHDRAWN
+			):
+				record([person], channel, GIVEN, CHURCH_NEWS, WEB_FORM)
 
 	@property
 	def candidate(self) -> dict:

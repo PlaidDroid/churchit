@@ -118,9 +118,11 @@ app_include_icons = ["/assets/churchit/icons/church.svg"]
 
 website_redirects = [
 	{"source": "/index", "target": "/home"},
-	# Newsletters are member-only, managed via the portal (/newsletter-subscription)
+	# Newsletters are member-only, managed via the portal (/preferences)
 	# and delivered by email. Keep the public Frappe newsletter web view off the site.
 	{"source": r"/newsletters.*", "target": "/home"},
+	# The preferences page replaced the newsletter subscription page.
+	{"source": "/newsletter-subscription", "target": "/preferences"},
 ]
 
 # website user home page (by Role)
@@ -249,8 +251,9 @@ churchit_people_events = {
 # a Web Page adds it to or removes it from the menu, a saved or deleted record
 # queues a refresh of the person summary fields it changes, a deleted person
 # takes their Possible Duplicate pairs along, an approved data deletion request
-# anonymizes the member's Person, and a church's record is never shared (or assigned,
-# which shares it) with a user outside that church.
+# anonymizes the member's Person, a church's record is never shared (or assigned,
+# which shares it) with a user outside that church, and a bounce report that reaches
+# the inbox marks the address it names.
 doc_events = {
 	"*": {
 		"validate": "churchit.church_scope.ensure_church",
@@ -260,6 +263,9 @@ doc_events = {
 			"churchit.church_scope.refuse_deleting_another_churches_record",
 			"churchit.church_people.summaries.on_change",
 		],
+	},
+	"Communication": {
+		"after_insert": "churchit.church_communications.bounces.record_bounce",
 	},
 	"DocShare": {
 		"validate": "churchit.church_foundations.church_access.refuse_sharing_outside_the_church",

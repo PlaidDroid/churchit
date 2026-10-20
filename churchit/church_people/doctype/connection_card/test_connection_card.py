@@ -7,6 +7,18 @@ from unittest.mock import patch
 import frappe
 from frappe.website.doctype.web_form.web_form import accept
 
+from churchit.church_communications.consent import allowed
+from churchit.church_communications.doctype.communication_consent.communication_consent import (
+	EMAIL,
+	GIVEN,
+	SMS,
+	WITHDRAWN,
+	record,
+)
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
+	CHURCH_NEWS,
+	create_communication_purposes,
+)
 from churchit.church_people.doctype.connection_card.connection_card import (
 	CONNECTION_CARD,
 	NEW,
@@ -239,6 +251,84 @@ class TestConnectionCardFollowUp(ConnectionCardTestCase):
 	def test_spam_starts_nothing(self):
 		card = self.processed(self.make_card(last_name="Spam", website="https://spam.example.com"))
 		self.assertFalse(frappe.db.exists("Follow-up Card", {"source_name": card.name}))
+
+
+class TestConnectionCardConsent(ConnectionCardTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		create_communication_purposes()
+
+	@staticmethod
+	def consents(person):
+		return frappe.get_all(
+			"Communication Consent",
+			filters={"person": person},
+			fields=["channel", "purpose", "status", "method"],
+			order_by="channel asc",
+		)
+
+	def test_ticked_boxes_record_church_news_by_email_and_by_text(self):
+		card = self.processed(
+			self.make_card(
+				last_name="Ticked",
+				email="_test_card_ticked@example.com",
+				phone="+1 555 010 4480",
+				email_consent=1,
+				sms_consent=1,
+			)
+		)
+
+		self.assertEqual(
+			self.consents(card.person),
+			[
+				{"channel": EMAIL, "purpose": CHURCH_NEWS, "status": GIVEN, "method": "Web Form"},
+				{"channel": SMS, "purpose": CHURCH_NEWS, "status": GIVEN, "method": "Web Form"},
+			],
+		)
+		self.assertTrue(allowed(card.person, SMS, CHURCH_NEWS))
+
+	def test_a_guests_ticked_box_is_recorded_as_the_guest(self):
+		card = self.send(last_name="Online", email="_test_card_online@example.com", email_consent=1)
+
+		frappe.set_user("Guest")
+		card = self.processed(card)
+		frappe.set_user("Administrator")
+
+		self.assertEqual([row.channel for row in self.consents(card.person)], [EMAIL])
+
+	def test_unticked_boxes_record_nothing(self):
+		card = self.processed(
+			self.make_card(
+				last_name="Unticked", email="_test_card_unticked@example.com", phone="+1 555 010 4481"
+			)
+		)
+		self.assertEqual(self.consents(card.person), [])
+
+	def test_a_box_with_no_address_or_number_beside_it_records_nothing(self):
+		card = self.processed(self.make_card(last_name="Blank", email_consent=1, sms_consent=1))
+		self.assertEqual(self.consents(card.person), [])
+
+	def test_spam_records_nothing(self):
+		card = self.processed(
+			self.make_card(
+				last_name="Spam Consent",
+				email="_test_card_spam@example.com",
+				email_consent=1,
+				website="https://spam.example.com",
+			)
+		)
+		self.assertFalse(frappe.db.exists("Communication Consent", {"person": card.person}))
+
+	def test_a_tick_never_overrides_a_withdrawal(self):
+		known = make_person("_Test Card", "Stopped", phones=[{"phone_number": "+1 555 010 4482"}])
+		record([known.name], SMS, WITHDRAWN)
+
+		card = self.processed(self.make_card(last_name="Stopped", phone="+1 555 010 4482", sms_consent=1))
+
+		self.assertEqual(card.person, known.name)
+		self.assertFalse(allowed(known.name, SMS, CHURCH_NEWS))
+		self.assertEqual([row.status for row in self.consents(known.name)], [WITHDRAWN])
 
 
 class TestConnectionCardInterests(RollbackEachTest):

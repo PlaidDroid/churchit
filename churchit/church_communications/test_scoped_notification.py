@@ -5,6 +5,7 @@ import frappe
 
 from churchit.church_communications.doctype.communication_consent.communication_consent import (
 	EMAIL,
+	GIVEN,
 	SMS,
 	WITHDRAWN,
 	record,
@@ -87,11 +88,15 @@ class TestNotificationConsent(RollbackEachTest):
 		record([self.member.name], EMAIL, WITHDRAWN, CHURCH_NEWS)
 		self.assertIn("_test_consent_notified@example.com", self.email_recipients())
 
-	def test_a_member_who_withdrew_texts_is_left_out_and_staff_are_kept(self):
+	def test_a_member_gets_texts_only_while_they_agree_and_staff_always_do(self):
+		receivers = self.sms_receivers()
+		self.assertNotIn("555 010 0102", receivers)
+		self.assertIn("555 010 0101", receivers)
+
+		record([self.member.name], SMS, GIVEN)
 		self.assertIn("555 010 0102", self.sms_receivers())
 
 		record([self.member.name, self.staff_person.name], SMS, WITHDRAWN)
 		receivers = self.sms_receivers()
-
 		self.assertNotIn("555 010 0102", receivers)
 		self.assertIn("555 010 0101", receivers)

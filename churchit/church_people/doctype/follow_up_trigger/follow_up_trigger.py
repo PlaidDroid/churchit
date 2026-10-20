@@ -5,9 +5,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from churchit.church_people import smart_lists
 from churchit.church_people.followup import VALUE_TYPES
-
-SMART_LIST = ("Report Builder", "Person")
 
 
 class FollowupTrigger(Document):
@@ -18,10 +17,7 @@ class FollowupTrigger(Document):
 
 	def validate_smart_list(self):
 		"""On Smart List needs a smart list: a saved Report Builder report on Person."""
-		report = (
-			frappe.db.get_value("Report", self.value, ["report_type", "ref_doctype"]) if self.value else None
-		)
-		if tuple(report or ()) != SMART_LIST:
+		if not smart_lists.is_smart_list(self.value):
 			frappe.throw(
 				_("Row {0}: choose a smart list, a saved report of people made with Report Builder.").format(
 					self.idx

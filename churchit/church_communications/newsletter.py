@@ -3,19 +3,19 @@
 
 import frappe
 from frappe import _
-from frappe.utils import cint
 from frappe.utils.verified_command import verify_request
 
 from churchit.church_communications.doctype.communication_consent.communication_consent import (
 	DESK,
 	EMAIL,
 	GIVEN,
-	MEMBER_PORTAL,
+	UNSUBSCRIBE_LINK,
+	WITHDRAWN,
 	record,
 )
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
-from churchit.church_scope import is_multi_church, root_church, session_church, session_person
-from churchit.contacts import get_primary_email, primary_email
+from churchit.church_scope import is_multi_church, root_church
+from churchit.contacts import primary_email
 
 # Who stopped a church's emails is kept as Frappe's own Email Unsubscribe, made against the church.
 UNSUBSCRIBE_REFERENCE = "Church"
@@ -62,70 +62,43 @@ def set_subscribed(email: str, church: str, subscribed: bool):
 		consent.record_unsubscribe(unsubscribe)
 
 
+def lift_global_unsubscribe(email: str):
+	"""Let every email reach *email* again, for a member who asked for one in the portal."""
+	frappe.db.delete("Email Unsubscribe", {"email": email, "global_unsubscribe": 1})
+
+
 def unsubscribe_filters(email, church):
 	return {"email": email, "reference_doctype": UNSUBSCRIBE_REFERENCE, "reference_name": church}
 
 
 @frappe.whitelist(allow_guest=True)
-def unsubscribe(email: str, church: str, **signed_params):
-	"""The link at the foot of every Church Email: stop that church's emails to the address."""
+def unsubscribe(email: str, church: str, purpose: str | None = None, **signed_params):
+	"""The link at the foot of every Church Email: stop that church's emails, or those for one purpose.
+
+	A link with no purpose, or Church News, stops all of the church's emails to the address, as links
+	always have. A purpose that no longer exists does the same, so the opt-out is still kept.
+	"""
 	if not frappe.in_test and not verify_request():
 		return
 
-	set_subscribed(email, church, False)
+	church_name = frappe.db.get_value("Church", church, "church_name") or church
+	if purpose and purpose != CHURCH_NEWS and frappe.db.exists("Communication Purpose", purpose):
+		withdraw_purpose(email, church, purpose)
+		message = _("{0} will no longer receive {1} emails from {2}.").format(email, _(purpose), church_name)
+	else:
+		set_subscribed(email, church, False)
+		message = _("{0} will no longer receive emails from {1}.").format(email, church_name)
 	frappe.db.commit()
-	frappe.respond_as_web_page(
-		_("Unsubscribed"),
-		_("{0} will no longer receive emails from {1}.").format(
-			email, frappe.db.get_value("Church", church, "church_name") or church
-		),
-		indicator_color="green",
-	)
+	frappe.respond_as_web_page(_("Unsubscribed"), message, indicator_color="green")
 
 
-def _current_subscriber_email():
-	"""Return the email address to manage for the logged-in user.
+def withdraw_purpose(email: str, church: str, purpose: str):
+	"""Withdraw Email for *purpose* from each of *church*'s people holding *email* who still allow it."""
+	from churchit.church_communications import consent  # consent imports this module
 
-	Prefers the linked Person's primary email, falling back to the User's own
-	email. Returns ``None`` for guests or users with no email on file.
-	"""
-	user = frappe.session.user
-	if user == "Guest":
-		return None
-	person = session_person()
-	email = get_primary_email("Person", person) if person else None
-	return email or frappe.db.get_value("User", user, "email")
-
-
-def _current_subscriber_church():
-	return email_church(session_church())
-
-
-@frappe.whitelist()
-def get_subscription_status():
-	"""Whether the logged-in member's church emails them, and at which address."""
-	email = _current_subscriber_email()
-	church = _current_subscriber_church()
-	return {
-		"email": email,
-		"subscribed": bool(email and church) and is_subscribed(email, church),
-		"church": frappe.db.get_value("Church", church, "church_name") if church else None,
-	}
-
-
-@frappe.whitelist()
-def set_subscription(subscribed: bool):
-	"""Start or stop the logged-in member's church emails."""
-	email = _current_subscriber_email()
-	church = _current_subscriber_church()
-	if not email or not church:
-		frappe.throw(_("No email address is on file for your account. Please contact the church office."))
-
-	subscribe = bool(cint(subscribed))
-	set_subscribed(email, church, subscribe)
-	if subscribe and (person := session_person()):
-		record([person], EMAIL, GIVEN, CHURCH_NEWS, MEMBER_PORTAL)
-	return {"subscribed": subscribe}
+	people = consent.people_with_email(email, church)
+	allowed = consent.allowed_people(people, EMAIL, purpose)
+	record([person for person in people if person in allowed], EMAIL, WITHDRAWN, purpose, UNSUBSCRIBE_LINK)
 
 
 def has_unsubscribed(person) -> bool:

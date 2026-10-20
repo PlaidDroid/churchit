@@ -18,6 +18,8 @@ frappe.listview_settings["Person"] = {
 				action(people);
 			});
 
+		if (frappe.model.can_create("Church Email"))
+			add_action(__("New Church Email"), new_church_email);
 		add_action(__("Email"), (people) => email_in_bcc("get_people_emails", { people }));
 		add_action(__("Email Household Adults"), (people) =>
 			email_in_bcc("get_household_adult_emails", { people })
@@ -41,6 +43,8 @@ function email_in_bcc(method, args) {
 		const notes = [
 			result.without_email.length &&
 				__("No email address for {0}.", [names(result.without_email)]),
+			result.refused?.length &&
+				__("Left out because they do not allow email: {0}.", [names(result.refused)]),
 			result.without_adults?.length &&
 				__("No Adult on file in the household of {0}.", [names(result.without_adults)]),
 		].filter(Boolean);
@@ -57,6 +61,13 @@ function email_in_bcc(method, args) {
 		// for a user who cannot read Email Account.
 		composer.$composer?.find('.email-composer-toggle[data-target="bcc"]').trigger("click");
 	});
+}
+
+// A draft to the people picked, opened for its subject and message.
+function new_church_email(people) {
+	frappe
+		.xcall(`${LIST_ACTIONS}.new_church_email`, { people })
+		.then((name) => frappe.set_route("Form", "Church Email", name));
 }
 
 function add_to_group(people) {

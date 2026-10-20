@@ -9,6 +9,9 @@ Each function takes names from the browser, so it checks the caller's right on e
 import frappe
 from frappe import _
 
+from churchit.church_communications.consent import allowed_people
+from churchit.church_communications.doctype.church_email.church_email import CHOSEN_PEOPLE
+from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL
 from churchit.church_people.household import ADULT, members
 from churchit.church_people.membership import INACTIVE
 from churchit.contacts import get_primary_emails
@@ -16,9 +19,12 @@ from churchit.contacts import get_primary_emails
 
 @frappe.whitelist()
 def get_people_emails(people: str | list[str]) -> frappe._dict:
-	"""The primary emails of *people*, each address once, and the names of those with none."""
+	"""The primary emails of *people*, each address once, and the names of those with none or who refuse email."""
 	people = get_permitted("Person", people, "email")
-	return get_email_list("Person", people, get_primary_emails("Person", people))
+	allowed, refused = split_by_email_consent(people)
+	result = get_email_list("Person", allowed, get_primary_emails("Person", allowed))
+	result.refused = refused
+	return result
 
 
 @frappe.whitelist()
@@ -44,7 +50,8 @@ def get_household_emails(families: str | list[str]) -> frappe._dict:
 def get_household_adult_emails(people: str | list[str]) -> frappe._dict:
 	"""The emails of the Adults in *people*'s households, each address once.
 
-	Also names the Adults with no email, and those of *people* whose household has no Adult on file.
+	Also names the Adults with no email or who refuse email, and those of *people* whose household
+	has no Adult on file.
 	"""
 	people = get_permitted("Person", people, "email")
 	# church-scope: only the people named, each checked above
@@ -56,11 +63,29 @@ def get_household_adult_emails(people: str | list[str]) -> frappe._dict:
 		for family in set(filter(None, families.values()))
 	}
 	adults = list(dict.fromkeys(adult for found in adults_of.values() for adult in found))
-	result = get_email_list("Person", adults, get_primary_emails("Person", adults))
+	allowed, refused = split_by_email_consent(adults)
+	result = get_email_list("Person", allowed, get_primary_emails("Person", allowed))
+	result.refused = refused
 	without_adults = [person for person in people if not adults_of.get(families[person])]
 	titles = get_titles("Person", without_adults)
 	result.without_adults = [titles[person] for person in without_adults]
 	return result
+
+
+@frappe.whitelist(methods=["POST"])
+def new_church_email(people: str | list[str]) -> str:
+	"""Start a draft Church Email to *people* and return its name, for the caller to write and send."""
+	people = get_permitted("Person", people, "email")
+	email = frappe.get_doc(
+		{
+			"doctype": "Church Email",
+			"send_to": CHOSEN_PEOPLE,
+			"people": [{"person": person} for person in people],
+		}
+	)
+	# The subject and message are written on the form that opens next.
+	email.flags.ignore_mandatory = True
+	return email.insert().name
 
 
 @frappe.whitelist(methods=["POST"])
@@ -95,6 +120,14 @@ def get_permitted(doctype: str, names: str | list[str], ptype: str) -> list[str]
 
 def may_email(person: str) -> bool:
 	return frappe.has_permission("Person", "email", doc=person)
+
+
+def split_by_email_consent(people: list[str]) -> tuple[list[str], list[str]]:
+	"""*people* who allow email for every purpose, and the titles of those who do not."""
+	allowed = allowed_people(people, EMAIL)
+	refused = [person for person in people if person not in allowed]
+	titles = get_titles("Person", refused)
+	return [person for person in people if person in allowed], [titles[person] for person in refused]
 
 
 def get_email_list(doctype: str, names: list[str], emails: dict[str, str]) -> frappe._dict:

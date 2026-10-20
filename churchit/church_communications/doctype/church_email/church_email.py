@@ -3,61 +3,116 @@
 
 import frappe
 from frappe import _
+from frappe.core.doctype.sms_settings.sms_settings import check_sms_permission
 from frappe.model.document import Document
-from frappe.utils import add_to_date, create_batch, get_datetime, now_datetime, validate_email_address
+from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from churchit.church_communications.consent import allowed_people
-from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL
-from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
-from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, email_church, unsubscribed_emails
+from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL, SMS
+from churchit.church_communications.newsletter import email_church
+from churchit.church_communications.sending import (
+	Delivery,
+	Recipient,
+	can_send_texts,
+	check_placeholders,
+	get_email_recipients,
+	get_people_sent,
+	get_person_values,
+	get_text_recipients,
+	render,
+)
 from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import (
 	can_send_email,
 )
+from churchit.church_people import smart_lists
 from churchit.church_people.membership import ACTIVE, MEMBER, living_people_filter
 from churchit.church_scope import default_church, document_church, is_multi_church
-from churchit.contacts import get_primary_emails
 
 DRAFT = "Draft"
 SCHEDULED = "Scheduled"
 SENDING = "Sending"
 SENT = "Sent"
 
+EMAIL_CHANNEL = "Email"
+TEXT_CHANNEL = "Text Message"
+
 ACTIVE_MEMBERS = "Active Members"
 GROUP = "Group"
+SMART_LIST = "Smart List"
+CHOSEN_PEOPLE = "Chosen People"
 
-# Frappe queues more than 100 recipients as background batches, which a failed job loses
-# without trace, so each call stays at 100 and every row is written with the Sent status.
-QUEUE_SIZE = 100
 # A delivery job lost to a worker restart is picked up again after this long.
 STALLED_AFTER_MINUTES = 15
 
 
 class ChurchEmail(Document):
 	def validate(self):
-		if self.send_to != GROUP:
-			self.group = None
+		if self.is_text_message:
+			# A text has no subject, so its first words name it in lists and links.
+			self.subject = (self.text_message or "")[:140]
+		self.clear_other_audiences()
 		self.refuse_another_churches_group()
+		self.refuse_another_churches_people()
+		if self.send_to == SMART_LIST and not smart_lists.is_smart_list(self.smart_list):
+			frappe.throw(_("Choose a smart list: a saved report of people made with Report Builder."))
+		self.validate_placeholders()
 		self.keep_status()
 
+	def clear_other_audiences(self):
+		"""Keep only the group, smart list or people that Send To uses."""
+		if self.send_to != GROUP:
+			self.group = None
+		if self.send_to != SMART_LIST:
+			self.smart_list = None
+		if self.send_to != CHOSEN_PEOPLE:
+			self.set("people", [])
+
 	def refuse_another_churches_group(self):
-		"""The group's members are emailed in this church's name, so it must be this church's group."""
+		"""The group's members are messaged in this church's name, so it must be this church's group."""
 		if not self.group or not is_multi_church():
 			return
-		church = document_church(self) or default_church()
-		if frappe.db.get_value("Group", self.group, "church") != church:
+		if frappe.db.get_value("Group", self.group, "church") != self.own_church:
 			frappe.throw(_("Group {0} belongs to another church.").format(self.group))
 
+	def refuse_another_churches_people(self):
+		"""Chosen people are messaged in this church's name, so each must be one of its people."""
+		if not self.people or not is_multi_church():
+			return
+		# church-scope: comparing each chosen person's church with this message's own
+		rows = frappe.get_all(
+			"Person",
+			filters={"name": ("in", [row.person for row in self.people])},
+			fields=["full_name", "church"],
+		)
+		others = sorted(row.full_name for row in rows if row.church != self.own_church)
+		if others:
+			frappe.throw(_("These people belong to another church: {0}.").format(", ".join(others)))
+
+	def validate_placeholders(self):
+		"""Refuse a subject, message or text that cannot be filled in for each person."""
+		for fieldname in ("text_message",) if self.is_text_message else ("subject", "message"):
+			check_placeholders(self.get(fieldname), _(self.meta.get_label(fieldname)))
+
 	def keep_status(self):
-		"""Only Send, Unschedule and the delivery move the status, and an email on its way stays as it is."""
+		"""Only Send, Unschedule and the delivery move the status, and a message on its way stays as it is."""
 		before = self.get_doc_before_save()
 		if not before:
 			self.status = DRAFT
 			return
 		if before.status in (SENDING, SENT):
-			frappe.throw(_("This email has been sent, so it can no longer be changed."))
+			frappe.throw(_("This message has been sent, so it can no longer be changed."))
 		self.status = before.status
 		if self.status == SCHEDULED and not self.send_after:
-			frappe.throw(_("Set Send At, or click Unschedule to keep this email as a draft."))
+			frappe.throw(_("Set Send At, or click Unschedule to keep this message as a draft."))
+
+	@property
+	def is_text_message(self) -> bool:
+		return self.channel == TEXT_CHANNEL
+
+	@property
+	def own_church(self) -> str | None:
+		"""This message's church, worked out before ensure_church fills it on a new one."""
+		return document_church(self) or default_church()
 
 	@property
 	def sending_church(self) -> str:
@@ -67,20 +122,32 @@ class ChurchEmail(Document):
 	def get_recipient_count(self) -> int:
 		return len(self.get_recipients())
 
+	@frappe.whitelist()
+	def get_preview(self, person: str | None = None) -> dict:
+		"""How *person*, or else the first person it goes to, gets this message, and how many people get it."""
+		recipients = self.get_recipients()
+		preview: dict = {"count": len(recipients)}
+		recipient = self.get_recipient(recipients, person)
+		if recipient:
+			frappe.has_permission("Person", "read", doc=recipient.person, throw=True)
+			copy = self.get_copy(get_person_values([recipient.person])[recipient.person])
+			preview.update(person=recipient.person, to=recipient.address, **copy)
+		return preview
+
 	@frappe.whitelist(methods=["POST"])
-	def send_test(self):
-		"""Send this email to the reader alone, straight away, the way everyone will get it."""
+	def send_test(self) -> str:
+		"""Send this message to the reader alone, straight away, with their own name. Returns where it went."""
 		self.check_permission("write")
-		require_outgoing_email_account()
-		self.queue([frappe.db.get_value("User", frappe.session.user, "email")], now=True)
+		self.require_sending_set_up()
+		return Delivery(self).send_test()
 
 	@frappe.whitelist(methods=["POST"])
 	def send(self) -> str:
 		"""Send it now, or schedule it when Send At is still ahead. Returns the new status."""
 		self.check_permission("write")
-		require_outgoing_email_account()
+		self.require_sending_set_up()
 		if frappe.db.get_value(self.doctype, self.name, "status", for_update=True) != DRAFT:
-			frappe.throw(_("This email has already been sent or scheduled."))
+			frappe.throw(_("This message has already been sent or scheduled."))
 
 		if self.send_after and get_datetime(self.send_after) > now_datetime():
 			self.db_set("status", SCHEDULED)
@@ -92,71 +159,82 @@ class ChurchEmail(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def unschedule(self):
-		"""Turn a scheduled email back into a draft, so it is not sent at Send At."""
+		"""Turn a scheduled message back into a draft, so it is not sent at Send At."""
 		self.check_permission("write")
 		if frappe.db.get_value(self.doctype, self.name, "status", for_update=True) == SCHEDULED:
 			self.db_set("status", DRAFT)
 
-	def get_recipients(self) -> list[str]:
-		"""Primary email of everyone this is for who may get Church News, without anyone who unsubscribed."""
-		people = allowed_people(self.get_people(), EMAIL, CHURCH_NEWS)
-		emails = {email for email in get_primary_emails("Person", people).values() if email}
-		valid = {email for email in emails if validate_email_address(email)}
-		return sorted(valid - unsubscribed_emails(self.sending_church))
+	def require_sending_set_up(self):
+		"""Refuse a message the site cannot deliver, or a text the user may not send."""
+		if not self.is_text_message:
+			if not can_send_email():
+				frappe.throw(_("Set up an outgoing Email Account first."))
+			return
+		if not can_send_texts():
+			frappe.throw(_("Set up SMS Settings first, so the church can send texts."))
+		check_sms_permission()
+
+	def get_recipient(self, recipients: list[Recipient], person: str | None) -> Recipient | None:
+		"""The recipient who is *person*, or the first one when no person is given."""
+		if not person:
+			return recipients[0] if recipients else None
+		recipient = next((recipient for recipient in recipients if recipient.person == person), None)
+		if not recipient:
+			frappe.throw(_("{0} does not get this message. Pick someone it goes to.").format(person))
+		return recipient
+
+	def get_recipients(self) -> list[Recipient]:
+		"""Everyone this is for who allows its purpose, in order, each address once."""
+		if self.is_text_message:
+			return get_text_recipients(sorted(allowed_people(self.get_people(), SMS, self.purpose)))
+		people = sorted(allowed_people(self.get_people(), EMAIL, self.purpose))
+		return get_email_recipients(people, self.sending_church)
 
 	def get_people(self) -> list[str]:
 		"""The people this is for, worked out now so that nobody who died or left is included."""
-		Person = frappe.qb.DocType("Person")
 		if self.send_to == GROUP:
-			GroupMember = frappe.qb.DocType("Group Member")
-			# church-scope: the members listed on one group, which validate keeps to this email's church
-			return (
-				frappe.qb.from_(GroupMember)
-				.join(Person)
-				.on(Person.name == GroupMember.person)
-				.select(Person.name)
-				.where((GroupMember.parenttype == "Group") & (GroupMember.parent == self.group))
-				.where(living_people_filter(Person))
-				.run(pluck=True)
-			)
+			return self.get_group_members()
+		if self.send_to == SMART_LIST:
+			return smart_lists.get_people(self.smart_list, self.own_church)
+		if self.send_to == CHOSEN_PEOPLE:
+			return [row.person for row in self.people]
 
-		filters = {"membership_status": ACTIVE}
+		Person = frappe.qb.DocType("Person")
+		filters: dict = {"membership_status": ACTIVE}
 		if self.send_to == ACTIVE_MEMBERS:
 			filters["membership"] = MEMBER
 		if is_multi_church():
-			filters["church"] = self.church
-		# church-scope: the people of this email's own church; a Person is never shared
+			filters["church"] = self.own_church
+		# church-scope: the people of this message's own church; a Person is never shared
 		return frappe.get_all("Person", filters=[filters, living_people_filter(Person)], pluck="name")
+
+	def get_group_members(self) -> list[str]:
+		Person = frappe.qb.DocType("Person")
+		GroupMember = frappe.qb.DocType("Group Member")
+		# church-scope: the members listed on one group, which validate keeps to this message's church
+		return (
+			frappe.qb.from_(GroupMember)
+			.join(Person)
+			.on(Person.name == GroupMember.person)
+			.select(Person.name)
+			.where((GroupMember.parenttype == "Group") & (GroupMember.parent == self.group))
+			.where(living_people_filter(Person))
+			.run(pluck=True)
+		)
+
+	def get_copy(self, values: dict) -> frappe._dict:
+		"""This message filled in with one person's placeholder *values*: a text, or a subject and message."""
+		if self.is_text_message:
+			return frappe._dict(text=render(self.text_message, values))
+		return frappe._dict(
+			subject=render(self.subject, values), message=render(self.message, values, html=True)
+		)
 
 	def get_attachments(self) -> list[dict]:
 		files = frappe.get_all(
 			"File", filters={"attached_to_doctype": self.doctype, "attached_to_name": self.name}, pluck="name"
 		)
 		return [{"fid": file} for file in files]
-
-	def queue(self, recipients: list[str], now: bool = False):
-		"""Queue the email; each recipient still gets a copy of their own, with their own unsubscribe link."""
-		for batch in create_batch(recipients, QUEUE_SIZE):
-			queued = frappe.sendmail(
-				recipients=batch,
-				subject=self.subject,
-				message=self.message,
-				attachments=self.get_attachments(),
-				reference_doctype=self.doctype,
-				reference_name=self.name,
-				unsubscribe_method=UNSUBSCRIBE_METHOD,
-				unsubscribe_params={"church": self.sending_church},
-				unsubscribe_message=_("Unsubscribe"),
-				send_priority=0,
-				now=now,
-			)
-			if not queued:
-				frappe.throw(_("The email could not be queued. The Error Log says why."))
-
-
-def require_outgoing_email_account():
-	if not can_send_email():
-		frappe.throw(_("Set up an outgoing Email Account first."))
 
 
 def enqueue_delivery(name: str):
@@ -171,37 +249,46 @@ def enqueue_delivery(name: str):
 
 
 def deliver(name: str):
-	"""Background job: queue the email to everyone it is for, once however often the job runs."""
+	"""Background job: send a copy to everyone it is for, once however often the job runs."""
 	if frappe.db.get_value("Church Email", name, "status", for_update=True) != SENDING:
 		return
 
 	email = frappe.get_doc("Church Email", name)
 	try:
-		recipients = email.get_recipients()
-		email.queue(recipients)
+		Delivery(email).send_all()
 	except Exception as error:
-		# Nothing was queued, so the church can send it again once the cause is fixed.
+		# The copies already committed stay sent, so sending again reaches only the people still waiting.
 		frappe.db.rollback()
 		frappe.db.set_value("Church Email", name, "status", DRAFT)
-		email.add_comment("Comment", _("This email was not sent and is a draft again: {0}").format(error))
+		email.add_comment(
+			"Comment",
+			_(
+				"This message is a draft again, because sending stopped: {0}. "
+				"Anyone who already got it does not get it again."
+			).format(error),
+		)
 		frappe.db.commit()
 		raise
-	email.db_set({"status": SENT, "recipients": len(recipients), "sent_on": now_datetime()})
+	email.db_set({"status": SENT, "recipients": len(get_people_sent(name)), "sent_on": now_datetime()})
 
 
 def send_scheduled():
-	"""Scheduler: send each scheduled email whose Send At has come, and retry stalled deliveries."""
-	if not can_send_email():
+	"""Scheduler: send each scheduled message whose Send At has come, and retry stalled deliveries."""
+	channels = get_ready_channels()
+	if not channels:
 		return
-	# church-scope: scheduled job; each email goes to its own church's people
+	# church-scope: scheduled job; each message goes to its own church's people
 	due = frappe.get_all(
-		"Church Email", filters={"status": SCHEDULED, "send_after": ("<=", now_datetime())}, pluck="name"
+		"Church Email",
+		filters={"status": SCHEDULED, "send_after": ("<=", now_datetime()), "channel": ("in", channels)},
+		pluck="name",
 	)
 	stalled = frappe.get_all(
 		"Church Email",
 		filters={
 			"status": SENDING,
 			"modified": ("<", add_to_date(now_datetime(), minutes=-STALLED_AFTER_MINUTES)),
+			"channel": ("in", channels),
 		},
 		pluck="name",
 	)
@@ -214,8 +301,14 @@ def send_scheduled():
 		frappe.db.commit()
 
 
+def get_ready_channels() -> list[str]:
+	"""The channels the site can send on now: a scheduled message waits until its channel is set up."""
+	ready = {EMAIL_CHANNEL: can_send_email(), TEXT_CHANNEL: can_send_texts()}
+	return [channel for channel, is_ready in ready.items() if is_ready]
+
+
 def claim(name: str) -> bool:
-	"""Move a due email to Sending, or keep a stalled one there, unless another worker got to it."""
+	"""Move a due message to Sending, or keep a stalled one there, unless another worker got to it."""
 	status = frappe.db.get_value("Church Email", name, "status", for_update=True)
 	if status == SCHEDULED:
 		frappe.db.set_value("Church Email", name, "status", SENDING)

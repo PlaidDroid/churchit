@@ -5,18 +5,26 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import getdate, today
 
+from churchit.church_communications.doctype.communication_consent.communication_consent import (
+	EMAIL,
+	WITHDRAWN,
+	record,
+)
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
 from churchit.church_people.household import ADULT, CHILD
 from churchit.church_people.list_actions import (
 	get_household_adult_emails,
 	get_household_emails,
 	get_people_emails,
 	mark_inactive,
+	new_church_email,
 )
 from churchit.church_people.membership import ACTIVE, INACTIVE
 from churchit.tests.helpers import (
 	RollbackEachTest,
 	ensure,
 	ensure_user,
+	force_single_church,
 	make_address,
 	make_person,
 	make_primary_contact,
@@ -47,7 +55,7 @@ def title(person):
 	return frappe.db.get_value("Person", person, "full_name")
 
 
-class TestListEmails(FrappeTestCase):
+class TestListEmails(RollbackEachTest):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -68,6 +76,25 @@ class TestListEmails(FrappeTestCase):
 		result = get_people_emails([self.father, self.mother, self.son, self.father])
 
 		self.assertEqual(result.emails, ["_test_list_father@example.com", "_test_list_son@example.com"])
+		self.assertEqual(result.without_email, [title(self.mother)])
+		self.assertEqual(result.refused, [])
+
+	def test_someone_who_refused_every_email_is_left_out_and_named(self):
+		record([self.son], EMAIL, WITHDRAWN)
+		record([self.father], EMAIL, WITHDRAWN, CHURCH_NEWS)
+
+		result = get_people_emails([self.father, self.son])
+
+		self.assertEqual(result.emails, ["_test_list_father@example.com"])
+		self.assertEqual(result.refused, [title(self.son)])
+
+	def test_a_household_adult_who_refused_every_email_is_left_out_and_named(self):
+		record([self.father], EMAIL, WITHDRAWN)
+
+		result = get_household_adult_emails([self.son])
+
+		self.assertEqual(result.emails, [])
+		self.assertEqual(result.refused, [title(self.father)])
 		self.assertEqual(result.without_email, [title(self.mother)])
 
 	def test_the_adults_of_a_childs_household_are_emailed_and_an_adult_with_no_email_named(self):
@@ -150,6 +177,26 @@ class TestMarkInactive(RollbackEachTest):
 		self.assertEqual(self.status(self.active).membership_status, ACTIVE)
 
 
+class TestNewChurchEmail(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		force_single_church()
+		cls.people = [make_person("_Test List", f"Chosen {n}").name for n in (1, 2)]
+
+	def test_the_picked_people_start_a_draft_church_email(self):
+		email = frappe.get_doc("Church Email", new_church_email(self.people))
+
+		self.assertEqual((email.status, email.send_to), ("Draft", "Chosen People"))
+		self.assertEqual([row.person for row in email.people], self.people)
+
+	def test_staff_who_cannot_write_church_emails_are_refused(self):
+		frappe.set_user(ensure_user("_test_list_staff@example.com", "Staff", roles=("Church Staff",)))
+
+		with self.assertRaises(frappe.PermissionError):
+			new_church_email(self.people)
+
+
 class TestPortalMember(RollbackEachTest):
 	"""A portal member has no list, and is refused even for their own record."""
 
@@ -172,7 +219,7 @@ class TestPortalMember(RollbackEachTest):
 		frappe.set_user(self.member)
 
 	def test_emails_are_refused(self):
-		for call in (get_people_emails, get_household_adult_emails):
+		for call in (get_people_emails, get_household_adult_emails, new_church_email):
 			with self.assertRaises(frappe.PermissionError):
 				call([self.person])
 		with self.assertRaises(frappe.PermissionError):
@@ -238,6 +285,12 @@ class TestListActionsAcrossChurches(FrappeTestCase):
 
 		self.assertEqual(result.emails, [])
 		self.assertEqual(result.without_adults, [title(self.child_a)])
+
+	def test_another_churchs_people_cannot_be_put_on_a_church_email(self):
+		set_private_people(False)
+
+		with self.assertRaisesRegex(frappe.ValidationError, "belong to another church"):
+			self.as_manager_a(new_church_email, [self.person_b])
 
 	def test_another_churchs_people_cannot_be_marked_inactive(self):
 		set_private_people(False)

@@ -19,7 +19,7 @@
  "list_columns": [],
  "login_required": 0,
  "max_attachment_size": 0,
- "modified": "2026-10-18 09:00:00.000000",
+ "modified": "2026-10-20 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "connection-card",
@@ -93,6 +93,22 @@
    "fieldname": "message",
    "fieldtype": "Small Text",
    "label": "Anything Else?"
+  },
+  {
+   "fieldname": "section_break_consent",
+   "fieldtype": "Section Break",
+   "label": "Stay in Touch"
+  },
+  {
+   "fieldname": "email_consent",
+   "fieldtype": "Check",
+   "label": "Email Me Church News and Events"
+  },
+  {
+   "depends_on": "eval:doc.phone",
+   "fieldname": "sms_consent",
+   "fieldtype": "Check",
+   "label": "Text Me Church News and Events"
   },
   {
    "fieldname": "website",

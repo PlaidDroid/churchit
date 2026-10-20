@@ -732,7 +732,7 @@ def _setup_portal_settings():
 		("Giving Statements", "statements", "Giving Statement", "Church User"),
 		("Bulletins", "bulletins", "Bulletin", "Church User"),
 		("Personal Details", "personal-details", "Person", "Church User"),
-		("Newsletter Subscription", "newsletter-subscription", "Email Group Member", "Church User"),
+		("Communication Preferences", "preferences", "Communication Consent", "Church User"),
 	]
 	doc = frappe.get_doc("Portal Settings")
 	# Left blank deliberately. Frappe consults this before Website Settings when a

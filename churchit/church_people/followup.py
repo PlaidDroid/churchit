@@ -16,6 +16,7 @@ from frappe import _
 from frappe.permissions import get_doctype_roles
 from frappe.utils import today
 
+from churchit.church_people import smart_lists
 from churchit.church_scope import church_filters
 
 CARD = "Follow-up Card"
@@ -206,12 +207,8 @@ def add_smart_list_people(workflow: str, report: str) -> list[str]:
 	A person the list added once is never added again, even after their card is closed and they
 	drop off the list and come back.
 	"""
-	church = frappe.db.get_value(WORKFLOW, workflow, "church")
-	source = frappe.get_doc("Report", report)
-	filters = source.get_standard_report_filters(
-		json.loads(source.json or "{}"), church_filters(church, is_deceased=0)
-	)
-	people = frappe.get_all("Person", filters=filters, pluck="name")
+	people = smart_lists.get_people(report, frappe.db.get_value(WORKFLOW, workflow, "church"))
+	# church-scope: the cards of one workflow, which belongs to one church
 	added_before = set(
 		frappe.get_all(
 			CARD,
@@ -220,6 +217,7 @@ def add_smart_list_people(workflow: str, report: str) -> list[str]:
 		)
 	)
 	reason = describe_trigger(ON_SMART_LIST, report)
+	source = frappe.get_doc("Report", report)
 	return [
 		add_card(person, workflow, reason=reason, source=source)
 		for person in people

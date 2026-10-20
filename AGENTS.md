@@ -420,6 +420,10 @@ page. Frappe fills web form fields from the query string but drops it when it re
 Table MultiSelect: the form shows the table as a Table field and draws checkboxes from the options
 Frappe lists for its Link column (`connection_card.js`).
 
+`ConnectionCard.record_consent` turns the Stay in Touch ticks into Given (Church News, method Web
+Form) for the card's person, desk cards included. A tick never overrides a withdrawal on record,
+because guest input cannot prove who ticked it.
+
 ## Notifications and email
 
 `Notification` is overridden by `churchit/church_communications/scoped_notification.py`. Recipients
@@ -434,12 +438,44 @@ that church's groups. Unsubscribes are Email Unsubscribe records against a churc
 `newsletter.email_church` is the one place that says which church: the root church on a
 single-church site, where records carry none.
 
+A Church Email fills placeholders with `sending.render`, a sandboxed Jinja environment that holds
+only the four person names (also under `doc`). Never render it with `frappe.render_template`:
+Church Managers write Church Emails but not Email Templates, and Frappe's environment gives the
+author `frappe.db`. `sending.check_placeholders` refuses any other name in `validate`.
+
+Each copy is a Communication with reference Person and a timeline link to the Church Email.
+`sending.get_people_sent` reads those links to decide who already got it, and a delivery commits
+every batch (100 emails, or each text, sent before its commit), so a rerun never sends twice. Do
+not create or delete these Communications any other way. People sharing one address or number get
+one copy, recorded on the first of them by Person ID. A smart list is read only through
+`smart_lists.get_people(report, church)`, which applies `church_filters` and leaves out the dead.
+Texts go through Frappe's public `send_sms`, so the SMS Settings Allowed Roles apply in the job;
+`require_sending_set_up` checks them at click time. An unsubscribe link carries the purpose: no
+purpose or Church News still makes the church's Email Unsubscribe, another purpose records a
+withdrawal for that purpose only.
+
 Consent is answered only by `consent.allowed`, or `consent.allowed_people` for a list. A
 Notification has no purpose, so only consent for every purpose counts, and staff (System Users)
 are never dropped. An address or number is refused only when every Person holding it is refused. A
 withdrawal applies to every holder of an address; a Given is recorded only for the person who
 asked. An Email Unsubscribe made with `db_insert` runs no hooks, so call
-`consent.record_unsubscribe` after it, as `newsletter.set_subscribed` does.
+`consent.record_unsubscribe` after it, as `newsletter.set_subscribed` does. Texts are opt-in: with
+no record for SMS nobody gets texts, whatever the church's setting (`consent.default_statuses`).
+
+The Communication Preferences page (`church_communications/preferences.py`) changes only the
+session's own Person and takes no person argument. A switch records consent with
+`record(..., MEMBER_PORTAL)`; Church News by email also goes through `newsletter.set_subscribed`,
+and a yes to any email purpose lifts the address's global Email Unsubscribe. Only `newsletter.py`
+writes Email Unsubscribe records. Ask `sending.can_send_texts()` (an SMS Settings gateway URL or a
+`send_sms` hook) wherever the question is whether this site can send texts.
+
+Frappe keeps no machine-readable part of a received bounce report: it drops the
+`message/delivery-status` part, and links the report to the sent Communication (`in_reply_to`) only
+when the report has an In-Reply-To header, which Postfix reports lack. `bounces.record_bounce`
+reads the report's text, one pattern per format (Postfix, Gmail, Microsoft 365); a new format needs
+a pattern and a real sample in `test_bounces.py`. Read bounced addresses only through
+`bounces.bounced_addresses`. Email Bounced is cleared only in `contacts.validate_contact_tables`
+when a row's address changes; a raw write (`db.set_value`, `db_insert`) skips that.
 
 A shipped Notification with a `condition` sets `"condition_type": "Python"` in its JSON. Migrate
 syncs it without field defaults, and Frappe ignores a condition whose type is empty.

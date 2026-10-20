@@ -20,6 +20,8 @@
   "column_break_visit",
   "interests",
   "message",
+  "email_consent",
+  "sms_consent",
   "website",
   "section_break_processing",
   "status",
@@ -107,6 +109,20 @@
    "label": "Anything Else?"
   },
   {
+   "default": "0",
+   "description": "The guest agreed to get Church News by email.",
+   "fieldname": "email_consent",
+   "fieldtype": "Check",
+   "label": "Email Me Church News and Events"
+  },
+  {
+   "default": "0",
+   "description": "The guest agreed to get Church News by text message.",
+   "fieldname": "sms_consent",
+   "fieldtype": "Check",
+   "label": "Text Me Church News and Events"
+  },
+  {
    "description": "Hidden from people on the web form. Only robots fill it in.",
    "fieldname": "website",
    "fieldtype": "Data",
@@ -153,7 +169,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-18 12:00:00.000000",
+ "modified": "2026-10-20 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Connection Card",

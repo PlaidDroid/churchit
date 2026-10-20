@@ -13,6 +13,7 @@ frappe.query_reports["People Data Quality"] = {
 				"No Way to Reach",
 				"Invalid Email",
 				"Invalid Phone Number",
+				"Email Bounced",
 				"Mail Returned",
 				"Possible Duplicate",
 				"Child Without Birth Date",

@@ -40,8 +40,9 @@ def allowed_people(people: list[str], channel: str, purpose: str | None = None) 
 	"""The people among *people* whom the church may contact on *channel* for *purpose*.
 
 	Nobody who has died is contacted. Otherwise the newest record for the channel decides,
-	whether it names this purpose or is blank for every purpose. With no record, the
-	person's church decides. A few queries answer for any number of people.
+	whether it names this purpose or is blank for every purpose. With no record, nobody
+	gets texts, and the person's church decides the other channels. A few queries answer
+	for any number of people.
 	"""
 	people = [person for person in people if person]
 	if not people:
@@ -50,12 +51,18 @@ def allowed_people(people: list[str], channel: str, purpose: str | None = None) 
 	living = frappe.get_all(
 		"Person", filters={"name": ("in", people), "is_deceased": 0}, fields=["name", "church"]
 	)
-	statuses = default_statuses(living) | latest_statuses(people, channel, purpose)
+	statuses = default_statuses(living, channel) | latest_statuses(people, channel, purpose)
 	return {row.name for row in living if statuses[row.name] == GIVEN}
 
 
-def default_statuses(people: list[frappe._dict]) -> dict[str, str]:
-	"""Each person's status with no record: Withdrawn where their church contacts people only with consent."""
+def default_statuses(people: list[frappe._dict], channel: str) -> dict[str, str]:
+	"""Each person's status with no record.
+
+	Texts need a yes first, as carriers and the law require. On other channels it is Withdrawn
+	only where the person's church contacts people only with consent.
+	"""
+	if channel == SMS:
+		return {row.name: WITHDRAWN for row in people}
 	asks_first = set(frappe.get_all("Church", filters={"contact_only_with_consent": 1}, pluck="name"))
 	churches = {church: email_church(church) for church in {row.church for row in people}}
 	return {row.name: WITHDRAWN if churches[row.church] in asks_first else GIVEN for row in people}

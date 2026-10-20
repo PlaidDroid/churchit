@@ -115,8 +115,7 @@ def www_routes(www_dir):
 
 	Frappe serves ``www/memorize/session.py`` at /memorize/session, a folder's
 	``index`` at the folder itself, and reads underscores and dashes alike, so
-	``newsletter_subscription.py`` and ``newsletter-subscription.html`` are one
-	page, not two.
+	``ministry_team.py`` and ``ministry-team.html`` are one page, not two.
 	"""
 	routes = defaultdict(list)
 	for entry in sorted(www_dir.rglob("*")):

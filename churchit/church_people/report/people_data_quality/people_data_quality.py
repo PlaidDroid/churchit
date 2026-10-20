@@ -17,6 +17,7 @@ from churchit.utils import set_report_link_titles
 NO_WAY_TO_REACH = "No Way to Reach"
 INVALID_EMAIL = "Invalid Email"
 INVALID_PHONE = "Invalid Phone Number"
+EMAIL_BOUNCED = "Email Bounced"
 MAIL_RETURNED = "Mail Returned"
 POSSIBLE_DUPLICATE_OPEN = "Possible Duplicate"
 CHILD_WITHOUT_BIRTH_DATE = "Child Without Birth Date"
@@ -51,6 +52,7 @@ def get_data(filters):
 		NO_WAY_TO_REACH: get_people_with_no_way_to_reach,
 		INVALID_EMAIL: get_invalid_emails,
 		INVALID_PHONE: get_invalid_phones,
+		EMAIL_BOUNCED: get_bounced_emails,
 		MAIL_RETURNED: get_returned_mail,
 		POSSIBLE_DUPLICATE_OPEN: get_open_duplicates,
 		CHILD_WITHOUT_BIRTH_DATE: get_children_without_birth_date,
@@ -117,6 +119,13 @@ def get_invalid_phones(people):
 		(row.parent, row.phone_number)
 		for row in get_contact_rows(PHONE_DOCTYPE, "Person", people, ["phone_number"])
 		if len(phone_digits(row.phone_number)) not in PHONE_DIGITS_RANGE
+	]
+
+
+def get_bounced_emails(people):
+	return [
+		(row.parent, row.email_address)
+		for row in get_contact_rows(EMAIL_DOCTYPE, "Person", people, ["email_address"], is_bounced=1)
 	]
 
 

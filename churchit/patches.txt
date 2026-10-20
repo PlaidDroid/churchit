@@ -62,3 +62,5 @@ churchit.patches.v1_0.add_child_safety_training_check_type
 churchit.patches.v1_0.add_communication_purposes
 churchit.patches.v1_0.record_consent_from_unsubscribes
 churchit.patches.v1_0.add_connection_card_interests
+churchit.patches.v1_0.rename_newsletter_subscription_menu_item
+churchit.patches.v1_0.set_church_email_purpose

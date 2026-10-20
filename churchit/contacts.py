@@ -245,7 +245,8 @@ def validate_contact_tables(doc):
 
 	Trims values, rejects duplicates within a record, makes sure each table
 	has exactly one primary row (and, for addresses, at most one mailing row),
-	and keeps each phone number's digits.
+	keeps each phone number's digits, and unticks Email Bounced on an email
+	row whose address changed.
 	Flags are corrected rather than rejected so that data imports and the sample
 	data loader never fail on a missing checkbox.
 	"""
@@ -270,7 +271,9 @@ def validate_contact_tables(doc):
 		_flagged_before(before, ADDRESS_FIELD, "is_mailing_address"),
 		default_to_first=False,
 	)
-	sync_notification_addresses(doc.get(EMAIL_FIELD) or [])
+	emails = doc.get(EMAIL_FIELD) or []
+	sync_notification_addresses(emails)
+	clear_bounced_on_change(emails, before)
 	for row in doc.get(PHONE_FIELD) or []:
 		row.digits = phone_digits(row.phone_number)
 
@@ -294,6 +297,15 @@ def sync_notification_addresses(rows):
 	"""
 	for row in rows:
 		row.set("notification_address", row.get("email_address") if row.get("is_primary") else None)
+
+
+def clear_bounced_on_change(rows, before):
+	"""Untick Email Bounced on each email row whose address is not the one saved last time."""
+	saved = _saved_values(before, EMAIL_FIELD, EMAIL_DOCTYPE, "email_address")
+	for row in rows:
+		key = contact_key(EMAIL_DOCTYPE, row.get("email_address") or "")
+		if row.get("is_bounced") and row.name in saved and saved[row.name][0] != key:
+			row.is_bounced = 0
 
 
 def _trim_values(rows, value_field):

@@ -11,6 +11,7 @@ from churchit.church_communications.consent import allowed, allowed_people, refu
 from churchit.church_communications.doctype.communication_consent.communication_consent import (
 	EMAIL,
 	GIVEN,
+	PHONE,
 	SMS,
 	WITHDRAWN,
 	record,
@@ -25,7 +26,6 @@ from churchit.tests.helpers import (
 	RollbackEachTest,
 	ensure,
 	ensure_root_church,
-	ensure_user,
 	force_single_church,
 	make_person,
 	make_two_churches,
@@ -78,7 +78,7 @@ class TestAllowed(RollbackEachTest):
 		record([self.person.name], EMAIL, WITHDRAWN)
 		self.assertFalse(allowed(self.person.name, EMAIL))
 		self.assertFalse(allowed(self.person.name, EMAIL, CHURCH_NEWS))
-		self.assertTrue(allowed(self.person.name, SMS))
+		self.assertTrue(allowed(self.person.name, PHONE))
 
 	def test_nobody_who_has_died_is_contacted(self):
 		departed = make_person(
@@ -141,6 +141,12 @@ class TestAllowed(RollbackEachTest):
 		record([sharer.name], EMAIL, WITHDRAWN)
 		self.assertEqual(refused_values([SHARED_EMAIL.upper()], EMAIL), {SHARED_EMAIL.upper()})
 
+	def test_texts_go_only_to_people_who_agreed(self):
+		self.assertTrue(allowed(self.person.name, EMAIL))
+		self.assertFalse(allowed(self.person.name, SMS))
+		record([self.person.name], SMS, GIVEN)
+		self.assertTrue(allowed(self.person.name, SMS, CHURCH_NEWS))
+
 	def test_a_phone_number_is_matched_on_its_digits(self):
 		texted = make_person("_Test Consent", "Texted", phones=[{"phone_number": "(555) 010-0199"}])
 		record([texted.name], SMS, WITHDRAWN)
@@ -166,7 +172,7 @@ class TestUnsubscribes(RollbackEachTest):
 				consents(person.name), [{"status": WITHDRAWN, "purpose": None, "method": "Unsubscribe Link"}]
 			)
 			self.assertFalse(allowed(person.name, EMAIL, PASTORAL_CARE))
-			self.assertTrue(allowed(person.name, SMS))
+			self.assertTrue(allowed(person.name, PHONE))
 
 	def test_a_church_unsubscribe_withdraws_church_news_from_everyone_on_the_address(self):
 		newsletter.set_subscribed(SHARED_EMAIL, self.church, False)
@@ -195,17 +201,6 @@ class TestUnsubscribes(RollbackEachTest):
 		)
 		self.assertTrue(allowed(self.sharer.name, EMAIL, CHURCH_NEWS))
 		self.assertFalse(allowed(self.owner.name, EMAIL, CHURCH_NEWS))
-
-	def test_a_member_resubscribing_in_the_portal_records_their_consent(self):
-		user = ensure_user("_test_consent_member@example.com", "_Test Consent Member")
-		member = make_person("_Test Consent", "Member", user=user, emails=[{"email_address": user}])
-		frappe.set_user(user)
-		newsletter.set_subscription(0)
-		newsletter.set_subscription(1)
-		frappe.set_user("Administrator")
-
-		statuses = [(row.status, row.method) for row in consents(member.name)]
-		self.assertEqual(statuses, [(WITHDRAWN, "Unsubscribe Link"), (GIVEN, "Member Portal")])
 
 	def test_the_backfill_turns_todays_unsubscribes_into_consent_once(self):
 		for values in (
