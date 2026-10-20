@@ -231,8 +231,9 @@ permission_query_conditions = {
 # a desk user opens Summary after login, publishing, un-publishing or deleting
 # a Web Page adds it to or removes it from the menu, a saved or deleted record
 # queues a refresh of the person summary fields it changes, a deleted person
-# takes their Possible Duplicate pairs along, and an approved data deletion request
-# anonymizes the member's Person.
+# takes their Possible Duplicate pairs along, an approved data deletion request
+# anonymizes the member's Person, and a church's record is never shared (or assigned,
+# which shares it) with a user outside that church.
 doc_events = {
 	"*": {
 		"validate": "churchit.church_scope.ensure_church",
@@ -242,6 +243,9 @@ doc_events = {
 			"churchit.church_scope.refuse_deleting_another_churches_record",
 			"churchit.church_people.summaries.on_change",
 		],
+	},
+	"DocShare": {
+		"validate": "churchit.church_foundations.church_access.refuse_sharing_outside_the_church",
 	},
 	"Person": {
 		"on_trash": "churchit.church_people.duplicates.drop_pairs",

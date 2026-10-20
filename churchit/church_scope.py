@@ -131,6 +131,14 @@ def allowed_churches(user=None):
 	return sorted({permission.get("doc") for permission in permissions})
 
 
+def has_church_access(user, church):
+	"""True when *user* may see *church*'s records: always for a shared record, or a user holding no church."""
+	if not church:
+		return True
+	allowed = allowed_churches(user)
+	return allowed is None or church in allowed
+
+
 def requested_church():
 	"""The published church the current page is about, when ``?church=`` names one.
 

@@ -12,6 +12,8 @@ organisation is a guard that says who may take it away.
 """
 
 import frappe
+import frappe.share
+from frappe.desk.form import assign_to
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import nowdate
 
@@ -317,6 +319,50 @@ class TestChurchBoundary(FrappeTestCase):
 			frappe.get_doc(
 				{"doctype": "Function Sign-Up", "function": function.name, "person": theirs}
 			).insert()
+
+	def care_request_in(self, church):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Care Request",
+					"person": make_person("_Test Boundary", "Cared", church=church).name,
+					"category": ensure("Care Request Type", {"type": "_Test Boundary Care"}),
+					"description": "_Test Boundary",
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def test_a_record_cannot_be_assigned_to_another_churchs_user(self):
+		"""Frappe shares a record with an assignee who cannot read it, which used to cross churches."""
+		request = self.care_request_in(self.branch_b)
+
+		frappe.set_user(self.manager_b)
+		with self.assertRaises(frappe.PermissionError):
+			assign_to.add({"assign_to": [self.manager_a], "doctype": "Care Request", "name": request})
+		with self.assertRaises(frappe.PermissionError):
+			frappe.share.add("Care Request", request, self.manager_a)
+
+		frappe.set_user(self.manager_a)
+		self.assertFalse(frappe.has_permission("Care Request", "read", doc=request))
+
+	def test_a_record_is_still_shared_with_an_assignee_in_its_church(self):
+		request = self.care_request_in(self.branch_b)
+		staff = ensure_user("_test_boundary_staff_b@example.com", "BoundaryStaff", roles=("Church Staff",))
+		make_person("BoundaryStaff", "Member", church=self.branch_b, user=staff)
+
+		frappe.set_user(self.manager_b)
+		assign_to.add({"assign_to": [staff], "doctype": "Care Request", "name": request})
+
+		frappe.set_user(staff)
+		self.assertTrue(frappe.has_permission("Care Request", "read", doc=request))
+
+	def test_a_churchs_record_cannot_be_shared_with_everyone(self):
+		request = self.care_request_in(self.branch_b)
+
+		with self.assertRaises(frappe.PermissionError):
+			frappe.share.add("Care Request", request, everyone=1)
 
 	def test_a_shared_service_station_finds_and_checks_in_every_churchs_people(self):
 		"""Even with a private directory, a joint service's station has to find whoever walks in."""

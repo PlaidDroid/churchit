@@ -489,6 +489,11 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 - **Administrator is never restricted.** User permissions do not apply to it, so it always sees every
   church. Test scoping as a Church Manager, never as Administrator.
 - **Booleans over `frappe.xcall` arrive as strings.** Use `frappe.utils.sbool`, not `cint`.
+- **Assigning a record shares it.** Frappe's `assign_to` shares a record with an assignee who cannot
+  read it, and the Share menu shares on purpose. `church_access.refuse_sharing_outside_the_church`
+  (DocShare `validate`) refuses both when the user cannot see the record's church, and refuses
+  sharing a church's record with everyone. Assign only users who can see the record's church
+  (`church_scope.has_church_access`); an assignment from code to anyone else fails loudly.
 - **Frappe's connection counts ignore permissions.** It counts with `get_all`, for every doctype
   asked for, so `churchit.connections.get_open_count` replaces it and counts with `get_list`.
   A connection to a confidential doctype is safe to add for that reason only.

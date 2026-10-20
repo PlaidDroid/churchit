@@ -8,7 +8,13 @@ from frappe import _
 from frappe.permissions import add_user_permission
 from frappe.utils import sbool
 
-from churchit.church_scope import EXPAND_FILTER_DEFAULT, is_multi_church
+from churchit.church_scope import (
+	CHURCH_FIELD,
+	EXPAND_FILTER_DEFAULT,
+	has_church_access,
+	is_multi_church,
+	is_scoped,
+)
 
 UNSCOPED_USERS = ("Administrator", "Guest")
 
@@ -77,6 +83,31 @@ def scope_new_user(doc, method=None):
 	if church:
 		add_user_permission(
 			"Church", church, doc.name, ignore_permissions=True, is_default=1, hide_descendants=1
+		)
+
+
+def refuse_sharing_outside_the_church(doc, method=None):
+	"""validate on DocShare: a church's record is shared only with users who can see that church.
+
+	Frappe shares a record with an assignee who cannot read it, so without this an
+	assignment, or the Share menu, handed one church's record to another church's user.
+	"""
+	if not is_multi_church() or not is_scoped(frappe.get_meta(doc.share_doctype)):
+		return
+	church = frappe.db.get_value(doc.share_doctype, doc.share_name, CHURCH_FIELD)
+	if doc.everyone and church:
+		frappe.throw(
+			_("{0} {1} belongs to one church, so it cannot be shared with everyone.").format(
+				_(doc.share_doctype), doc.share_name
+			),
+			frappe.PermissionError,
+		)
+	if doc.user and not has_church_access(doc.user, church):
+		frappe.throw(
+			_("{0} cannot see records of {1}, so {2} {3} cannot be shared with or assigned to them.").format(
+				doc.user, church, _(doc.share_doctype), doc.share_name
+			),
+			frappe.PermissionError,
 		)
 
 
