@@ -385,6 +385,9 @@ that church's groups. Unsubscribes are Email Unsubscribe records against a churc
 `newsletter.email_church` is the one place that says which church: the root church on a
 single-church site, where records carry none.
 
+A shipped Notification with a `condition` sets `"condition_type": "Python"` in its JSON. Migrate
+syncs it without field defaults, and Frappe ignores a condition whose type is empty.
+
 ## Public website and portal
 
 `get_church()` resolves which church a page is about: an explicit `?church=` (published churches

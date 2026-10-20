@@ -26,6 +26,16 @@ def shipped_templates(module, name):
 
 
 class TestNotificationTemplates(FrappeTestCase):
+	def test_every_shipped_condition_is_marked_python(self):
+		"""Migrate syncs a notification without field defaults, and Frappe skips a condition whose type is unset."""
+		unmarked = [
+			path.stem
+			for path in Path(frappe.get_app_path("churchit")).glob("*/notification/*/*.json")
+			if (notification := json.loads(path.read_text())).get("condition")
+			and notification.get("condition_type") != "Python"
+		]
+		self.assertEqual(unmarked, [])
+
 	def test_expense_pending_approval_names_the_fund_and_notes(self):
 		fund = ensure("Fund", {"fund": "_Test Notice Fund"})
 		expense = frappe.get_doc(
