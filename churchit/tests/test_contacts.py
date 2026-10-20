@@ -322,7 +322,11 @@ class TestContactDetailsBelongToOneRecord(RollbackEachTest):
 		self.assertEqual(search("Spouse", "new-person-1"), [spouse.name])
 
 	def test_the_holder_is_not_named_to_someone_who_may_not_read_it(self):
-		frappe.set_user(ensure_user("_test_contact_nobody@example.com", "_Test Nobody", roles=()))
+		# A desk user who cannot read people; a portal member may not add a person at all.
+		treasurer = ensure_user(
+			"_test_contact_treasurer@example.com", "_Test Treasurer", roles=("Church Finance",)
+		)
+		frappe.set_user(treasurer)
 		with self.assertRaises(ValidationError) as caught:
 			self._person_with("Copy", email_address="unique.holder@example.com")
 		self.assertNotIn(self.holder.full_name, str(caught.exception))
