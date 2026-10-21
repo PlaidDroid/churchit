@@ -543,6 +543,13 @@ asked. An Email Unsubscribe made with `db_insert` runs no hooks, so call
 `consent.record_unsubscribe` after it, as `newsletter.set_subscribed` does. Texts are opt-in: with
 no record for SMS nobody gets texts, whatever the church's setting (`consent.default_statuses`).
 
+The Consent Renewal notification sends on `CommunicationConsent.is_due_for_renewal`, which asks
+`consent.is_due_for_renewal`: only a person's newest Email record, a Given, in a church that
+contacts only with consent, for a living person. Any newer record, renewed or withdrawn, ends it,
+so each yes is asked about once. The link it signs (`consent_renewal_link`, a jinja method) runs
+`consent.renew`, which records again each purpose whose newest Email record is Given, at most once
+a day.
+
 The Communication Preferences page (`church_communications/preferences.py`) changes only the
 session's own Person and takes no person argument. A switch records consent with
 `record(..., MEMBER_PORTAL)`; Church News by email also goes through `newsletter.set_subscribed`,

@@ -141,6 +141,7 @@ website_redirects = [
 
 jinja = {
 	"methods": [
+		"churchit.church_communications.consent.consent_renewal_link",
 		"churchit.church_finances.doctype.giving_statement.giving_statement.statement_header",
 		"churchit.church_foundations.doctype.church.church.church_name",
 		"churchit.church_foundations.doctype.church.church.get_church",

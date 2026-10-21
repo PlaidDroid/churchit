@@ -9,9 +9,13 @@ withdraws consent here.
 """
 
 import frappe
+from frappe import _
+from frappe.utils import get_datetime, get_url, getdate
+from frappe.utils.verified_command import get_signed_params, verify_request
 
 from churchit.church_communications.doctype.communication_consent.communication_consent import (
 	EMAIL,
+	EMAIL_LINK,
 	GIVEN,
 	PHONE,
 	SMS,
@@ -22,6 +26,8 @@ from churchit.church_communications.doctype.communication_consent.communication_
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
 from churchit.church_communications.newsletter import UNSUBSCRIBE_REFERENCE, email_church
 from churchit.contacts import EMAIL_DOCTYPE, PHONE_DOCTYPE, contact_key
+
+RENEW_METHOD = "/api/method/churchit.church_communications.consent.renew_consent"
 
 # The contact table and column that hold a channel's addresses, compared by contacts.contact_key.
 CONTACT_COLUMNS = {
@@ -173,3 +179,70 @@ def withdrawn_since(people: list[str], purpose: str | None, since) -> set[str]:
 			pluck="person",
 		)
 	)
+
+
+def is_due_for_renewal(doc) -> bool:
+	"""True when *doc* is a living person's newest Email record, a yes, in a church that contacts only with consent.
+
+	A newer record, a yes renewed or a no, ends it, so a person is asked once for each yes they give.
+	"""
+	if doc.channel != EMAIL or doc.status != GIVEN:
+		return False
+	if not frappe.db.get_value("Church", email_church(doc.church), "contact_only_with_consent"):
+		return False
+	if frappe.db.get_value("Person", doc.person, "is_deceased"):
+		return False
+	recorded_on = get_datetime(doc.recorded_on)
+	# church-scope: one person's own records, by name
+	others = frappe.get_all(
+		"Communication Consent",
+		filters={
+			"person": doc.person,
+			"channel": EMAIL,
+			"recorded_on": (">=", recorded_on),
+			"name": ("!=", doc.name),
+		},
+		fields=["name", "recorded_on"],
+	)
+	return not any(row.recorded_on > recorded_on or row.name > doc.name for row in others)
+
+
+def consent_renewal_link(doc) -> str:
+	"""Jinja: the signed "Yes, keep in touch" link of the Consent Renewal email."""
+	return get_url(f"{RENEW_METHOD}?{get_signed_params({'person': doc.person})}")
+
+
+@frappe.whitelist(allow_guest=True)
+def renew_consent(person: str, **signed_params):
+	"""The "Yes, keep in touch" link: say yes again to everything the person allows by email."""
+	if not frappe.in_test and not verify_request():
+		return
+
+	renew(person)
+	frappe.db.commit()
+	church = email_church(frappe.db.get_value("Person", person, "church"))
+	frappe.respond_as_web_page(
+		_("Thank you"),
+		_("{0} will keep in touch with you by email.").format(
+			frappe.db.get_value("Church", church, "church_name") or church
+		),
+		indicator_color="green",
+	)
+
+
+def renew(person: str) -> list[str]:
+	"""Record again each email yes the person's newest records hold, once a day however often the link is opened."""
+	# church-scope: one person's own records, by name
+	rows = frappe.get_all(
+		"Communication Consent",
+		filters={"person": person, "channel": EMAIL},
+		fields=["purpose", "status", "method", "recorded_on"],
+		order_by="recorded_on asc, creation asc",
+	)
+	newest = {row.purpose or None: row for row in rows}
+	purposes = [
+		purpose
+		for purpose, row in newest.items()
+		if row.status == GIVEN and not (row.method == EMAIL_LINK and getdate(row.recorded_on) == getdate())
+	]
+	return [name for purpose in purposes for name in record([person], EMAIL, GIVEN, purpose, EMAIL_LINK)]

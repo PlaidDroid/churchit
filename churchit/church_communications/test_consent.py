@@ -7,9 +7,16 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_communications import newsletter
-from churchit.church_communications.consent import allowed, allowed_people, refused_values
+from churchit.church_communications.consent import (
+	allowed,
+	allowed_people,
+	consent_renewal_link,
+	refused_values,
+	renew,
+)
 from churchit.church_communications.doctype.communication_consent.communication_consent import (
 	EMAIL,
+	EMAIL_LINK,
 	GIVEN,
 	PHONE,
 	SMS,
@@ -30,6 +37,7 @@ from churchit.tests.helpers import (
 	make_person,
 	make_two_churches,
 )
+from churchit.tests.test_notification_templates import shipped_templates
 
 SHARED_EMAIL = "_test_consent_shared@example.com"
 
@@ -246,3 +254,83 @@ class TestUnsubscribesPerChurch(FrappeTestCase):
 		asked = make_person("_Test Branch Consent", "Asked", church=self.branch_a)
 		told = make_person("_Test Branch Consent", "Told", church=self.branch_b)
 		self.assertEqual(allowed_people([asked.name, told.name], EMAIL), {told.name})
+
+
+RENEWAL_EMAIL = "_test_consent_renewal@example.com"
+
+
+class TestConsentRenewal(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		force_single_church()
+		cls.church = ensure_root_church()
+		create_communication_purposes()
+
+	def setUp(self):
+		super().setUp()
+		frappe.db.set_value("Church", self.church, "contact_only_with_consent", 1)
+		self.person = make_person("_Test Renewal", "Person", emails=[{"email_address": RENEWAL_EMAIL}])
+
+	def consent(self, *args, **values):
+		return frappe.get_doc("Communication Consent", record([self.person.name], EMAIL, *args, **values)[0])
+
+	def test_the_newest_email_yes_of_a_church_that_asks_first_is_due(self):
+		self.consent(GIVEN, CHURCH_NEWS, recorded_on="2024-06-01 10:00:00")
+		self.assertTrue(
+			self.consent(GIVEN, PASTORAL_CARE, recorded_on="2024-06-02 10:00:00").is_due_for_renewal
+		)
+
+	def test_a_newer_record_of_either_answer_ends_the_reminder(self):
+		older = self.consent(GIVEN, CHURCH_NEWS, recorded_on="2024-06-01 10:00:00")
+		withdrawal = self.consent(WITHDRAWN, CHURCH_NEWS, recorded_on="2025-06-01 10:00:00")
+		self.assertFalse(older.is_due_for_renewal)
+		self.assertFalse(withdrawal.is_due_for_renewal)
+
+	def test_two_yeses_at_one_moment_ask_once(self):
+		moment = "2024-06-01 10:00:00"
+		first = self.consent(GIVEN, CHURCH_NEWS, recorded_on=moment)
+		second = self.consent(GIVEN, PASTORAL_CARE, recorded_on=moment)
+		self.assertEqual([first.is_due_for_renewal, second.is_due_for_renewal], [False, True])
+
+	def test_only_a_church_that_asks_first_reminds_and_never_for_texts_or_the_dead(self):
+		self.assertFalse(
+			frappe.get_doc(
+				"Communication Consent", record([self.person.name], SMS, GIVEN)[0]
+			).is_due_for_renewal
+		)
+		consent = self.consent(GIVEN)
+		frappe.db.set_value("Person", self.person.name, "is_deceased", 1)
+		self.assertFalse(consent.is_due_for_renewal)
+		frappe.db.set_value("Person", self.person.name, "is_deceased", 0)
+		frappe.db.set_value("Church", self.church, "contact_only_with_consent", 0)
+		self.assertFalse(consent.is_due_for_renewal)
+
+	def test_the_link_says_yes_again_to_what_the_person_allows_once_a_day(self):
+		self.consent(GIVEN, CHURCH_NEWS, recorded_on="2024-06-01 10:00:00")
+		self.consent(GIVEN, PASTORAL_CARE, recorded_on="2024-06-01 10:00:00")
+		self.consent(WITHDRAWN, PASTORAL_CARE, recorded_on="2024-07-01 10:00:00")
+
+		self.assertEqual(len(renew(self.person.name)), 1)
+		self.assertEqual(renew(self.person.name), [])
+		renewed = frappe.get_all(
+			"Communication Consent",
+			filters={"person": self.person.name, "method": EMAIL_LINK},
+			fields=["purpose", "status"],
+		)
+		self.assertEqual(renewed, [{"purpose": CHURCH_NEWS, "status": GIVEN}])
+		self.assertTrue(allowed(self.person.name, EMAIL, CHURCH_NEWS))
+		self.assertFalse(allowed(self.person.name, EMAIL, PASTORAL_CARE))
+
+	def test_the_shipped_reminder_reaches_the_person_with_a_signed_link(self):
+		notification, message = shipped_templates("church_communications", "Consent Renewal")
+		consent = self.consent(GIVEN, CHURCH_NEWS)
+
+		self.assertTrue(frappe.safe_eval(notification["condition"], None, {"doc": consent}))
+		self.assertEqual(
+			frappe.render_template(notification["recipients"][0]["cc"], {"doc": consent}), RENEWAL_EMAIL
+		)
+		html = frappe.render_template(message, {"doc": consent})
+		self.assertIn(consent_renewal_link(consent), html)
+		self.assertIn("renew_consent?", consent_renewal_link(consent))
+		self.assertIn("_signature=", consent_renewal_link(consent))

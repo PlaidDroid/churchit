@@ -20,6 +20,7 @@ DESK = "Desk"
 WEB_FORM = "Web Form"
 MEMBER_PORTAL = "Member Portal"
 UNSUBSCRIBE_LINK = "Unsubscribe Link"
+EMAIL_LINK = "Email Link"
 
 
 class CommunicationConsent(Document):
@@ -27,6 +28,13 @@ class CommunicationConsent(Document):
 
 	def validate(self):
 		self.refuse_another_churches_person()
+
+	@property
+	def is_due_for_renewal(self) -> bool:
+		"""The Consent Renewal notification's condition: this yes is one the person's church must renew."""
+		from churchit.church_communications import consent  # consent imports this module
+
+		return consent.is_due_for_renewal(self)
 
 	def refuse_another_churches_person(self):
 		"""Only the person's own church records their consent.
