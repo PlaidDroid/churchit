@@ -39,11 +39,24 @@ const STATION_HTML = `
 	.check-in-station .roster-row .btn { padding: 2px 6px; }
 	.check-in-station .empty { color: var(--text-muted); padding: var(--padding-lg) 0; text-align: center; }
 	.check-in-station .empty .add-visitor { color: var(--text-color); text-decoration: underline; cursor: pointer; }
+	.check-in-station .search-row { display: flex; gap: var(--margin-sm); }
+	.check-in-station .search-row .btn { flex: none; font-size: var(--text-lg); }
+	.pickup-families .pickup-family { border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: var(--padding-sm) var(--padding-md); margin-top: var(--margin-md); }
+	.pickup-families .pickup-heading { color: var(--text-muted); font-size: var(--text-sm); margin-top: var(--margin-sm); }
+	.pickup-families .pickup-people { display: flex; flex-wrap: wrap; gap: var(--margin-md); margin-top: var(--margin-xs); }
+	.pickup-families .pickup-person { display: flex; align-items: center; gap: 10px; font-size: var(--text-lg); line-height: 1.2; }
+	.pickup-families .pickup-person small { display: block; color: var(--text-muted); font-size: var(--text-sm); white-space: pre-line; }
+	.pickup-families .empty { color: var(--text-muted); padding: var(--padding-lg) 0; text-align: center; font-size: var(--text-lg); }
 </style>
 <div class="check-in-station">
 	<div>
-		<input class="form-control station-search" type="search" autocomplete="off"
-			placeholder="${__("Search by name or phone number…")}">
+		<div class="search-row">
+			<input class="form-control station-search" type="search" autocomplete="off"
+				placeholder="${__("Search by name or phone number…")}">
+			<button class="btn btn-default btn-scan-card">
+				${frappe.utils.icon("scan-barcode", "md")} ${__("Scan Card")}
+			</button>
+		</div>
 		<div class="station-hint">${__(
 			"Tap the people who have arrived, then Check In. Press Enter to check in a single match."
 		)}</div>
@@ -89,6 +102,7 @@ class CheckInStation {
 			() => this.new_visitor(this.$search.val().trim()),
 			"add"
 		);
+		this.page.set_secondary_action(__("Verify Pickup"), () => this.verify_pickup());
 		this.page.add_menu_item(__("Check-In Settings"), () =>
 			frappe.set_route("Form", "Check-In Settings")
 		);
@@ -148,6 +162,7 @@ class CheckInStation {
 		});
 		this.$check_in.on("click", () => this.check_in([...this.selected]));
 		this.$body.find(".btn-clear").on("click", () => this.clear());
+		this.$body.find(".btn-scan-card").on("click", () => this.scan_card());
 		this.$results.on("click", ".add-visitor", () =>
 			this.new_visitor(this.$search.val().trim())
 		);
@@ -227,6 +242,35 @@ class CheckInStation {
 				if (this.$search.val().trim() !== query) return;
 				this.groups = r.message || [];
 				this.render_results();
+			});
+	}
+
+	// A member card's QR code holds the Person ID; the server applies the search's own rules to it.
+	scan_card() {
+		new frappe.ui.Scanner({
+			dialog: true,
+			multiple: false,
+			on_scan: (data) => this.show_card_holder(data.result.text),
+		});
+	}
+
+	show_card_holder(person) {
+		frappe
+			.call({
+				method: `${API}.find_card_holder`,
+				args: { person, function: this.function },
+			})
+			.then((r) => {
+				this.$search.val("");
+				this.groups = r.message || [];
+				this.render_results();
+				this.focus_search();
+				if (!this.groups.length) {
+					frappe.show_alert({
+						message: __("No one found for this card."),
+						indicator: "orange",
+					});
+				}
 			});
 	}
 
@@ -374,6 +418,87 @@ class CheckInStation {
 				.call({ method: `${API}.undo_check_in`, args: { name } })
 				.then(() => this.refresh_roster());
 		});
+	}
+
+	// Nothing is recorded: the volunteer compares the person at the desk with who may collect.
+	verify_pickup() {
+		const dialog = new frappe.ui.Dialog({
+			title: __("Verify Pickup"),
+			size: "large",
+			fields: [
+				{
+					fieldtype: "Data",
+					fieldname: "code",
+					label: __("Security Code"),
+					description: __("The 4 characters on the pickup tag."),
+					reqd: 1,
+				},
+				{ fieldtype: "HTML", fieldname: "families" },
+			],
+			primary_action_label: __("Verify"),
+			primary_action: ({ code }) => this.show_pickup(dialog, code),
+		});
+		// As Frappe's own Enter-to-submit does: blur first, so the typed code reaches the dialog's values.
+		dialog.fields_dict.code.$input.on("keydown", (event) => {
+			if (event.key === "Enter") frappe.app.trigger_primary_action();
+		});
+		dialog.show();
+	}
+
+	show_pickup(dialog, code) {
+		return frappe.call({ method: `${API}.get_pickup_families`, args: { code } }).then((r) => {
+			const families = r.message || [];
+			dialog.fields_dict.families.$wrapper.html(
+				`<div class="pickup-families">${
+					families.length
+						? families.map((family) => this.pickup_family(family)).join("")
+						: `<div class="empty">${__(
+								"No child is checked in with this code today."
+						  )}</div>`
+				}</div>`
+			);
+			dialog.fields_dict.code.$input.trigger("select");
+		});
+	}
+
+	pickup_family(family) {
+		const children = family.children.map((child) =>
+			this.pickup_person(child.full_name, child.photo, child.function_name)
+		);
+		const collectors = [
+			...family.adults.map((adult) =>
+				this.pickup_person(adult.full_name, adult.photo, __("Adult of the household"))
+			),
+			...family.pickups.map((pickup) =>
+				this.pickup_person(
+					pickup.full_name,
+					pickup.photo,
+					[pickup.relationship || __("Authorized pickup"), pickup.notes]
+						.filter(Boolean)
+						.join("\n")
+				)
+			),
+		];
+		const title = family.family_name || __("No family on file");
+		return `<div class="pickup-family">
+			<h5 class="m-0">${frappe.utils.escape_html(title)}</h5>
+			<div class="pickup-heading">${__("Checked in with this code today")}</div>
+			<div class="pickup-people">${children.join("")}</div>
+			<div class="pickup-heading">${__("May collect them")}</div>
+			<div class="pickup-people">${
+				collectors.join("") || __("No one is on file. Ask a member of staff.")
+			}</div>
+		</div>`;
+	}
+
+	pickup_person(name, photo, detail) {
+		return `<div class="pickup-person">
+			${frappe.get_avatar("avatar-xl", name, photo)}
+			<span>
+				${frappe.utils.escape_html(name)}
+				<small>${frappe.utils.escape_html(detail || "")}</small>
+			</span>
+		</div>`;
 	}
 
 	// The search text seeds the dialog: words become the name, digits become the phone.

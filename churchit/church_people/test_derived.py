@@ -9,11 +9,12 @@ from churchit.church_people.derived import (
 	ADULT,
 	CHILD,
 	get_derived_values,
+	get_grade,
 	life_stage_for,
 	refresh_daily,
 )
 from churchit.church_people.membership import living_people_filter
-from churchit.patches.v1_0 import derive_birth_death_and_life_stage
+from churchit.patches.v1_0 import derive_birth_death_and_life_stage, store_new_people_settings_defaults
 from churchit.tests.helpers import ensure, make_person
 
 
@@ -25,6 +26,10 @@ def set_adult_age(age):
 	settings = frappe.get_single("People Settings")
 	settings.adult_age = age
 	settings.save(ignore_permissions=True)
+
+
+def set_school_year_start_month(month):
+	frappe.db.set_single_value("People Settings", "school_year_start_month", month)
 
 
 class TestDerivedValues(FrappeTestCase):
@@ -95,6 +100,70 @@ class TestLifeStage(FrappeTestCase):
 
 	def test_neither_role_nor_age_leaves_it_unknown(self):
 		self.assertIsNone(life_stage_for(None, None))
+
+
+class TestGrade(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		set_school_year_start_month("August")
+
+	def test_the_grade_moves_up_on_the_first_day_of_the_start_month(self):
+		self.assertEqual(get_grade(2030, "2026-07-31"), "Grade 8")
+		self.assertEqual(get_grade(2030, "2026-08-01"), "Grade 9")
+
+	def test_kindergarten_starts_thirteen_years_before_graduation(self):
+		self.assertIsNone(get_grade(2039, "2026-07-31"))
+		self.assertEqual(get_grade(2039, "2026-08-01"), "Kindergarten")
+		self.assertEqual(get_grade(2038, "2026-08-01"), "Grade 1")
+
+	def test_the_final_year_ends_in_graduation(self):
+		self.assertEqual(get_grade(2026, "2026-07-31"), "Grade 12")
+		self.assertEqual(get_grade(2026, "2026-08-01"), "Graduated")
+		self.assertEqual(get_grade(2000, "2026-08-01"), "Graduated")
+
+	def test_a_school_year_starting_in_january_is_the_calendar_year(self):
+		set_school_year_start_month("January")
+		self.addCleanup(set_school_year_start_month, "August")
+
+		self.assertEqual(get_grade(2027, "2026-12-31"), "Grade 11")
+		self.assertEqual(get_grade(2027, "2027-01-01"), "Grade 12")
+		self.assertEqual(get_grade(2027, "2028-01-01"), "Graduated")
+
+	def test_the_patch_gives_a_site_saved_before_the_setting_its_default(self):
+		frappe.db.set_single_value("People Settings", "adult_age", 21)
+		self.addCleanup(frappe.db.set_single_value, "People Settings", "adult_age", 18)
+		frappe.db.delete("Singles", {"doctype": "People Settings", "field": "school_year_start_month"})
+		frappe.db.value_cache.pop("People Settings", None)
+
+		store_new_people_settings_defaults.execute()
+
+		self.assertEqual(frappe.db.get_single_value("People Settings", "school_year_start_month"), "August")
+		self.assertEqual(frappe.db.get_single_value("People Settings", "adult_age"), 21)
+
+	def test_no_graduation_year_gives_no_grade(self):
+		self.assertIsNone(get_grade(None))
+		self.assertIsNone(get_grade(0))
+
+	def test_saving_a_person_sets_the_grade(self):
+		year = getdate().year + 5
+		person = make_person("_Test Pupil", graduation_year=year)
+
+		self.assertEqual(person.grade, get_grade(year))
+		self.assertTrue(person.grade.startswith("Grade "))
+
+		person.graduation_year = None
+		person.save(ignore_permissions=True)
+		self.assertIsNone(frappe.db.get_value("Person", person.name, "grade"))
+
+	def test_the_daily_refresh_moves_the_grade_up(self):
+		year = getdate().year + 5
+		person = make_person("_Test Pupil Daily", graduation_year=year)
+		frappe.db.set_value("Person", person.name, "grade", "Grade 1", update_modified=False)
+
+		refresh_daily()
+
+		self.assertEqual(frappe.db.get_value("Person", person.name, "grade"), get_grade(year))
 
 
 class TestRefreshDaily(FrappeTestCase):

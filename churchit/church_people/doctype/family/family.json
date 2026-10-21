@@ -17,6 +17,8 @@
   "photo",
   "members_section",
   "members",
+  "pickup_section",
+  "authorized_pickups",
   "contact_information_section",
   "addresses",
   "phones",
@@ -115,6 +117,18 @@
    "options": "Family Members"
   },
   {
+   "description": "People outside the household who may collect this family's children after check-in. The household's Adults may always collect them.",
+   "fieldname": "pickup_section",
+   "fieldtype": "Section Break",
+   "label": "Pickup"
+  },
+  {
+   "fieldname": "authorized_pickups",
+   "fieldtype": "Table",
+   "label": "Authorized Pickups",
+   "options": "Authorized Pickup"
+  },
+  {
    "fieldname": "members_section",
    "fieldtype": "Section Break"
   }
@@ -132,7 +146,7 @@
    "link_fieldname": "recipient"
   }
  ],
- "modified": "2026-10-17 18:00:00.000000",
+ "modified": "2026-10-21 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Family",
@@ -190,6 +204,11 @@
    "report": 1,
    "role": "Church Check-In",
    "select": 1
+  },
+  {
+   "read": 1,
+   "role": "Church User",
+   "write": 1
   }
  ],
  "quick_entry": 0,

@@ -5,6 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 from churchit.church_people.member_access import pin_to_members_own_person, validate_members_recipient
+from churchit.church_prayers.prayer_access import PRAYER_REQUEST, get_community_filters
 from churchit.utils import resolve_link_titles
 
 CLOSED_STATUSES = ("Answered", "Archived", "Closed")
@@ -44,10 +45,10 @@ class PrayerRequest(Document):
 			self.church = None
 
 	def has_webform_permission(self):
-		# Invoked by web forms with apply_document_permissions=0
-		# (the community-prayer-requests form) to grant read access to non-private
-		# requests, without loosening the standard DocPerm (owner-only) used elsewhere.
-		return frappe.session.user != "Guest" and not self.is_private
+		"""Community Prayer Requests reads past the DocPerms: a member opens what that page lists them."""
+		if frappe.session.user == "Guest":
+			return False
+		return bool(frappe.db.exists(PRAYER_REQUEST, {"name": self.name, **get_community_filters()}))
 
 
 def get_list_context(context):

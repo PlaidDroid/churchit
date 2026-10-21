@@ -92,10 +92,15 @@ def can_edit(user: str, person: str) -> bool:
 	own = user and frappe.db.get_value("Person", {"user": user}, "name")
 	if not own:
 		return False
-	if own == person:
-		return True
-	family = frappe.db.get_value("Person", own, "family")
-	return bool(family) and role_of(own) == ADULT and person in members(family, [CHILD])
+	return own == person or person in get_editable_children(user)
+
+
+def get_editable_children(user: str) -> list[str]:
+	"""The living Children of the family *user*'s Person is an Adult of; none when they are not an Adult."""
+	own = user and frappe.db.get_value("Person", {"user": user}, ["name", "family"], as_dict=True)
+	if not own or not own.family or role_of(own.name) != ADULT:
+		return []
+	return members(own.family, [CHILD])
 
 
 def salutation(family: str) -> str:

@@ -6,6 +6,8 @@
 `sync_derived` sets them on every save. `refresh_daily` brings every person up to date between saves.
 """
 
+import calendar
+
 import frappe
 from dateutil.relativedelta import relativedelta
 from frappe.utils import getdate, nowdate
@@ -25,6 +27,9 @@ DERIVED_FIELDS = (
 	"age",
 	"life_stage",
 )
+KINDERGARTEN = "Kindergarten"
+GRADUATED = "Graduated"
+FINAL_GRADE = 12
 
 
 def years_between(start, end) -> int:
@@ -40,11 +45,12 @@ def years_since(date):
 
 
 def sync_derived(person) -> None:
-	"""Set *person*'s fields that come from their life events, household role and anniversary."""
+	"""Set *person*'s fields that come from their life events, household role, anniversary and graduation year."""
 	# A new or changed family has no roster row for this person until on_update adds it.
 	role = None if person.has_value_changed("family") else household.role_of(person.name)
 	person.update(get_derived_values(person.life_events or [], role))
 	person.marriage_years = years_since(person.anniversary)
+	person.grade = get_grade(person.graduation_year)
 
 
 def get_derived_values(life_events, role) -> dict:
@@ -93,6 +99,34 @@ def life_stage_for(role, age):
 	return ADULT if age >= frappe.db.get_single_value("People Settings", "adult_age") else CHILD
 
 
+def get_grade(graduation_year: int | None, on_date=None) -> str | None:
+	"""The school grade on *on_date* (today by default) of someone who finishes high school in *graduation_year*.
+
+	Kindergarten, Grade 1 to Grade 12, then Graduated; None before kindergarten or without a year. The grade
+	moves up on the first day of People Settings' school year start month.
+	"""
+	if not graduation_year:
+		return None
+	grade = FINAL_GRADE - (graduation_year - get_school_year_end(getdate(on_date)))
+	if grade > FINAL_GRADE:
+		return GRADUATED
+	if grade < 0:
+		return None
+	return f"Grade {grade}" if grade else KINDERGARTEN
+
+
+def get_school_year_end(on_date) -> int:
+	"""The year in which the school year holding *on_date* ends.
+
+	A school year that starts in January ends in the same year; any other ends in the next year.
+	"""
+	start_month = list(calendar.month_name).index(
+		frappe.db.get_single_value("People Settings", "school_year_start_month")
+	)
+	start_year = on_date.year if on_date.month >= start_month else on_date.year - 1
+	return start_year + 1 if start_month > 1 else start_year
+
+
 def refresh_daily():
 	"""Daily scheduler, and the backfill for a newly derived field: bring every person's derived fields up to date.
 
@@ -101,12 +135,22 @@ def refresh_daily():
 	life_events = get_birth_and_death_events()
 	# church-scope: scheduled daily job: recomputes stored figures, shows nobody anything
 	people = frappe.get_all(
-		"Person", fields=["name", "family", "anniversary", "marriage_years", *DERIVED_FIELDS]
+		"Person",
+		fields=[
+			"name",
+			"family",
+			"anniversary",
+			"marriage_years",
+			"graduation_year",
+			"grade",
+			*DERIVED_FIELDS,
+		],
 	)
 	for person in people:
 		role = household.role_of(person.name) if person.family else None
 		current = get_derived_values(life_events.get(person.name, []), role)
 		current["marriage_years"] = years_since(person.anniversary)
+		current["grade"] = get_grade(person.graduation_year)
 		changed = {
 			field: value for field, value in current.items() if (person[field] or None) != (value or None)
 		}

@@ -56,7 +56,8 @@ class TestBulletin(FrappeTestCase):
 		self.settings.show_birthdays = 1
 		self.settings.save(ignore_permissions=True)
 		open_request = self.make_prayer_request("_Test Open Request")
-		private_request = self.make_prayer_request("_Test Private Request", is_private=1)
+		private_request = self.make_prayer_request("_Test Private Request", visibility="Private")
+		team_request = self.make_prayer_request("_Test Team Request", visibility="Prayer Team")
 		answered_request = self.make_prayer_request("_Test Answered Request", status="Answered")
 		expired_request = self.make_prayer_request("_Test Expired Request", end_date="2020-01-01 00:00:00")
 
@@ -68,6 +69,7 @@ class TestBulletin(FrappeTestCase):
 		picked = {row["prayer_request"] for row in defaults["prayer_requests"]}
 		self.assertIn(open_request.name, picked)
 		self.assertNotIn(private_request.name, picked)
+		self.assertNotIn(team_request.name, picked)
 		self.assertNotIn(answered_request.name, picked)
 		self.assertNotIn(expired_request.name, picked)
 		self.assertEqual(
@@ -123,13 +125,14 @@ class TestBulletin(FrappeTestCase):
 		self.settings.save(ignore_permissions=True)
 		self.assertEqual(self.make_bulletin(missionary=sensitive.name).missionary, sensitive.name)
 
-	def test_private_prayer_request_is_refused(self):
-		private_request = self.make_prayer_request("_Test Private Bulletin Request", is_private=1)
-		self.assertRaises(
-			frappe.ValidationError,
-			self.make_bulletin,
-			prayer_requests=[{"prayer_request": private_request.name}],
-		)
+	def test_only_whole_church_prayer_requests_are_printed(self):
+		for visibility in ("Private", "Prayer Team"):
+			request = self.make_prayer_request(f"_Test {visibility} Bulletin Request", visibility=visibility)
+			self.assertRaises(
+				frappe.ValidationError,
+				self.make_bulletin,
+				prayer_requests=[{"prayer_request": request.name}],
+			)
 
 	def test_church_roles_list_current_holders_in_settings_order(self):
 		pastor = ensure("Position Type", {"position": "_Test Pastor"})

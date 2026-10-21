@@ -5,6 +5,7 @@ import json
 from unittest.mock import patch
 
 import frappe
+from frappe.utils import add_years, getdate, today
 from frappe.website.doctype.web_form.web_form import accept
 
 from churchit.church_communications.consent import allowed
@@ -26,9 +27,11 @@ from churchit.church_people.doctype.connection_card.connection_card import (
 	SPAM,
 )
 from churchit.church_people.doctype.connection_card_interest.connection_card_interest import STARTER_INTERESTS
+from churchit.church_people.doctype.people_settings.people_settings import SHARE_DEFAULTS
 from churchit.church_people.matching import is_paired
 from churchit.church_people.membership import VISITOR
 from churchit.church_people.privacy import anonymize
+from churchit.church_people.test_accounts import share_in_the_directory_by_default
 from churchit.patches.v1_0 import add_connection_card_interests
 from churchit.tests.helpers import (
 	RollbackEachTest,
@@ -329,6 +332,133 @@ class TestConnectionCardConsent(ConnectionCardTestCase):
 		self.assertEqual(card.person, known.name)
 		self.assertFalse(allowed(known.name, SMS, CHURCH_NEWS))
 		self.assertEqual([row.status for row in self.consents(known.name)], [WITHDRAWN])
+
+
+class TestConnectionCardHousehold(ConnectionCardTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		ensure("Life Event Type", {"type": "Birth"})
+		for relationship in ("Wife", "Son"):
+			ensure("Person Relation Type", {"type": relationship})
+		cls.child_birth_date = add_years(today(), -8)
+
+	def household(self):
+		return [
+			{"first_name": "Jane", "relationship": "Wife", "birth_date": "1985-04-02"},
+			{"first_name": "Sam", "relationship": "Son", "birth_date": self.child_birth_date},
+			{"first_name": "Pat", "last_name": "_Test Card Lodger"},
+		]
+
+	def members(self, family):
+		"""The family's members as {first name: (last name, relationship, household role)}."""
+		rows = frappe.get_doc("Family", family).members
+		people = {
+			row.name: row
+			for row in frappe.get_all(
+				"Person",
+				filters={"name": ("in", [row.member for row in rows])},
+				fields=["name", "first_name", "last_name"],
+			)
+		}
+		return {
+			people[row.member].first_name: (
+				people[row.member].last_name,
+				row.relationship_to_primary_contact,
+				row.household_role,
+			)
+			for row in rows
+		}
+
+	def test_a_new_guest_and_the_people_with_them_become_one_family(self):
+		card = self.processed(self.make_card(last_name="Household", household_members=self.household()))
+
+		guest = frappe.get_doc("Person", card.person)
+		family = frappe.get_doc("Family", guest.family)
+		self.assertEqual(family.primary_contact, guest.name)
+		self.assertEqual(
+			self.members(family.name),
+			{
+				"_Test Card": ("Household", None, "Adult"),
+				"Jane": ("Household", "Wife", "Adult"),
+				"Sam": ("Household", "Son", "Child"),
+				"Pat": ("_Test Card Lodger", None, None),
+			},
+		)
+		jane = frappe.get_doc("Person", {"family": family.name, "first_name": "Jane"})
+		self.assertEqual(
+			(jane.spouse, jane.gender, jane.membership, jane.source),
+			(guest.name, "Female", VISITOR, CONNECTION_CARD),
+		)
+		sam = frappe.get_doc("Person", {"family": family.name, "first_name": "Sam"})
+		self.assertEqual(getdate(sam.birth_date), getdate(self.child_birth_date))
+
+	def test_the_people_a_card_adds_share_nothing_in_the_directory(self):
+		"""A guest never saw the choice, whatever People Settings gives a new person."""
+		share_in_the_directory_by_default(self)
+
+		card = self.processed(self.make_card(last_name="Private", household_members=self.household()))
+
+		family = frappe.db.get_value("Person", card.person, "family")
+		shared = frappe.get_all("Person", filters={"family": family}, fields=list(SHARE_DEFAULTS))
+		self.assertEqual(shared, [dict.fromkeys(SHARE_DEFAULTS, 0)] * 4)
+
+	def test_a_card_that_matched_someone_adds_no_one_with_them(self):
+		known = make_person(
+			"_Test Card", "Regular", emails=[{"email_address": "_test_card_regular@example.com"}]
+		)
+
+		card = self.processed(
+			self.make_card(
+				last_name="Regular",
+				email="_test_card_regular@example.com",
+				household_members=self.household(),
+			)
+		)
+
+		self.assertEqual(card.person, known.name)
+		self.assertEqual(len(card.household_members), 3, "the rows stay on the card for staff")
+		self.assertFalse(frappe.db.exists("Person", {"first_name": "Sam", "last_name": "Regular"}))
+		self.assertFalse(frappe.db.get_value("Person", known.name, "family"))
+
+	def test_spam_adds_no_one_with_it(self):
+		self.processed(
+			self.make_card(
+				last_name="Spam Household",
+				website="https://spam.example.com",
+				household_members=self.household(),
+			)
+		)
+		self.assertFalse(frappe.db.exists("Person", {"last_name": "Spam Household"}))
+
+	def test_someone_with_the_guest_is_paired_with_who_they_may_be(self):
+		known = make_person(
+			"Sam",
+			"Paired",
+			life_events=[{"event_type": "Birth", "date": self.child_birth_date}],
+		)
+
+		card = self.processed(self.make_card(last_name="Paired", household_members=self.household()))
+
+		sam = frappe.db.get_value(
+			"Person", {"first_name": "Sam", "last_name": "Paired", "name": ("!=", known.name)}
+		)
+		self.assertNotEqual(card.person, known.name)
+		self.assertTrue(is_paired(sam, known.name))
+
+	def test_a_guest_sends_the_people_with_them_and_the_job_adds_them_as_the_guest(self):
+		card = self.send(last_name="Sent Household", household_members=self.household())
+		self.assertEqual(
+			[(row.first_name, row.relationship) for row in card.household_members],
+			[("Jane", "Wife"), ("Sam", "Son"), ("Pat", None)],
+		)
+
+		frappe.set_user("Guest")
+		card = self.processed(card)
+		frappe.set_user("Administrator")
+
+		family = frappe.db.get_value("Person", card.person, "family")
+		self.assertEqual(len(frappe.get_doc("Family", family).members), 4)
 
 
 class TestConnectionCardInterests(RollbackEachTest):

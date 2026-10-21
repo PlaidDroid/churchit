@@ -1,0 +1,105 @@
+{% extends "templates/web.html" %}
+{% from "frappe/templates/includes/avatar_macro.html" import avatar %}
+
+{% block title %}{{ _("My Household") }}{% endblock %}
+
+{% block head_include %}
+<style>
+	.household-family { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 8px; }
+	.household-family .family-name { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
+	.household-list { list-style: none; padding: 0; margin: 0 0 16px; }
+	/* wraps on narrow screens: the name above, the role, age and Edit below */
+	.household-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 14px 0;
+		border-bottom: 1px solid var(--border-color, #e5e7eb); }
+	.household-list .member-name { flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; }
+	.household-list .member-role { flex: 0 0 6.5rem; }
+	.household-list .member-note { flex: 0 0 4rem; color: var(--text-muted, #6b7280); white-space: nowrap; }
+	.household-list .member-edit { flex: 0 0 3.5rem; text-align: right; }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="my-account-container">
+	<h3 class="my-account-header mb-4">{{ _("My Household") }}</h3>
+
+	{% if not person %}
+		<p class="text-muted">
+			{{ _("Your account is not linked to a member record yet. Please contact the church office.") }}
+		</p>
+	{% else %}
+		{% if family %}
+			<div class="household-family">
+				{{ avatar(full_name=family_title, image=family.photo, size="avatar-xl") }}
+				<div class="family-name">
+					<h4 class="mb-1">{{ family_title | e }}</h4>
+					{% if address %}<div class="text-muted">{{ address | e }}</div>{% endif %}
+				</div>
+				{% if can_change_photo %}
+					<button type="button" class="btn btn-default btn-sm" id="change-household-photo"
+						data-family="{{ family.name | e }}">{{ _("Change photo") }}</button>
+				{% endif %}
+			</div>
+		{% endif %}
+
+		<ul class="household-list">
+			{% for member in members %}
+			<li>
+				<span class="member-name">{{ member.display_name | e }}</span>
+				<span class="member-role">{{ _(member.household_role) | e if member.household_role }}</span>
+				<span class="member-note">
+					{%- if member.name == person -%}
+						{{ _("(you)") }}
+					{%- elif member.age is not none -%}
+						{{ _("age {0}").format(member.age) }}
+					{%- endif -%}
+				</span>
+				<span class="member-edit">
+					{%- if member.can_edit -%}
+						<a class="btn btn-default btn-xs" href="/personal-details/{{ member.name | urlencode }}/edit"
+							aria-label="{{ _('Edit {0}').format(member.display_name) | e }}">{{ _("Edit") }}</a>
+					{%- endif -%}
+				</span>
+			</li>
+			{% endfor %}
+		</ul>
+		<p class="text-muted">{{ _("To add or remove someone, contact the church office.") }}</p>
+	{% endif %}
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+frappe.ready(function () {
+	var button = document.getElementById("change-household-photo");
+	if (!button) return;
+	button.addEventListener("click", function () {
+		var family = button.dataset.family;
+		frappe.require(["controls.bundle.js", "dialog.bundle.js"], function () {
+			new frappe.ui.FileUploader({
+				doctype: "Family",
+				docname: family,
+				fieldname: "photo",
+				dialog_title: "{{ _('Change photo') }}",
+				allow_multiple: false,
+				make_attachments_public: true,
+				allow_toggle_private: false,
+				disable_file_browser: true,
+				allow_web_link: false,
+				allow_take_photo: false,
+				allow_google_drive: false,
+				restrictions: { allowed_file_types: ["image/*"], max_number_of_files: 1 },
+				on_success: function (file) {
+					frappe.call({
+						method: "frappe.client.set_value",
+						args: { doctype: "Family", name: family, fieldname: "photo", value: file.file_url },
+						callback: function () {
+							window.location.reload();
+						},
+					});
+				},
+			});
+		});
+	});
+});
+</script>
+{% endblock %}

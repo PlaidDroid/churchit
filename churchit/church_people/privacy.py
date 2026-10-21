@@ -29,6 +29,7 @@ from frappe.model.document import Document
 
 from churchit.church_people.derived import BIRTH
 from churchit.church_people.doctype.person.person import UNKNOWN_GENDER, get_display_name
+from churchit.church_people.membership import INACTIVE, living_people_filter
 from churchit.church_people.person_data_map import LinkedRecord, linked_records
 from churchit.contacts import CONTACT_TABLES, UNIQUE_VALUE_FIELDS
 
@@ -45,6 +46,8 @@ PERSONAL_FIELDS = (
 	"medical_notes",
 	"alergies",
 	"anniversary",
+	"graduation_year",
+	"grade",
 	"spouse",
 	"marital_status",
 	"family",
@@ -197,3 +200,63 @@ def anonymize_on_data_deletion(doc: Document, method=None) -> None:
 	# church-scope: the people of one deleted login, whichever church they belong to
 	for person in frappe.get_all("Person", filters={"user": doc.name}, pluck="name"):
 		anonymize(person)
+
+
+# People the daily job anonymizes in one run; the rest wait for the next day.
+REMOVALS_PER_RUN = 50
+
+
+def remove_due_personal_data() -> None:
+	"""Daily job: remove the personal data of people Inactive longer than People Settings allows.
+
+	A run takes the longest Inactive first, up to `REMOVALS_PER_RUN`, and commits each person, so a person who
+	fails is logged and the others still go.
+	"""
+	years = get_retention_years()
+	if not years:
+		return
+	Person = frappe.qb.DocType("Person")
+	# church-scope: People Settings' rule covers every church's people and shows nobody anything
+	query = get_due_query(Person, frappe.utils.add_years(frappe.utils.today(), -years))
+	for person, inactive_since in (
+		query.select(Person.name, Person.inactive_since).limit(REMOVALS_PER_RUN).run()
+	):
+		try:
+			anonymize(person)
+			frappe.get_doc("Person", person).add_comment(
+				"Info",
+				_("Removed because the person has been Inactive since {0}, {1} years or more.").format(
+					frappe.utils.formatdate(inactive_since), years
+				),
+			)
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(
+				_("Could not remove the personal data of {0}").format(person),
+				reference_doctype="Person",
+				reference_name=person,
+			)
+
+
+def get_retention_years() -> int:
+	"""People Settings' years Inactive before personal data is removed; 0 removes nothing."""
+	return frappe.utils.cint(frappe.db.get_single_value("People Settings", "remove_inactive_after_years"))
+
+
+def get_due_query(Person, inactive_by):
+	"""Query on *Person* for the living people Inactive since *inactive_by* or before whose data is still there.
+
+	It selects nothing and reads every church: the caller picks the columns and the scope.
+	"""
+	return (
+		frappe.qb.from_(Person)
+		.where(
+			(Person.membership_status == INACTIVE)
+			& (Person.inactive_since <= inactive_by)
+			& (Person.first_name != ANONYMIZED)
+			& living_people_filter(Person)
+		)
+		.orderby(Person.inactive_since)
+		.orderby(Person.name)
+	)

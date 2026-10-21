@@ -23,6 +23,7 @@ from churchit.church_communications.doctype.communication_purpose.communication_
 )
 from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, set_subscribed
 from churchit.church_communications.sending import Delivery, Recipient
+from churchit.church_communications.test_sending import log_sms
 from churchit.tests.helpers import (
 	RollbackEachTest,
 	ensure,
@@ -486,7 +487,7 @@ class TestChurchEmailPlaceholders(ChurchEmailTestCase):
 class TestChurchTextMessage(ChurchEmailTestCase):
 	def setUp(self):
 		super().setUp()
-		self.send_sms = self.start(mock.patch(f"{SENDING}.send_sms"))
+		self.send_sms = self.start(mock.patch(f"{SENDING}.send_sms", side_effect=log_sms))
 		self.start(mock.patch(f"{MODULE}.can_send_texts", return_value=True))
 		self.texter = make_person(
 			"Texter", "_Test Church Email", membership="Member", phones=[{"phone_number": "+1 555 0101"}]

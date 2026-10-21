@@ -1278,7 +1278,7 @@ def _create_prayer_requests(people):
 			"status": _status["Being Prayed For"],
 			"type": _type["Unspoken"],
 			"requestor": people["Martha Evans"],
-			"is_private": 1,
+			"visibility": "Private",
 		},
 		{
 			"title": "Lisa Thompson's Medical Tests",

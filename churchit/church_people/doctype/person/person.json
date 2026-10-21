@@ -24,9 +24,12 @@
   "marriage_years",
   "age",
   "birth_date",
+  "birthday",
   "birth_month",
   "birth_day",
   "life_stage",
+  "graduation_year",
+  "grade",
   "is_deceased",
   "deceased_date",
   "column_break_agva",
@@ -42,6 +45,10 @@
   "medical_notes",
   "user",
   "hide_from_directory",
+  "share_email",
+  "share_phone",
+  "share_address",
+  "share_birthday",
   "team_calendar_key",
   "other_names_section",
   "prefix",
@@ -270,6 +277,35 @@
    "print_hide": 1
   },
   {
+   "default": "0",
+   "depends_on": "eval:!doc.hide_from_directory",
+   "fieldname": "share_email",
+   "fieldtype": "Check",
+   "label": "Show Email in the Member Directory"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:!doc.hide_from_directory",
+   "fieldname": "share_phone",
+   "fieldtype": "Check",
+   "label": "Show Phone in the Member Directory"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:!doc.hide_from_directory",
+   "fieldname": "share_address",
+   "fieldtype": "Check",
+   "label": "Show Address in the Member Directory"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:!doc.hide_from_directory",
+   "description": "Only the day and month are shown.",
+   "fieldname": "share_birthday",
+   "fieldtype": "Check",
+   "label": "Show Birthday in the Member Directory"
+  },
+  {
    "description": "The secret part of this person's Ministry Team calendar link. Members make a new one on the Ministry Team page of the portal.",
    "fieldname": "team_calendar_key",
    "fieldtype": "Data",
@@ -305,7 +341,8 @@
    "fieldname": "user",
    "fieldtype": "Link",
    "label": "Portal User",
-   "options": "User"
+   "options": "User",
+   "search_index": 1
   },
   {
    "description": "A married or widowed person keeps a spouse and an anniversary.",
@@ -381,7 +418,7 @@
    "fieldname": "source",
    "fieldtype": "Select",
    "label": "Source",
-   "options": "Desk\nImport\nCheck-In\nConnection Card",
+   "options": "Desk\nImport\nCheck-In\nConnection Card\nPortal",
    "read_only": 1,
    "set_only_once": 1
   },
@@ -418,6 +455,14 @@
    "search_index": 1
   },
   {
+   "description": "The birth date a member gives on the Personal Details page. Saving it records or changes the Birth life event.",
+   "fieldname": "birthday",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "is_virtual": 1,
+   "label": "Birthday"
+  },
+  {
    "fieldname": "birth_month",
    "fieldtype": "Int",
    "hidden": 1,
@@ -437,6 +482,21 @@
    "in_standard_filter": 1,
    "label": "Life Stage",
    "options": "\nAdult\nChild",
+   "read_only": 1
+  },
+  {
+   "description": "The year the person finishes high school. Grade is worked out from it.",
+   "fieldname": "graduation_year",
+   "fieldtype": "Int",
+   "label": "Graduation Year",
+   "non_negative": 1
+  },
+  {
+   "depends_on": "eval:doc.graduation_year",
+   "description": "Worked out each day from Graduation Year and the month the school year starts in People Settings.",
+   "fieldname": "grade",
+   "fieldtype": "Data",
+   "label": "Grade",
    "read_only": 1
   },
   {
@@ -698,7 +758,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-18 12:00:00.000000",
+ "modified": "2026-10-22 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

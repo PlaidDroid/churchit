@@ -64,3 +64,8 @@ churchit.patches.v1_0.record_consent_from_unsubscribes
 churchit.patches.v1_0.add_connection_card_interests
 churchit.patches.v1_0.rename_newsletter_subscription_menu_item
 churchit.patches.v1_0.set_church_email_purpose
+churchit.patches.v1_0.set_prayer_request_visibility
+churchit.patches.v1_0.store_new_people_settings_defaults
+churchit.patches.v1_0.queue_address_coordinates
+churchit.patches.v1_0.add_household_and_directory_menu_items
+churchit.patches.v1_0.apply_directory_share_defaults

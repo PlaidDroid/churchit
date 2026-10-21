@@ -28,7 +28,10 @@ from churchit.church_people.doctype.marital_status.marital_status import (
 	DEFAULT_STATUSES as DEFAULT_MARITAL_STATUSES,
 )
 from churchit.church_people.doctype.note_category.note_category import create_note_categories
-from churchit.church_people.doctype.people_settings.people_settings import store_defaults
+from churchit.church_people.doctype.people_settings.people_settings import (
+	store_defaults,
+	sync_directory_menu_item,
+)
 from churchit.church_people.membership import MEMBER_STATUSES, MEMBERSHIP_TYPES
 
 # We define this here so we can import it from sample_data
@@ -79,6 +82,8 @@ def execute():
 	_setup_contact_us_settings()
 	_setup_website_settings()
 	_setup_portal_settings()
+	# The directory starts off, so its menu item does too.
+	sync_directory_menu_item()
 	setup_bulletin_settings()
 
 	# Visit Type lookups (referenced by Visitation Log)
@@ -733,6 +738,8 @@ def _setup_portal_settings():
 		("Bulletins", "bulletins", "Bulletin", "Church User"),
 		("Personal Details", "personal-details", "Person", "Church User"),
 		("Communication Preferences", "preferences", "Communication Consent", "Church User"),
+		("My Household", "household", "Family", "Church User"),
+		("Member Directory", "directory", "Person", "Church User"),
 	]
 	doc = frappe.get_doc("Portal Settings")
 	# Left blank deliberately. Frappe consults this before Website Settings when a

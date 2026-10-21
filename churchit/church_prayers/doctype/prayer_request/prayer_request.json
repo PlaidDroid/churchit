@@ -13,7 +13,7 @@
   "status",
   "type",
   "end_date",
-  "is_private",
+  "visibility",
   "urgent",
   "column_break_ynvf",
   "recipient_type",
@@ -67,14 +67,15 @@
   },
   {
    "allow_in_quick_entry": 1,
-   "default": "0",
-   "description": "Check this if you don't want this request shared with the church body.",
-   "fieldname": "is_private",
-   "fieldtype": "Check",
+   "default": "Whole Church",
+   "description": "Private: only you and the pastoral care team. Prayer Team: also the prayer team. Whole Church: every member, on the Community Prayer Requests page.",
+   "fieldname": "visibility",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "in_preview": 1,
    "in_standard_filter": 1,
-   "label": "Is Private"
+   "label": "Who Can See It",
+   "options": "Private\nPrayer Team\nWhole Church",
+   "reqd": 1
   },
   {
    "allow_in_quick_entry": 1,
@@ -162,7 +163,7 @@
    "table_fieldname": "topics"
   }
  ],
- "modified": "2026-09-28 13:00:00",
+ "modified": "2026-10-21 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church Prayers",
  "name": "Prayer Request",
@@ -230,6 +231,12 @@
    "role": "Church Staff",
    "select": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Church Prayer Team",
+   "select": 1
   }
  ],
  "row_format": "Dynamic",

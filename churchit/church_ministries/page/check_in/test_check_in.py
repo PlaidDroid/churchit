@@ -3,16 +3,36 @@
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_days, now_datetime
 
 from churchit.church_ministries.page.check_in.check_in import (
 	add_visitor,
 	check_in,
+	find_card_holder,
 	get_check_ins,
+	get_pickup_families,
 	get_station_context,
 	search_people,
 	undo_check_in,
 )
-from churchit.tests.helpers import ensure, make_function, make_person, make_primary_contact
+from churchit.church_people.test_household import make_household, set_adult_age
+from churchit.tests.helpers import (
+	ensure,
+	ensure_root_church,
+	ensure_user,
+	make_branch,
+	make_function,
+	make_person,
+	make_primary_contact,
+	set_multi_church,
+	set_private_people,
+)
+
+
+def check_in_with_code(function, person, code):
+	return frappe.get_doc(
+		{"doctype": "Function Check-In", "function": function, "person": person, "security_code": code}
+	).insert(ignore_permissions=True)
 
 
 class TestCheckInStation(FrappeTestCase):
@@ -97,6 +117,14 @@ class TestCheckInStation(FrappeTestCase):
 		attendance = frappe.get_doc("Function", self.function.name).attendance
 		self.assertNotIn(self.loner.name, [row.person for row in attendance])
 
+	def test_a_scanned_card_opens_the_holders_family_as_a_search_does(self):
+		self.assertEqual(find_card_holder(self.child.name), search_people("zoe"))
+
+	def test_a_card_of_someone_who_died_or_of_no_one_finds_nothing(self):
+		dead = frappe.db.get_value("Person", {"first_name": "Zara", "last_name": "Zebrastripe"})
+		self.assertEqual(find_card_holder(dead), [])
+		self.assertEqual(find_card_holder("PRSN-NO-SUCH"), [])
+
 	def test_add_visitor_creates_a_person_with_a_phone(self):
 		visitor = add_visitor("Zelda", "Zebrastripe", phone="555 010 1111", family=self.family.name)
 		person = frappe.get_doc("Person", visitor["name"])
@@ -106,3 +134,152 @@ class TestCheckInStation(FrappeTestCase):
 		self.assertEqual(person.source, "Check-In")
 		self.assertEqual(self.members_of(search_people("0101111")), [["Zed", "Zelda", "Zoe"]])
 		person.delete()
+
+
+class TestVerifyPickup(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		set_adult_age(18)
+		cls.function = make_function("_Test Pickup Service", start_date=frappe.utils.today())
+		cls.family, cls.father, cls.mother, cls.son, cls.grandmother = make_household(
+			"_Test Pickup Household", "Pickupton"
+		)
+		aunt = ensure("Person Relation Type", {"type": "Aunt"})
+		cls.aunt = make_person("Ada", "_Test Pickup Aunt", photo="/files/ada.jpg").name
+		cls.late_uncle = make_person(
+			"Ulric",
+			"_Test Pickup Uncle",
+			life_events=[{"event_type": ensure("Life Event Type", {"type": "Death"}), "date": "2024-01-01"}],
+		).name
+		family = frappe.get_doc("Family", cls.family)
+		family.append(
+			"authorized_pickups", {"person": cls.aunt, "relationship": aunt, "notes": "Sundays only"}
+		)
+		family.append("authorized_pickups", {"person": cls.late_uncle})
+		family.save(ignore_permissions=True)
+		cls.check_in = check_in_with_code(cls.function.name, cls.son, "K7PX")
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_a_code_shows_the_children_and_who_may_collect_them(self):
+		(family,) = get_pickup_families(" k7px ")
+
+		self.assertEqual(family["family_name"], "_Test Pickup Household")
+		self.assertEqual(
+			[(child.person, child.full_name, child.function_name) for child in family["children"]],
+			[(self.son, "Tim Pickupton", "_Test Pickup Service")],
+		)
+		self.assertEqual([adult.name for adult in family["adults"]], [self.father, self.mother])
+		self.assertEqual(
+			[
+				(row["person"], row["full_name"], row["relationship"], row["notes"], row["photo"])
+				for row in family["pickups"]
+			],
+			[(self.aunt, "Ada _Test Pickup Aunt", "Aunt", "Sundays only", "/files/ada.jpg")],
+		)
+
+	def test_another_code_or_an_earlier_day_finds_no_child(self):
+		self.assertEqual(get_pickup_families("ZZZZ"), [])
+
+		yesterday = add_days(now_datetime(), -1)
+		frappe.db.set_value(
+			"Function Check-In", self.check_in.name, "creation", yesterday, update_modified=False
+		)
+		self.addCleanup(
+			frappe.db.set_value,
+			"Function Check-In",
+			self.check_in.name,
+			"creation",
+			self.check_in.creation,
+			update_modified=False,
+		)
+		self.assertEqual(get_pickup_families("K7PX"), [])
+
+	def test_a_child_with_no_family_has_no_one_on_file(self):
+		loner = make_person("Lonnie", "_Test Pickup Loner").name
+		check_in_with_code(self.function.name, loner, "L9NE")
+
+		(family,) = get_pickup_families("L9NE")
+
+		self.assertEqual((family["family"], family["adults"], family["pickups"]), (None, [], []))
+		self.assertEqual([child.person for child in family["children"]], [loner])
+
+	def test_only_the_check_in_right_may_verify_a_pickup(self):
+		staff = ensure_user("_test_pickup_staff@example.com", "PickupStaff", roles=("Church Staff",))
+		volunteer = ensure_user(
+			"_test_pickup_volunteer@example.com", "PickupVolunteer", roles=("Church Check-In",)
+		)
+
+		frappe.set_user(staff)
+		with self.assertRaises(frappe.PermissionError):
+			get_pickup_families("K7PX")
+
+		frappe.set_user(volunteer)
+		self.assertEqual(len(get_pickup_families("K7PX")), 1)
+
+
+class TestStationBetweenChurches(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		ensure_root_church()
+		set_multi_church(True)
+		cls.branch_a = make_branch("_Test Station A", "TSTA")
+		cls.branch_b = make_branch("_Test Station B", "TSTB")
+		cls.volunteer_a = cls.bind_volunteer("_test_station_a@example.com", "StationA", cls.branch_a)
+		cls.volunteer_b = cls.bind_volunteer("_test_station_b@example.com", "StationB", cls.branch_b)
+		cls.addClassCleanup(frappe.clear_cache)
+
+	@classmethod
+	def bind_volunteer(cls, email, first_name, church):
+		user = ensure_user(email, first_name, roles=("Church Check-In",))
+		make_person(first_name, "Volunteer", church=church, user=user)
+		return user
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def test_a_pickup_code_finds_only_the_check_ins_of_the_volunteers_church(self):
+		service = make_function(
+			"_Test Station A Service", church=self.branch_a, start_date=frappe.utils.today()
+		)
+		child = make_person("Cora", "_Test Station Child", church=self.branch_a).name
+		check_in_with_code(service.name, child, "Q2RS")
+
+		frappe.set_user(self.volunteer_b)
+		self.assertEqual(get_pickup_families("Q2RS"), [])
+
+		frappe.set_user(self.volunteer_a)
+		self.assertEqual([row.person for row in get_pickup_families("Q2RS")[0]["children"]], [child])
+
+	def test_a_joint_service_pickup_shows_a_child_of_another_church(self):
+		"""With a private directory the station still finds who walks in at a shared function."""
+		set_private_people(True)
+		self.addCleanup(set_private_people, False)
+		joint = make_function("_Test Station Joint Pickup", church=self.branch_b, is_shared=1)
+		child = make_person("Cleo", "_Test Station Joint Child", church=self.branch_b).name
+		check_in_with_code(joint.name, child, "J7NT")
+
+		frappe.set_user(self.volunteer_a)
+		(family,) = get_pickup_families("J7NT")
+
+		self.assertEqual(
+			[(row.person, row.full_name) for row in family["children"]],
+			[(child, "Cleo _Test Station Joint Child")],
+		)
+
+	def test_a_card_finds_only_people_a_search_may_find(self):
+		"""With a private directory a card from another church opens no one, except at a joint service."""
+		set_private_people(True)
+		self.addCleanup(set_private_people, False)
+		joint = make_function("_Test Station Joint Service", church=self.branch_b, is_shared=1).name
+		holder = make_person("Carl", "_Test Station Cardholder", church=self.branch_b).name
+
+		frappe.set_user(self.volunteer_a)
+		self.assertEqual(find_card_holder(holder), [])
+		self.assertEqual(
+			[member.name for group in find_card_holder(holder, joint) for member in group["members"]],
+			[holder],
+		)

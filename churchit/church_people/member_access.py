@@ -12,6 +12,7 @@ import frappe
 from frappe import _
 from frappe.model import table_fields
 
+from churchit.church_people.household import ADULT, can_edit, get_editable_children, role_of
 from churchit.church_scope import church_filters, is_scoped, session_church, session_person
 
 PERSONAL_DETAILS = "personal-details"
@@ -26,39 +27,60 @@ def is_portal_member(user=None):
 
 
 def person_query_conditions(user=None, doctype=None):
-	"""permission_query_conditions for Person: a member lists only their own record."""
+	"""permission_query_conditions for Person: a member lists their own record and the Children they may edit."""
 	user = user or frappe.session.user
 	if not is_portal_member(user):
 		return ""
-	return f"`tabPerson`.`user` = {frappe.db.escape(user)}"
+	own = f"`tabPerson`.`user` = {frappe.db.escape(user)}"
+	children = ", ".join(frappe.db.escape(child) for child in get_editable_children(user))
+	return f"({own} or `tabPerson`.`name` in ({children}))" if children else own
 
 
 def refuse_other_people_to_members(doc, ptype=None, user=None):
-	"""has_permission hook for Person: a member reaches only the Person linked to their login.
+	"""has_permission hook for Person: a member reaches their own Person and the Children they may edit.
 
-	Frappe reads any falsy return as a refusal, so everyone else gets True.
+	They read and write those Children (`household.can_edit`) and nothing more. Frappe reads any
+	falsy return as a refusal, so everyone else gets True.
 	"""
 	user = user or frappe.session.user
-	return not is_portal_member(user) or doc.get("user") == user
+	if not is_portal_member(user) or doc.get("user") == user:
+		return True
+	return ptype in ("read", "write") and can_edit(user, doc.name)
 
 
 def refuse_member_edits_beyond_personal_details(person):
-	"""A member edits their own Person through the Personal Details form, so only its fields may change.
+	"""A member edits a Person through the Personal Details form, so only its fields may change.
 
 	The form sets nothing else, so anything more came straight through the API:
 	a membership status, a family or a spouse set by the member. Nor may a member add
 	a person: Frappe's web form saves a new record without checking their rights.
 	"""
-	if not is_portal_member():
+	# A Person a member's own sign-in adds (accounts.link_portal_user) is not the member's edit.
+	if not is_portal_member() or person.flags.from_portal_login:
 		return
 	if person.is_new():
 		frappe.throw(_("Ask the church office to add a person."), frappe.PermissionError)
-	before = person.get_doc_before_save()
-	allowed = personal_details_fields()
+	refuse_changes_beyond(person, personal_details_fields())
+
+
+def refuse_member_edits_beyond_photo(family):
+	"""A member changes only their household's photo, on the My Household page.
+
+	`refuse_other_families_to_members` lets an Adult write their own Family, so anything more came straight
+	through the API. `Family.validate` calls this before it changes anything itself. A save that ignores
+	permissions is the app's own, such as a Person joining the roster.
+	"""
+	if is_portal_member() and not family.flags.ignore_permissions:
+		refuse_changes_beyond(family, {"photo"})
+
+
+def refuse_changes_beyond(doc, allowed: set[str]) -> None:
+	"""Refuse a save of *doc* that changes a field outside *allowed*, naming the fields it changed."""
+	before = doc.get_doc_before_save()
 	changed = [
 		df.label or df.fieldname
-		for df in person.meta.fields
-		if df.fieldname not in allowed and get_comparable(person, df) != get_comparable(before, df)
+		for df in doc.meta.fields
+		if df.fieldname not in allowed and get_comparable(doc, df) != get_comparable(before, df)
 	]
 	if changed:
 		frappe.throw(
@@ -130,3 +152,28 @@ def validate_members_recipient(doc):
 	filters = get_recipient_filters(doc.recipient_type)
 	if not frappe.db.exists(doc.recipient_type, {"name": doc.recipient, **filters}):
 		frappe.throw(_("Choose a recipient from your church."), frappe.PermissionError)
+
+
+def refuse_other_families_to_members(doc, ptype=None, user=None) -> bool:
+	"""has_permission hook for Family: a member reads only their own household, and only its Adults write it.
+
+	What an Adult may change is the photo alone (`refuse_member_edits_beyond_photo`).
+	"""
+	user = user or frappe.session.user
+	if not is_portal_member(user):
+		return True
+	own = frappe.db.get_value("Person", {"user": user}, ["name", "family"], as_dict=True)
+	if not own or not own.family or own.family != doc.name:
+		return False
+	if ptype == "write":
+		return role_of(own.name) == ADULT
+	return ptype == "read"
+
+
+def family_query_conditions(user=None, doctype=None) -> str:
+	"""permission_query_conditions for Family: a member lists only their own household."""
+	user = user or frappe.session.user
+	if not is_portal_member(user):
+		return ""
+	family = frappe.db.get_value("Person", {"user": user}, "family")
+	return f"`tabFamily`.`name` = {frappe.db.escape(family)}" if family else "1 = 0"

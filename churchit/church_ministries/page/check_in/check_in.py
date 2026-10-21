@@ -7,13 +7,14 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, getdate
+from frappe.utils import add_days, cint, getdate, today
 
 from churchit.church_ministries.doctype.function_check_in.function_check_in import (
 	check_in_persons,
 	is_shared_function,
 	print_name_tags,
 )
+from churchit.church_people import household
 from churchit.church_people.doctype.person.person import SOURCE_CHECK_IN
 from churchit.church_people.membership import living_people_filter
 from churchit.church_scope import (
@@ -66,6 +67,13 @@ def search_people(query: str | None, function: str | None = None):
 	else:
 		matched = find_by_name(query.split(), scope)
 	return group_by_family(matched, scope)
+
+
+@frappe.whitelist()
+def find_card_holder(person: str, function: str | None = None):
+	"""The family of the person whose member card was scanned, found by the same rules as a search."""
+	frappe.has_permission("Person", throw=True)
+	return group_by_family([person], get_people_scope(function))
 
 
 def get_people_scope(function):
@@ -187,6 +195,65 @@ def get_check_ins(function: str):
 		.orderby(check_in.creation, order=frappe.qb.desc)
 	)
 	return query.run(as_dict=True)
+
+
+@frappe.whitelist()
+def get_pickup_families(code: str) -> list[dict]:
+	"""The families of the people checked in today with pickup tag *code*, with who may collect them.
+
+	The check-ins the caller may read are the gate. The people they name are read whatever their church,
+	as at a shared function the station checks in people of every church. It records nothing.
+	"""
+	frappe.has_permission("Function Check-In", throw=True)
+	check_ins = frappe.get_list(
+		"Function Check-In",
+		filters={"security_code": code.strip().upper(), "creation": [">=", today()]},
+		fields=["person", "function.function_name as function_name"],
+		order_by="creation asc",
+	)
+	people = get_living_people([row.person for row in check_ins], ["family"])
+	families = {}
+	for row in check_ins:
+		if row.person in people:
+			child = frappe._dict({**people[row.person], **row})
+			families.setdefault(child.family, []).append(child)
+	return [get_pickup_family(family, children) for family, children in families.items()]
+
+
+def get_pickup_family(family: str | None, children: list[dict]) -> dict:
+	"""*family*'s checked-in *children* with its living Adults and authorized pickups, who may collect them."""
+	result = {"family": family, "family_name": None, "children": children, "adults": [], "pickups": []}
+	if not family:
+		return result
+
+	# church-scope: the family of a check-in the caller may read
+	pickups = frappe.get_all(
+		"Authorized Pickup",
+		filters={"parenttype": "Family", "parent": family},
+		fields=["person", "relationship", "notes"],
+		order_by="idx asc",
+	)
+	adults = household.members(family, [household.ADULT])
+	people = get_living_people(adults + [row.person for row in pickups])
+	result.update(
+		family_name=frappe.db.get_value("Family", family, "family_name"),
+		adults=[people[adult] for adult in adults],
+		pickups=[{**row, **people[row.person]} for row in pickups if row.person in people],
+	)
+	return result
+
+
+def get_living_people(names: list[str], fields: list[str] | None = None) -> dict:
+	"""{name: name, full name and photo} of the living people among *names*, whatever their church."""
+	if not names:
+		return {}
+	# church-scope: the people that check-ins or a family the caller may read name
+	people = frappe.get_all(
+		"Person",
+		filters=[{"name": ["in", names]}, living_people_filter()],
+		fields=["name", "full_name", "photo", *(fields or [])],
+	)
+	return {person.name: person for person in people}
 
 
 @frappe.whitelist()

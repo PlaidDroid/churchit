@@ -149,6 +149,8 @@ jinja = {
 		"churchit.church_scope.church_filters",
 		"churchit.church_scope.selected_church_filters",
 		"churchit.scripture.get_passage_text",
+		# The Member QR Card print format draws its code with Frappe's own QR function.
+		"frappe.utils.print_format_generator.get_qr_code",
 	]
 }
 
@@ -163,8 +165,12 @@ after_migrate = ["churchit.church_setup.doctype.church_features.church_features.
 
 # Frappe collects the login notes on `on_login`, which runs before the session
 # is the user's, so it stores them for Guest and the desk shows none. Collect
-# them again once the session belongs to the user.
-on_session_creation = ["frappe.desk.doctype.note.note._get_unseen_notes"]
+# them again once the session belongs to the user. A Website User's first login
+# also links the account to their Person.
+on_session_creation = [
+	"frappe.desk.doctype.note.note._get_unseen_notes",
+	"churchit.church_people.accounts.link_portal_user",
+]
 
 setup_wizard_requires = "/assets/churchit/js/setup_wizard.js"
 
@@ -222,8 +228,12 @@ has_permission = {
 		"churchit.church_scope.refuse_changing_another_churches_people",
 		"churchit.church_people.member_access.refuse_other_people_to_members",
 	],
-	"Family": "churchit.church_scope.refuse_changing_another_churches_people",
+	"Family": [
+		"churchit.church_scope.refuse_changing_another_churches_people",
+		"churchit.church_people.member_access.refuse_other_families_to_members",
+	],
 	"Person Note": "churchit.church_people.notes.has_note_permission",
+	"Prayer Request": "churchit.church_prayers.prayer_access.has_prayer_permission",
 	"Follow-up Card": "churchit.church_people.followup.has_card_permission",
 }
 
@@ -232,6 +242,8 @@ has_permission = {
 # never uses this.
 permission_query_conditions = {
 	"Person": "churchit.church_people.member_access.person_query_conditions",
+	"Family": "churchit.church_people.member_access.family_query_conditions",
+	"Prayer Request": "churchit.church_prayers.prayer_access.prayer_query_conditions",
 	"Person Note": "churchit.church_people.notes.note_query_conditions",
 	"Follow-up Card": "churchit.church_people.followup.card_query_conditions",
 }
@@ -264,6 +276,9 @@ doc_events = {
 			"churchit.church_people.summaries.on_change",
 		],
 	},
+	"Address": {
+		"on_update": "churchit.church_people.geocoding.queue_geocode",
+	},
 	"Communication": {
 		"after_insert": "churchit.church_communications.bounces.record_bounce",
 	},
@@ -278,6 +293,9 @@ doc_events = {
 	},
 	"Person": {
 		"on_trash": "churchit.church_people.duplicates.drop_pairs",
+	},
+	"Web Form Request": {
+		"validate": "churchit.church_people.details_link.close_details_request",
 	},
 	"Personal Data Deletion Request": {
 		"on_change": "churchit.church_people.privacy.anonymize_on_data_deletion",
@@ -327,6 +345,7 @@ scheduler_events = {
 		"churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment.send_team_emails",
 		"churchit.church_people.followup.wake_snoozed_cards",
 		"churchit.church_people.followup.start_smart_list_cards",
+		"churchit.church_people.privacy.remove_due_personal_data",
 	],
 	"weekly_long": ["churchit.church_people.duplicates.scan"],
 	"cron": {

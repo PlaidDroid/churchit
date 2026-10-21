@@ -11,6 +11,7 @@ from churchit.church_people.household import (
 	OTHER_ADULT,
 	can_edit,
 	get_ages,
+	get_editable_children,
 	get_household_role,
 	members,
 	role_of,
@@ -173,6 +174,24 @@ class TestHousehold(RollbackEachTest):
 
 		self.assertFalse(can_edit(user, self.son))
 		self.assertFalse(can_edit("", self.son))
+
+	def test_an_adults_editable_children_are_the_living_children_of_their_family(self):
+		daughter = make_person("Amy", "Smith", family=self.family, life_events=[born(7)]).name
+		label(self.family, {daughter: "Daughter"})
+		father = link_user(self.father, "_test_household_father@example.com")
+
+		self.assertEqual(get_editable_children(father), [self.son, daughter])
+
+		frappe.db.set_value("Person", daughter, "is_deceased", 1)
+		self.assertEqual(get_editable_children(father), [self.son])
+
+	def test_no_one_else_has_editable_children(self):
+		grandmother = link_user(self.grandmother, "_test_household_gran@example.com")
+		single = ensure_user("_test_household_single@example.com", "Single")
+		make_person("_Test Familyless", user=single)
+
+		for user in (grandmother, single, ensure_user("_test_household_nobody@example.com", "Nobody"), ""):
+			self.assertEqual(get_editable_children(user), [], user)
 
 	def test_salutation_names_the_adults_and_their_shared_last_name_once(self):
 		self.assertEqual(salutation(self.family), "John & Jane Smith")

@@ -14,9 +14,10 @@ import frappe
 # No route owns it, so it is scanned as one "every page" source.
 SITE_WIDE_MODULES = ("context.py", "footer.py", "pwa.py")
 
-# Who reaches a source: anyone, or only a signed-in member.
+# Who reaches a source: anyone, only a signed-in member, or only whoever holds an emailed link.
 PUBLIC = "public"
 MEMBERS = "members"
+LINK_HOLDERS = "link holders"
 
 SITE_WIDE_SOURCE = {"title": "Every page (navbar, footer, app name)", "route": "", "access": PUBLIC}
 
@@ -151,15 +152,25 @@ def web_form_entries():
 	for form in frappe.get_all(
 		"Web Form",
 		filters={"published": 1},
-		fields=["name", "title", "route", "doc_type", "login_required"],
+		fields=["name", "title", "route", "doc_type", "login_required", "key_required"],
 	):
 		source = {
 			"title": (form.title or form.name).strip(),
 			"route": form.route or form.name,
-			"access": MEMBERS if form.login_required else PUBLIC,
+			"access": web_form_access(form),
 		}
 		for fieldname in web_form_fieldnames(form) & field_names(form.doc_type):
 			yield source, form.doc_type, fieldname
+
+
+def web_form_access(form):
+	"""Who reaches a Web Form: a signed-in member, the holder of a key from a Web Form Request, or anyone.
+
+	A key-only form shows the one record its Web Form Request names, to whoever has the link.
+	"""
+	if form.login_required:
+		return MEMBERS
+	return LINK_HOLDERS if form.key_required else PUBLIC
 
 
 def web_form_fieldnames(form):

@@ -10,6 +10,7 @@ from frappe.utils.print_format import download_pdf as download_print_pdf
 from churchit.church_communications.doctype.bulletin.sections import BulletinSections
 from churchit.church_missions.doctype.missionary_status.missionary_status import INACTIVE
 from churchit.church_prayers.doctype.prayer_request.prayer_request import CLOSED_STATUSES
+from churchit.church_prayers.prayer_access import WHOLE_CHURCH
 from churchit.church_scope import church_filters
 from churchit.scripture import format_reference
 
@@ -51,9 +52,11 @@ class Bulletin(BulletinSections, Document):
 
 	def validate_prayer_requests_are_printable(self):
 		for row in self.prayer_requests:
-			if frappe.db.get_value("Prayer Request", row.prayer_request, "is_private"):
+			if frappe.db.get_value("Prayer Request", row.prayer_request, "visibility") != WHOLE_CHURCH:
 				frappe.throw(
-					_("{0} is a private prayer request and cannot be printed.").format(frappe.bold(row.title))
+					_("{0} is not shared with the whole church and cannot be printed.").format(
+						frappe.bold(row.title)
+					)
 				)
 
 	def has_website_permission(self, ptype, user, verbose=False):
@@ -96,10 +99,10 @@ def supported_missionaries(on_date, include_sensitive=False, church=None):
 
 
 def open_prayer_requests(church=None):
-	"""Rows for every request that is neither private, closed, nor past its end date, urgent ones first."""
+	"""Rows for every Whole Church request that is neither closed nor past its end date, urgent ones first."""
 	return frappe.get_all(
 		"Prayer Request",
-		filters=church_filters(church, is_private=0, status=("not in", CLOSED_STATUSES)),
+		filters=church_filters(church, visibility=WHOLE_CHURCH, status=("not in", CLOSED_STATUSES)),
 		or_filters=[["end_date", "is", "not set"], ["end_date", ">=", now_datetime()]],
 		fields=["name as prayer_request", "title", "recipient_name"],
 		order_by="urgent desc, creation desc",

@@ -24,8 +24,9 @@ belong to another church. That is why the rules below are enforced by
 
 Access rides on native Frappe **User Permissions** on `Church`. A user's `Person.church` drives the
 permission; `hide_descendants` is the "include branch churches" switch. `permission_query_conditions`
-is never used for church scoping. Person (a member lists only their own record), Person Note (Note
-Category roles) and Follow-up Card (the follow-up role) use it for other rules.
+is never used for church scoping. Person (a member lists their own record and their household's
+Children), Family (a member's own household), Person Note (Note Category roles), Follow-up Card (the
+follow-up role) and Prayer Request (Visibility) use it for other rules.
 
 The directory is the one custom piece. The `church` Link on `Person` and `Family` ships with
 `ignore_user_permissions: 1`, so User Permissions do not filter them. A User Permission cannot
@@ -332,6 +333,24 @@ runs the Person `listview_settings` too, so every saved list gets the Person lis
 server side, `church_people/list_actions.py`, takes names from the browser and checks the right on
 every record: `email` to read addresses, `write` to change them.
 
+## Engagement, map and retention
+
+`Person.get_timeline_data` feeds the form heatmap through Frappe's `get_open_count`, which
+`churchit.connections` overrides. It reads Function attendance through `get_list`, so a reader sees
+only their churches' functions, and returns `{}` when the reader cannot read Function, because an
+error there would break the Connections counts.
+
+Only `geocoding.geocode` writes Address `latitude` and `longitude`, with `db_set`: a save would
+queue another lookup through Address `on_update`. 0 means unknown, and the Map view skips it. Every
+Nominatim request goes through `get_coordinates`, which holds a bench-wide file lock and waits a
+second, because Nominatim allows one request a second. People Settings `look_up_addresses` turns all
+of it off; check `geocoding.is_address_lookup_on()` before anything that sends address text. Custom
+fields sync after the patches, so a patch that needs one syncs its customization file first, as
+`queue_address_coordinates` does.
+
+`privacy.get_due_query` is the one rule for whose data the daily retention job removes; the
+Personal Data Due for Removal report scopes the same query.
+
 ## Duplicates, merging and anonymizing
 
 `church_people/matching.find_matches` is the one matcher: the new-Person warning, the weekly scan
@@ -382,12 +401,74 @@ not add one, and do not assign notes. Person Note does not track changes, becaus
 Manager can read Version records. A Person's timeline does not show records linked to the person;
 notes reach it through `additional_timeline_content`.
 
+## Member portal
+
+A portal member reaches their own Person, and an Adult also reads and writes the living Children of
+their household (`household.get_editable_children`), through the Person `has_permission` hook and
+`person_query_conditions`. To ask "may this member edit X", call
+`frappe.has_permission("Person", "write", doc=X)`; do not compare `Person.user`. A member reads and
+lists only their own Family, only its Adults write it, and `refuse_member_edits_beyond_photo` (first
+in `Family.validate`) limits them to the photo. It steps aside for `ignore_permissions` saves, which
+is how a Person keeps the roster, so never save a Family with `ignore_permissions` on values a member
+sent.
+
+`Person.birthday` is virtual: a value set on a save rewrites the first Birth life event
+(`sync_birthday`, before `sync_derived`). Read birthdays from `birth_month`, `birth_day` and
+`birth_date`, never from `birthday`.
+
+The defaults of `share_email`, `share_phone`, `share_address` and `share_birthday` are site-local
+Property Setters that People Settings `on_update` writes. A Single field that migrate stores without
+a save writes none, so a new People Settings default that drives a Person default needs a patch that
+calls `set_share_defaults`. A People Settings field added after a site first saved its settings reads
+as empty, not as its default: re-add `store_new_people_settings_defaults` to patches.txt (with a date
+comment) when you add one. Frappe keeps a new record's defaults in `frappe.local.new_doc_templates`
+until the request ends, so a test that changes a default pops it. People added for someone who never
+saw the choice (a card guest, the people with them, a portal sign-in) set all four to 0.
+
+`/directory` lists only active people whose Membership is not Visitor or Contact, reads with
+`frappe.get_all` and literal doctypes, and shows only public photos. The Member Directory portal menu
+row's `enabled` follows `member_directory` (`sync_directory_menu_item`); do not set it by hand. The
+published-field scanner also counts an import path such as `churchit.church_people.membership` as a
+read of the field `membership`, so `/directory` badges include fields the page does not show.
+
+`accounts.link_portal_user` (on_session_creation) sets `Person.user` with `db_set` and then calls
+`sync_church_permission`, because the member guard refuses a member's change to Portal User. A
+Person it adds carries `flags.from_portal_login`, which `refuse_member_edits_beyond_personal_details`
+lets through. Only an own primary email counts; a row with Shared From does not. A failure is logged
+and never stops the sign-in.
+
+A guest key web form (Update Your Details) may not have a Link field, or a table with Link columns,
+unless Guest can read the linked doctype: Frappe refuses to save or render it otherwise.
+`details_link.close_details_request` (Web Form Request `validate`) keeps a details link to its one
+Person and one use; Frappe alone lets a key add records and reopen its record until it expires.
+Never put a request key in a Communication or Comment: anyone who reads the Person could use it. A
+key-only form is `LINK_HOLDERS` in `published_fields.py`, not public.
+
 ## Care and child safety
 
 `background_check.is_cleared(person, on_date, check_types)` is the one rule for "cleared to
 serve". A Care Request's caregiver is assigned the request through `assign_to`, which shares it only
 when the session user has the share right, so `CareRequest.assign` shares first with
 `ignore_share_permission` after checking `has_church_access`, to give a clear message.
+
+At the Check-In Station, `check_in.get_pickup_families` gates on the Function Check-In rows the
+reader may read (`frappe.get_list`), then reads the people those rows name with `get_all`, whatever
+their church. Do not fetch Person fields through the check-in's link (`person.full_name` in
+`get_list`): Frappe applies Person permission to that join, and a child at a shared function came
+back nameless. Who may collect a child is the living household Adults plus the family's Authorized
+Pickup rows; nothing is stored. The station opens people only through
+`group_by_family(matched, get_people_scope(function))`, Scan Card included, so a new way to find
+people there must use it. Do not add Authorized Pickup to `person_data_map.ROSTERS`: a merge would
+strip the merged person from every other family's pickup list. The Member QR Card needs
+`get_qr_code` in the `jinja` hook; never `frappe.call(...)` from print Jinja, which fails outside a
+request or a job.
+
+Prayer Request Visibility is read only through `church_prayers/prayer_access.py`. The Church Prayer
+Team DocPerm reads every request; the hooks take back other people's Private requests from a user
+whose only role that reads every request is Church Prayer Team. Code that reads past permissions
+applies Visibility itself: `get_community_filters` for the community page, `has_webform_permission`
+and `create_prayer`, and Whole Church only for bulletins. A web form's `condition_json` reaches the
+community `get_list` as `{field: [operator, value]}`.
 
 ## Follow-up cards
 
@@ -588,6 +669,10 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 - **Frappe 16.50's Map view is broken.** `ListView` sets `this.load_lib` to a Promise, which hides
   `MapView.load_lib()` (frappe/frappe#44810). `church_utils.js` replaces `MapView.setup_view`; remove
   that once Frappe fixes it.
+- **Frappe's `send_sms` reports nothing per number.** It writes an SMS Log only for numbers the
+  gateway accepted. A text copy's Communication `delivery_status` is Sent or Error from that log;
+  `sending.get_people_sent` leaves out Error copies for the Sent To count, and a delivery asks with
+  `include_failed=True`, so a failed copy is never sent again.
 - **Never name a field `assigned_to`.** Frappe's `assign_to` writes the assignee's User ID into any
   field with that name and clears it when the assignment goes. Care Request's Person link is
   `caregiver` for that reason.

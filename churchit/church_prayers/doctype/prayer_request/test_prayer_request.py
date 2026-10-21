@@ -37,9 +37,9 @@ class TestPrayerRequest(FrappeTestCase):
 		request = self._request(recipient_name="stale")
 		self.assertIsNone(request.recipient_name)
 
-	def test_webform_permission_allows_public_requests_to_logged_in_users(self):
-		public = self._request(is_private=0)
-		private = self._request(is_private=1)
+	def test_webform_permission_allows_whole_church_requests_to_logged_in_users(self):
+		public = self._request(visibility="Whole Church")
+		private = self._request(visibility="Private")
 
 		frappe.set_user(ensure_user("_test_prayer_reader@example.com", "_Test Reader"))
 		self.assertTrue(public.has_webform_permission())
@@ -47,3 +47,6 @@ class TestPrayerRequest(FrappeTestCase):
 
 		frappe.set_user("Guest")
 		self.assertFalse(public.has_webform_permission())
+
+	def test_visibility_defaults_to_whole_church(self):
+		self.assertEqual(self._request().visibility, "Whole Church")

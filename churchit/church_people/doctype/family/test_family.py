@@ -5,7 +5,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_people.household import ADULT, CHILD, OTHER_ADULT
-from churchit.church_people.test_household import born, label, set_adult_age
+from churchit.church_people.merge import merge_families
+from churchit.church_people.test_household import born, label, make_household, set_adult_age
 from churchit.tests.helpers import RollbackEachTest, make_person, make_primary_contact
 
 
@@ -233,3 +234,52 @@ class TestHouseholdRoles(RollbackEachTest):
 
 		self.assertEqual(self.roles()[self.boy], CHILD)
 		self.assertEqual(frappe.db.get_value("Person", self.boy, "life_stage"), CHILD)
+
+
+class TestAuthorizedPickups(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		set_adult_age(18)
+
+	def setUp(self):
+		super().setUp()
+		self.family, _father, self.mother, self.son, self.grandmother = make_household(
+			"_Test Pickups", "Pickup"
+		)
+		self.neighbour = make_person("Nina", "_Test Neighbour").name
+
+	def set_pickups(self, family, *people):
+		family = frappe.get_doc("Family", family)
+		family.authorized_pickups = []
+		for person in people:
+			family.append("authorized_pickups", {"person": person})
+		family.save(ignore_permissions=True)
+		return [row.person for row in family.authorized_pickups]
+
+	def test_someone_outside_the_household_or_another_adult_at_home_may_collect(self):
+		self.assertEqual(
+			self.set_pickups(self.family, self.neighbour, self.grandmother),
+			[self.neighbour, self.grandmother],
+		)
+
+	def test_an_adult_of_the_household_is_refused(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "Row 2 .* may always collect its children"):
+			self.set_pickups(self.family, self.neighbour, self.mother)
+
+	def test_a_child_of_the_family_is_refused(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "is a child of this family"):
+			self.set_pickups(self.family, self.son)
+
+	def test_a_merge_keeps_the_pickups_of_both_families_once(self):
+		aunt = make_person("Ada", "_Test Aunt").name
+		copy = frappe.get_doc({"doctype": "Family", "family_name": "_Test Pickups Copy"}).insert(
+			ignore_permissions=True
+		)
+		self.set_pickups(self.family, self.neighbour)
+		self.set_pickups(copy.name, aunt, self.neighbour)
+
+		merge_families(self.family, copy.name)
+
+		pickups = frappe.get_doc("Family", self.family).authorized_pickups
+		self.assertEqual([row.person for row in pickups], [self.neighbour, aunt])

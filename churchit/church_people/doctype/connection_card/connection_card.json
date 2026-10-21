@@ -23,6 +23,8 @@
   "email_consent",
   "sms_consent",
   "website",
+  "section_break_household",
+  "household_members",
   "section_break_processing",
   "status",
   "column_break_processing",
@@ -130,6 +132,17 @@
    "label": "Website"
   },
   {
+   "fieldname": "section_break_household",
+   "fieldtype": "Section Break",
+   "label": "Who Is With You?"
+  },
+  {
+   "fieldname": "household_members",
+   "fieldtype": "Table",
+   "label": "Household Members",
+   "options": "Connection Card Household Member"
+  },
+  {
    "fieldname": "section_break_processing",
    "fieldtype": "Section Break",
    "label": "Follow-up"
@@ -169,7 +182,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-20 09:00:00.000000",
+ "modified": "2026-10-21 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Connection Card",

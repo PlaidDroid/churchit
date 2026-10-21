@@ -15,7 +15,11 @@ from churchit.church_communications.doctype.communication_consent.communication_
 	record,
 )
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
+from churchit.church_people.derived import BIRTH
+from churchit.church_people.doctype.marital_status.marital_status import MARRIED
+from churchit.church_people.doctype.people_settings.people_settings import SHARE_DEFAULTS
 from churchit.church_people.doctype.person.person import get_display_name
+from churchit.church_people.family_relations import ROLE_OF_TYPE, ROLE_TYPES
 from churchit.church_people.followup import start_cards
 from churchit.church_people.matching import Match, find_matches, record_possible_duplicates
 from churchit.church_people.membership import VISITOR
@@ -31,6 +35,8 @@ CONNECTION_CARD = "Connection Card"
 SHARED_CONTACT = frozenset(("same email", "same phone"))
 SAME_FIRST_NAME = frozenset(("same first name", "nickname of first name"))
 SAME_LAST_NAME = frozenset(("same last name", "matches previous last name"))
+# A guest never saw the member directory's choices, so the people a card adds share nothing in it.
+SHARES_NOTHING = dict.fromkeys(SHARE_DEFAULTS, 0)
 
 
 class ConnectionCard(Document):
@@ -72,15 +78,20 @@ class ConnectionCard(Document):
 			start_cards(CONNECTION_CARD, person, self.church, value=interest, source=self)
 
 	def find_or_add_person(self) -> str:
-		"""The one person who strongly matches the card, else a new Visitor with the matches left for staff."""
+		"""The one person who strongly matches the card, else a new Visitor and their household.
+
+		The matches are left for staff. A card that matched someone adds nobody from its household,
+		because guest input never changes an existing person; its rows stay on the card for staff.
+		"""
 		matches = find_matches(self.candidate, church=self.church)
 		strong = [match for match in matches if is_strong_match(match)]
 		if len(strong) == 1:
 			return strong[0].person
 
-		person = self.add_person()
-		record_possible_duplicates(person, matches)
-		return person
+		guest = self.add_person()
+		record_possible_duplicates(guest.name, matches)
+		self.add_household(guest)
+		return guest.name
 
 	def record_consent(self, person: str):
 		"""Record Church News by email, or by text, for each box ticked beside an address or number.
@@ -108,7 +119,7 @@ class ConnectionCard(Document):
 			"phones": [self.phone] if self.phone else [],
 		}
 
-	def add_person(self) -> str:
+	def add_person(self) -> Document:
 		"""Add a Visitor from the card. An email or phone another person holds is shared from them."""
 		person = frappe.get_doc(
 			{
@@ -118,6 +129,7 @@ class ConnectionCard(Document):
 				"church": self.church,
 				"membership": VISITOR,
 				"source": CONNECTION_CARD,
+				**SHARES_NOTHING,
 			}
 		)
 		for fieldname, child_doctype, value_field, value in (
@@ -133,7 +145,72 @@ class ConnectionCard(Document):
 						"shared_from": get_other_holder(person, child_doctype, value_field, value),
 					},
 				)
-		return person.insert(ignore_permissions=True).name
+		return person.insert(ignore_permissions=True)
+
+	def add_household(self, guest: Document) -> None:
+		"""Add the people the guest came with as Visitors, in a new Family with the guest as its primary contact.
+
+		A spouse joins through the marriage link, which names them Husband or Wife. The others join with the
+		relationship the guest gave, so the Family works out each household role.
+		"""
+		if not self.household_members:
+			return
+		family = frappe.get_doc(
+			{
+				"doctype": "Family",
+				"family_name": guest.household_name,
+				"primary_contact": guest.name,
+				"members": [{"member": guest.name}],
+			}
+		).insert(ignore_permissions=True)
+		relationships = {
+			self.add_household_member(row, guest.name): row.relationship for row in self.household_members
+		}
+
+		family.reload()
+		for person, relationship in relationships.items():
+			if person not in family.member_names:
+				family.append("members", {"member": person, "relationship_to_primary_contact": relationship})
+		family.save(ignore_permissions=True)
+
+	def add_household_member(self, row, guest: str) -> str:
+		"""Add one person the guest came with as a Visitor, with the birth date and relationship the guest gave."""
+		person = frappe.get_doc(
+			{
+				"doctype": "Person",
+				"first_name": row.first_name,
+				"last_name": row.last_name or self.last_name,
+				"church": self.church,
+				"membership": VISITOR,
+				"source": CONNECTION_CARD,
+				**SHARES_NOTHING,
+				"life_events": [{"event_type": BIRTH, "date": row.birth_date}] if row.birth_date else [],
+			}
+		)
+		person.update(get_relationship_values(row.relationship, guest))
+		person.insert(ignore_permissions=True)
+
+		candidate = {
+			"first_name": person.first_name,
+			"last_name": person.last_name,
+			"birth_date": row.birth_date,
+		}
+		record_possible_duplicates(
+			person.name, find_matches(candidate, church=self.church, exclude=person.name)
+		)
+		return person.name
+
+
+def get_relationship_values(relationship: str | None, guest: str) -> dict:
+	"""The Person fields a relationship to the guest settles: the gender it names, and a marriage to the guest."""
+	role = ROLE_OF_TYPE.get(relationship)
+	if not role:
+		return {}
+	values = {"spouse": guest, "marital_status": MARRIED} if role == "spouse" else {}
+	male, female = ROLE_TYPES[role]
+	if male != female:
+		values["gender"] = "Male" if relationship == male else "Female"
+	return values
 
 
 def is_strong_match(match: Match) -> bool:

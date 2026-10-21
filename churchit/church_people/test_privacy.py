@@ -5,12 +5,13 @@ import json
 from unittest.mock import patch
 
 import frappe
+from frappe.utils import add_days, add_years, getdate, today
 from frappe.website.doctype.personal_data_download_request.personal_data_download_request import (
 	get_user_data,
 )
 
 from churchit.church_foundations.church_access import set_user_church
-from churchit.church_people.privacy import ANONYMIZED, anonymize_person
+from churchit.church_people.privacy import ANONYMIZED, anonymize_person, remove_due_personal_data
 from churchit.church_people.test_merge import email, life_event, make_family, phone
 from churchit.tests.helpers import (
 	RollbackEachTest,
@@ -169,3 +170,67 @@ class TestPersonalDataRequests(RollbackEachTest):
 		self.assertEqual(
 			(self.person.first_name, self.person.user, self.person.emails), (ANONYMIZED, None, [])
 		)
+
+
+class TestRemoveDuePersonalData(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		for status in ("Active", "Inactive"):
+			ensure("Member Status", {"status": status})
+
+	def setUp(self):
+		super().setUp()
+		frappe.db.set_single_value("People Settings", "remove_inactive_after_years", 5)
+		self.boundary = add_years(today(), -5)
+		self.due = self.make_inactive("Due", self.boundary)
+		self.not_yet = self.make_inactive("Not Yet", add_days(self.boundary, 1))
+		self.deceased = self.make_inactive("Deceased", add_years(self.boundary, -10))
+		frappe.db.set_value("Person", self.deceased, "is_deceased", 1)
+
+	def make_inactive(self, first_name, since):
+		person = make_person(f"_Test Retention {first_name}", "Person", membership_status="Inactive").name
+		frappe.db.set_value("Person", person, "inactive_since", since)
+		return person
+
+	def run_job(self):
+		with patch.object(frappe.db, "commit"):
+			remove_due_personal_data()
+		return {
+			person: frappe.db.get_value("Person", person, "first_name")
+			for person in (self.due, self.not_yet, self.deceased)
+		}
+
+	def test_zero_years_removes_nothing(self):
+		frappe.db.set_single_value("People Settings", "remove_inactive_after_years", 0)
+
+		self.assertNotIn(ANONYMIZED, self.run_job().values())
+		self.assertEqual(due_rows({}), [])
+
+	def test_a_person_inactive_exactly_the_years_set_is_removed_and_a_day_less_is_kept(self):
+		names = self.run_job()
+
+		self.assertEqual(names[self.due], ANONYMIZED)
+		self.assertEqual(names[self.not_yet], "_Test Retention Not Yet")
+		comments = frappe.get_all(
+			"Comment", filters={"reference_doctype": "Person", "reference_name": self.due}, pluck="content"
+		)
+		self.assertTrue(any("Inactive since" in comment for comment in comments))
+
+	def test_people_who_have_died_are_kept(self):
+		self.assertEqual(self.run_job()[self.deceased], "_Test Retention Deceased")
+
+	def test_the_report_lists_who_is_due_by_a_date_with_their_removal_date(self):
+		rows = {row.person: row.removal_date for row in due_rows({"due_by": add_days(today(), 1)})}
+
+		self.assertEqual(rows.get(self.due), getdate(today()))
+		self.assertEqual(rows.get(self.not_yet), getdate(add_days(today(), 1)))
+		self.assertNotIn(self.deceased, rows)
+
+
+def due_rows(filters):
+	from churchit.church_people.report.personal_data_due_for_removal.personal_data_due_for_removal import (
+		execute,
+	)
+
+	return execute(filters)[1]

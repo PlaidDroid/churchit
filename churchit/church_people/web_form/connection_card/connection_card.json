@@ -19,7 +19,7 @@
  "list_columns": [],
  "login_required": 0,
  "max_attachment_size": 0,
- "modified": "2026-10-20 09:00:00.000000",
+ "modified": "2026-10-21 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "connection-card",
@@ -82,6 +82,21 @@
    "fieldname": "how_heard",
    "fieldtype": "Data",
    "label": "How Did You Hear About Us?"
+  },
+  {
+   "fieldname": "section_break_household",
+   "fieldtype": "Section Break",
+   "label": "Who Is With You?"
+  },
+  {
+   "fieldname": "household_members",
+   "fieldtype": "Table",
+   "label": "Household Members",
+   "options": "Connection Card Household Member"
+  },
+  {
+   "fieldname": "section_break_interests",
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "interests",

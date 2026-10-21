@@ -29,19 +29,37 @@ class TestPrayerApi(FrappeTestCase):
 		with self.assertRaises(PermissionError):
 			create_prayer(self.request.name)
 
-	def test_private_requests_are_only_prayable_by_their_owner(self):
-		private = frappe.get_doc(
+	def make_request(self, visibility):
+		return frappe.get_doc(
 			{
 				"doctype": "Prayer Request",
-				"title": "_Test Private Request",
+				"title": f"_Test {visibility} Request",
 				"type": self.request.type,
-				"is_private": 1,
+				"visibility": visibility,
 			}
 		).insert(ignore_permissions=True)  # owned by Administrator
+
+	def test_private_requests_are_only_prayable_by_their_owner(self):
+		private = self.make_request("Private")
 
 		frappe.set_user(self.user)
 		with self.assertRaises(PermissionError):
 			create_prayer(private.name)
+
+	def test_prayer_team_requests_are_prayable_by_the_prayer_team_only(self):
+		team_request = self.make_request("Prayer Team")
+
+		team_member = ensure_user(
+			"_test_prayer_team_user@example.com", "_Test Team", roles=("Church User", "Church Prayer Team")
+		)
+		make_person("_Test Praying", "Team", user=team_member)
+
+		frappe.set_user(self.user)
+		with self.assertRaises(PermissionError):
+			create_prayer(team_request.name)
+
+		frappe.set_user(team_member)
+		self.assertTrue(create_prayer(team_request.name)["name"])
 
 	def test_user_without_a_person_record_is_rejected(self):
 		frappe.set_user(ensure_user("_test_prayer_orphan@example.com", "_Test Orphan"))

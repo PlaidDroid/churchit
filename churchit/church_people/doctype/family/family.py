@@ -14,6 +14,7 @@ from churchit.church_people.family_relations import (
 	get_rebased_labels,
 	get_spouse_label,
 )
+from churchit.church_people.member_access import refuse_member_edits_beyond_photo
 from churchit.church_people.merge import (
 	adopt_contact_rows,
 	adopt_rows,
@@ -28,6 +29,8 @@ from churchit.contacts import validate_contact_tables
 
 class Family(Document):
 	def validate(self):
+		# First, so the controller's own changes below are not taken for a member's.
+		refuse_member_edits_beyond_photo(self)
 		validate_contact_tables(self)
 		if self.primary_contact and self.primary_contact not in self.member_names:
 			frappe.throw(_("The Primary Contact must be one of the Family Members."))
@@ -37,6 +40,7 @@ class Family(Document):
 		self.label_primary_contact_and_spouse()
 		self.label_spouses_of_members()
 		self.fill_household_roles()
+		self.validate_authorized_pickups()
 		if previous:
 			old_family_name = self.family_name
 			self.rename_after_primary_contact()
@@ -132,6 +136,19 @@ class Family(Document):
 			)
 		return [member for member in blank if member.household_role]
 
+	def validate_authorized_pickups(self):
+		"""Refuse an authorized pickup who is an Adult or a Child of this household."""
+		refusals = {
+			household.ADULT: _("{0} is an Adult of this household and may always collect its children."),
+			household.CHILD: _("{0} is a child of this family."),
+		}
+		roles = {member.member: member.household_role for member in self.members if member.member}
+		for pickup in self.authorized_pickups:
+			refusal = refusals.get(roles.get(pickup.person))
+			if refusal:
+				name = frappe.bold(escape_html(pickup.person_name or pickup.person))
+				frappe.throw(_("Row {0} of Authorized Pickups: {1}").format(pickup.idx, refusal.format(name)))
+
 	def rename_after_primary_contact(self):
 		"""Put the primary contact's first name after the last dash, "Doe - John" to "Doe - Jane"."""
 		first_name = frappe.db.get_value("Person", self.primary_contact, "first_name")
@@ -165,7 +182,7 @@ class Family(Document):
 		refuse_all_but_a_merge(self, frappe.get_doc("Family", new) if merge else None)
 
 	def after_rename(self, old, new, merge=False):
-		"""Take over a merged family's members, contact rows and blank fields.
+		"""Take over a merged family's members, authorized pickups, contact rows and blank fields.
 
 		A member's relationship is to the primary contact, so a member who comes from a family with another
 		primary contact loses it, and validate fills what it can work out again. A household role stays.
@@ -175,6 +192,7 @@ class Family(Document):
 		removed = frappe.get_doc("Family", old)
 		same_contact = not self.primary_contact or self.primary_contact == removed.primary_contact
 		moved = adopt_rows(self, removed, "members", lambda row: row.member)
+		adopt_rows(self, removed, "authorized_pickups", lambda row: row.person)
 		adopt_contact_rows(self, removed)
 		self.reload()
 		fill_blanks(self, removed, typed_fields(self))

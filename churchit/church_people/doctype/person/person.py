@@ -132,9 +132,30 @@ class Person(Document):
 		#   View Settings -> Title Field as of 2025-08-26
 		self.full_name = f"{self.first_name}" + ((" " + self.last_name) if self.last_name else "")
 		self.display_name = get_display_name(self.first_name, self.last_name, self.nickname, self.suffix)
+		self.sync_birthday()
 		sync_derived(self)
 		self.update_membership_from_life_events()
 		self.update_inactive_details()
+
+	@property
+	def birthday(self):
+		"""The virtual Birthday field on the Personal Details page: the birth date."""
+		return self.birth_date
+
+	def sync_birthday(self):
+		"""Record a Birthday typed on the Personal Details page on the first Birth life event, adding one if needed.
+
+		`derived` keeps the birth date from that event. A blank Birthday changes nothing, since a Birth event
+		whose year is unknown shows as blank; a typed one gives the event its full date.
+		"""
+		typed = self.get("birthday")
+		if not typed or cstr(typed) == cstr(self.birth_date):
+			return
+		birth = next((row for row in self.life_events if row.event_type == BIRTH), None)
+		if not birth:
+			birth = self.append("life_events", {"event_type": BIRTH})
+		birth.date = typed
+		birth.year_unknown = 0
 
 	def update_membership_from_life_events(self):
 		"""Make a person with a new Membership event a Member, and one with a new Death event Inactive.
@@ -424,6 +445,30 @@ class Person(Document):
 			frappe.msgprint(
 				f"⚠️ Portal user <a href='/app/user/{user}'>{user}</a> already exists. User is now linked to this person."
 			)
+
+
+def get_timeline_data(doctype: str, name: str) -> dict:
+	"""The Person form's heatmap: {timestamp: functions attended that day} for the last year.
+
+	Attendance rather than Function Check-In: every check-in adds an attendance row, and staff who
+	cannot open check-ins still read functions. `get_list` keeps it to the functions the reader may see.
+	"""
+	from churchit.church_people.summaries.attendance import ATTENDED
+
+	if not frappe.has_permission("Function", "read"):
+		return {}
+	functions = frappe.get_list(
+		"Function",
+		filters=[
+			["Function Attendance", "person", "=", name],
+			["Function Attendance", "attendance_type", "in", ATTENDED],
+			["start_date", "between", [frappe.utils.add_years(today(), -1), today()]],
+		],
+		fields=["name", "start_date"],
+		distinct=True,
+		order_by="start_date asc",
+	)
+	return dict(Counter(frappe.utils.get_timestamp(function.start_date) for function in functions))
 
 
 def get_user_dashboard_data(data):

@@ -55,7 +55,9 @@ frappe.ui.form.on("Person", {
 
 		if (!frm.is_new()) {
 			add_note_menu_item(frm);
+			add_details_link_menu_item(frm);
 			add_merge_menu_item(frm);
+			show_engagement(frm);
 			add_remove_personal_data_menu_item(frm);
 		}
 
@@ -103,6 +105,50 @@ function show_alert_notes(frm) {
 		});
 		frm.set_intro(lines.join(""), "red");
 	});
+}
+
+// The link lets the person change their own details without a login, once, for 7 days.
+function add_details_link_menu_item(frm) {
+	const has_email = (frm.doc.emails || []).some((row) => row.is_primary && row.email_address);
+	if (!frm.perm[0]?.write || !has_email) return;
+	frm.page.add_menu_item(__("Send Details Link"), () =>
+		frappe
+			.xcall("churchit.church_people.details_link.send_details_link", {
+				person: frm.doc.name,
+			})
+			.then((email) =>
+				frappe.show_alert({
+					message: __("Details link sent to {0}", [frappe.utils.escape_html(email)]),
+					indicator: "green",
+				})
+			)
+	);
+}
+
+// The stored attendance, groups, serving and giving figures, as indicators on the form dashboard.
+// Giving shows only to a reader who may read its permission level.
+function show_engagement(frm) {
+	const doc = frm.doc;
+	const add = (label, value, color) =>
+		frm.dashboard.add_indicator(`${label}: ${frappe.utils.escape_html(String(value))}`, color);
+	const date = (value) => frappe.datetime.str_to_user(value);
+
+	if (doc.first_attended_on) {
+		add(__("First Attended"), date(doc.first_attended_on), "blue");
+		add(__("Last Attended"), date(doc.last_attended_on), "blue");
+	}
+	add(
+		__("Times Attended (90 Days)"),
+		doc.times_attended_90d || 0,
+		doc.times_attended_90d ? "green" : "orange"
+	);
+	add(__("Groups"), doc.group_count || 0, doc.group_count ? "green" : "orange");
+	if (doc.last_served_on) {
+		add(__("Last Served"), date(doc.last_served_on), "blue");
+	}
+	if (frm.perm[2]?.read && doc.last_gift_on) {
+		add(__("Last Gift"), date(doc.last_gift_on), doc.is_lapsed_giver ? "orange" : "green");
+	}
 }
 
 // A dialog keeps the person's unsaved changes; the Activity list and the alerts then load the new note.
