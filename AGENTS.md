@@ -581,6 +581,10 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 - **Administrator is never restricted.** User permissions do not apply to it, so it always sees every
   church. Test scoping as a Church Manager, never as Administrator.
 - **Booleans over `frappe.xcall` arrive as strings.** Use `frappe.utils.sbool`, not `cint`.
+- **The payments app replaces Frappe's web form save.** Its copy of `accept` takes the doctype from
+  the browser and ignores Web Form Request keys (frappe/payments#276), so hooks.py points `accept`
+  back at Frappe's own; the last installed app wins. A test that calls Frappe's `accept` directly
+  tests the real path only while that override holds.
 - **Never name a field `assigned_to`.** Frappe's `assign_to` writes the assignee's User ID into any
   field with that name and clears it when the assignment goes. Care Request's Person link is
   `caregiver` for that reason.
