@@ -27,6 +27,21 @@ from churchit.church_people.membership import MEMBER, REGULAR_ATTENDER
 from churchit.contacts import get_primary_email
 from churchit.patches.after_install import DEFAULT_CHURCH_NAME
 
+_PATHWAY = "Next Steps"
+# (step, its smart list, the list's Person filters), in the order people usually take them.
+_PATHWAY_STEPS = [
+	("First Visit", "Has Attended", [["Person", "first_attended_on", "is", "set"]]),
+	("Joined a Group", "In a Group", [["Person", "group_count", ">=", 1]]),
+	("Baptized", "Baptized", [["Life Event", "event_type", "=", "Baptism"]]),
+	("Serving", "Serving", [["Person", "last_served_on", "is", "set"]]),
+]
+_SMART_LIST_FIELDS = [
+	["name", "Person"],
+	["full_name", "Person"],
+	["family", "Person"],
+	["membership", "Person"],
+]
+
 # Ordered deletion steps: (is_submittable, doctype, filters).
 # Prayer Request comments are handled separately after this list runs.
 _DELETE_STEPS = [
@@ -77,6 +92,9 @@ _DELETE_STEPS = [
 	(False, "Communication Consent", {}),
 	(False, "Follow-up Card", {}),
 	(False, "Follow-up Workflow", {}),
+	# A pathway names its smart lists, so it goes before them.
+	(False, "Pathway", {}),
+	(False, "Report", {"name": ["in", [smart_list for _step, smart_list, _filters in _PATHWAY_STEPS]]}),
 	(False, "Family", {}),
 	(False, "Person", {}),
 ]
@@ -189,6 +207,7 @@ def create_sample_data():
 	_create_person_notes(people)
 	_create_consents(people)
 	_create_connection_cards(people)
+	_create_pathway()
 
 
 def delete_sample_data():
@@ -2977,3 +2996,26 @@ def _create_connection_cards(people):
 		doc = frappe.get_doc({"doctype": "Connection Card", **card, "interests": interests})
 		doc.insert(ignore_permissions=True)
 		doc.process()
+
+
+def _create_pathway():
+	"""A pathway from a first visit to serving, each step a smart list of the sample people."""
+	for _step, smart_list, filters in _PATHWAY_STEPS:
+		_insert_if_missing(
+			"Report",
+			{"name": smart_list},
+			report_name=smart_list,
+			ref_doctype="Person",
+			report_type="Report Builder",
+			is_standard="No",
+			json=json.dumps(
+				{"filters": filters, "fields": _SMART_LIST_FIELDS, "order_by": "`tabPerson`.`full_name` asc"}
+			),
+		)
+	_insert_if_missing(
+		"Pathway",
+		{"name": _PATHWAY},
+		pathway_name=_PATHWAY,
+		description="From a first visit to serving on a team.",
+		steps=[{"step": step, "smart_list": smart_list} for step, smart_list, _filters in _PATHWAY_STEPS],
+	)

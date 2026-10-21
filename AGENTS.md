@@ -333,7 +333,11 @@ runs the Person `listview_settings` too, so every saved list gets the Person lis
 server side, `church_people/list_actions.py`, takes names from the browser and checks the right on
 every record: `email` to read addresses, `write` to change them.
 
-## Engagement, map and retention
+## Engagement, pathways, map and retention
+
+A Pathway step is a smart list; `Pathway.get_steps_done` reads each list through
+`smart_lists.get_people` with the pathway's church, and the Pathway Progress report only lays it
+out. A new way to judge a step must come in as a smart list, not as code in the report.
 
 `Person.get_timeline_data` feeds the form heatmap through Frappe's `get_open_count`, which
 `churchit.connections` overrides. It reads Function attendance through `get_list`, so a reader sees
