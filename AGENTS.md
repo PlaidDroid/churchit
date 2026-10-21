@@ -585,6 +585,9 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
   the browser and ignores Web Form Request keys (frappe/payments#276), so hooks.py points `accept`
   back at Frappe's own; the last installed app wins. A test that calls Frappe's `accept` directly
   tests the real path only while that override holds.
+- **Frappe 16.50's Map view is broken.** `ListView` sets `this.load_lib` to a Promise, which hides
+  `MapView.load_lib()` (frappe/frappe#44810). `church_utils.js` replaces `MapView.setup_view`; remove
+  that once Frappe fixes it.
 - **Never name a field `assigned_to`.** Frappe's `assign_to` writes the assignee's User ID into any
   field with that name and clears it when the assignment goes. Care Request's Person link is
   `caregiver` for that reason.
