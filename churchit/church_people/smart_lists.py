@@ -11,6 +11,7 @@ import json
 import frappe
 from frappe import _
 
+from churchit.church_people.membership import living_people_filter
 from churchit.church_scope import church_filters
 
 SMART_LIST = ("Report Builder", "Person")
@@ -30,7 +31,5 @@ def get_people(report: str, church: str | None) -> list[str]:
 			_("{0} is not a smart list, a saved report of people made with Report Builder.").format(report)
 		)
 	source = frappe.get_doc("Report", report)
-	filters = source.get_standard_report_filters(
-		json.loads(source.json or "{}"), church_filters(church, is_deceased=0)
-	)
-	return frappe.get_all("Person", filters=filters, pluck="name")
+	filters = source.get_standard_report_filters(json.loads(source.json or "{}"), church_filters(church))
+	return frappe.get_all("Person", filters=[*filters, living_people_filter()], pluck="name")

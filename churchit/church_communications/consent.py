@@ -25,6 +25,7 @@ from churchit.church_communications.doctype.communication_consent.communication_
 )
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import CHURCH_NEWS
 from churchit.church_communications.newsletter import UNSUBSCRIBE_REFERENCE, email_church
+from churchit.church_people.membership import living_people_filter
 from churchit.contacts import EMAIL_DOCTYPE, PHONE_DOCTYPE, contact_key
 
 RENEW_METHOD = "/api/method/churchit.church_communications.consent.renew_consent"
@@ -55,7 +56,7 @@ def allowed_people(people: list[str], channel: str, purpose: str | None = None) 
 		return set()
 	# church-scope: deciding for people the caller already chose; nothing here is shown
 	living = frappe.get_all(
-		"Person", filters={"name": ("in", people), "is_deceased": 0}, fields=["name", "church"]
+		"Person", filters=[{"name": ("in", people)}, living_people_filter()], fields=["name", "church"]
 	)
 	statuses = default_statuses(living, channel) | latest_statuses(people, channel, purpose)
 	return {row.name for row in living if statuses[row.name] == GIVEN}
