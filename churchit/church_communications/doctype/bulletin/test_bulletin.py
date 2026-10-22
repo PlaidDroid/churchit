@@ -71,6 +71,7 @@ class TestBulletin(FrappeTestCase):
 		team_request = self.make_prayer_request("_Test Team Request", visibility="Prayer Team")
 		answered_request = self.make_prayer_request("_Test Answered Request", status="Answered")
 		expired_request = self.make_prayer_request("_Test Expired Request", end_date="2020-01-01 00:00:00")
+		unapproved_request = self.make_prayer_request("_Test Unapproved Request", approved_for_list=0)
 
 		defaults = get_defaults(self.function.name)
 
@@ -83,6 +84,7 @@ class TestBulletin(FrappeTestCase):
 		self.assertNotIn(team_request.name, picked)
 		self.assertNotIn(answered_request.name, picked)
 		self.assertNotIn(expired_request.name, picked)
+		self.assertNotIn(unapproved_request.name, picked)
 		self.assertEqual(
 			next(row for row in defaults["prayer_requests"] if row["prayer_request"] == open_request.name)[
 				"title"
@@ -144,6 +146,14 @@ class TestBulletin(FrappeTestCase):
 				self.make_bulletin,
 				prayer_requests=[{"prayer_request": request.name}],
 			)
+
+	def test_an_unapproved_prayer_request_is_not_printed(self):
+		request = self.make_prayer_request("_Test Unapproved Bulletin Request", approved_for_list=0)
+		self.assertRaises(
+			frappe.ValidationError,
+			self.make_bulletin,
+			prayer_requests=[{"prayer_request": request.name}],
+		)
 
 	def test_church_roles_list_current_holders_in_settings_order(self):
 		pastor = ensure("Position Type", {"position": "_Test Pastor"})

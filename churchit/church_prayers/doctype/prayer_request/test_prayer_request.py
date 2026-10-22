@@ -1,8 +1,11 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+import json
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.website.doctype.web_form.web_form import accept
 
 from churchit.tests.helpers import ensure, ensure_user, make_person
 
@@ -50,3 +53,36 @@ class TestPrayerRequest(FrappeTestCase):
 
 	def test_visibility_defaults_to_whole_church(self):
 		self.assertEqual(self._request().visibility, "Whole Church")
+
+	def test_a_guest_request_waits_for_approval(self):
+		ensure("Prayer Request Status", {"status": "Answered"})
+		frappe.set_user("Guest")
+		guest = accept(
+			"prayer-request-anonymous",
+			json.dumps(
+				{
+					"title": "_Test Guest Request",
+					"type": self.request_type,
+					"request": "Please pray.",
+					"status": "Answered",
+					"visibility": "Prayer Team",
+				}
+			),
+		)
+		self.assertEqual(guest.status, "Requested")
+		self.assertEqual(guest.visibility, "Prayer Team")
+		self.assertEqual(guest.approved_for_list, 0)
+
+		member = ensure_user("_test_prayer_approved@example.com", "_Test Approved")
+		if not frappe.db.exists("Person", {"user": member}):
+			make_person("_Test Prayer", "Approved", user=member)
+		frappe.set_user(member)
+		request = frappe.get_doc(
+			{
+				"doctype": "Prayer Request",
+				"title": "_Test Member Request",
+				"type": self.request_type,
+				"approved_for_list": 0,
+			}
+		).insert()
+		self.assertEqual(request.approved_for_list, 1)

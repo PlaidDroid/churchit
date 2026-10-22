@@ -4,13 +4,12 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import formatdate, getdate, now_datetime
+from frappe.utils import formatdate, getdate
 from frappe.utils.print_format import download_pdf as download_print_pdf
 
 from churchit.church_communications.doctype.bulletin.sections import BulletinSections
 from churchit.church_missions.doctype.missionary_status.missionary_status import INACTIVE
-from churchit.church_prayers.doctype.prayer_request.prayer_request import CLOSED_STATUSES
-from churchit.church_prayers.prayer_access import WHOLE_CHURCH
+from churchit.church_prayers.prayer_access import WHOLE_CHURCH, get_open_request_filters
 from churchit.church_scope import CHURCH_FIELD, church_filters, has_church_access
 from churchit.scripture import format_reference
 
@@ -71,9 +70,18 @@ class Bulletin(BulletinSections, Document):
 
 	def validate_prayer_requests_are_printable(self):
 		for row in self.prayer_requests:
-			if frappe.db.get_value("Prayer Request", row.prayer_request, "visibility") != WHOLE_CHURCH:
+			visibility, approved = frappe.db.get_value(
+				"Prayer Request", row.prayer_request, ["visibility", "approved_for_list"]
+			)
+			if visibility != WHOLE_CHURCH:
 				frappe.throw(
 					_("{0} is not shared with the whole church and cannot be printed.").format(
+						frappe.bold(row.title)
+					)
+				)
+			if not approved:
+				frappe.throw(
+					_("{0} is not approved for the prayer list and cannot be printed.").format(
 						frappe.bold(row.title)
 					)
 				)
@@ -118,11 +126,12 @@ def supported_missionaries(on_date, include_sensitive=False, church=None):
 
 
 def open_prayer_requests(church=None):
-	"""Rows for every Whole Church request that is neither closed nor past its end date, urgent ones first."""
+	"""Rows for every open Whole Church request approved for the list, urgent ones first."""
+	filters, or_filters = get_open_request_filters()
 	return frappe.get_all(
 		"Prayer Request",
-		filters=church_filters(church, visibility=WHOLE_CHURCH, status=("not in", CLOSED_STATUSES)),
-		or_filters=[["end_date", "is", "not set"], ["end_date", ">=", now_datetime()]],
+		filters=church_filters(church, visibility=WHOLE_CHURCH, **filters),
+		or_filters=or_filters,
 		fields=["name as prayer_request", "title", "recipient_name"],
 		order_by="urgent desc, creation desc",
 	)

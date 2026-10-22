@@ -5,16 +5,21 @@ import frappe
 from frappe.model.document import Document
 
 from churchit.church_people.member_access import pin_to_members_own_person, validate_members_recipient
-from churchit.church_prayers.prayer_access import PRAYER_REQUEST, get_community_filters
+from churchit.church_prayers.prayer_access import (
+	PRAYER_REQUEST,
+	get_community_filters,
+	get_open_request_filters,
+)
 from churchit.utils import resolve_link_titles
-
-CLOSED_STATUSES = ("Answered", "Archived", "Closed")
 
 
 class PrayerRequest(Document):
 	def before_insert(self):
 		if not self.status:
 			self.status = frappe.db.get_value("Prayer Request Status", {"status": "Requested"}, "name")
+		# The web form saves with ignore_permissions, so Frappe keeps the permlevel 1 default for a guest.
+		if frappe.session.user == "Guest":
+			self.approved_for_list = 0
 
 	def validate(self):
 		self.validate_public_church()
@@ -48,7 +53,9 @@ class PrayerRequest(Document):
 		"""Community Prayer Requests reads past the DocPerms: a member opens what that page lists them."""
 		if frappe.session.user == "Guest":
 			return False
-		return bool(frappe.db.exists(PRAYER_REQUEST, {"name": self.name, **get_community_filters()}))
+		filters, or_filters = get_open_request_filters()
+		filters = {"name": self.name, **get_community_filters(), **filters}
+		return bool(frappe.get_all(PRAYER_REQUEST, filters=filters, or_filters=or_filters, limit=1))
 
 
 def get_list_context(context):

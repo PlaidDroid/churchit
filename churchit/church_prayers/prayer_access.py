@@ -9,6 +9,7 @@ member reads the Whole Church ones. A bulletin prints only Whole Church requests
 """
 
 import frappe
+from frappe.utils import now_datetime
 
 from churchit.church_scope import church_filters, default_church, session_church
 
@@ -17,6 +18,7 @@ PRAYER_TEAM_ROLE = "Church Prayer Team"
 PRIVATE = "Private"
 PRAYER_TEAM = "Prayer Team"
 WHOLE_CHURCH = "Whole Church"
+CLOSED_STATUSES = ("Answered", "Archived", "Closed")
 
 
 def has_prayer_permission(doc, ptype=None, user=None) -> bool:
@@ -60,3 +62,13 @@ def get_community_filters() -> dict:
 	if PRAYER_TEAM_ROLE in frappe.get_roles():
 		visibilities.append(PRAYER_TEAM)
 	return church_filters(session_church() or default_church(), visibility=("in", visibilities))
+
+
+def get_open_request_filters() -> tuple[dict, list]:
+	"""`(filters, or_filters)` for the requests a list shows: open, approved for the list and not ended.
+
+	They apply no church or visibility, so the caller adds those.
+	"""
+	filters = {"status": ("not in", CLOSED_STATUSES), "approved_for_list": ("=", 1)}
+	or_filters = [["end_date", "is", "not set"], ["end_date", ">=", now_datetime()]]
+	return filters, or_filters

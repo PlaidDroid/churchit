@@ -8,7 +8,7 @@
  "anonymous": 1,
  "apply_document_permissions": 1,
  "button_label": "Save",
- "condition_json": "[[\"Prayer Request\",\"status\",\"!=\",\"Answered\",false]]",
+ "condition_json": "[[\"Prayer Request\",\"status\",\"!=\",\"Answered\"]]",
  "creation": "2025-09-13 23:09:32.093784",
  "doc_type": "Prayer Request",
  "docstatus": 0,
@@ -35,7 +35,7 @@
  ],
  "login_required": 0,
  "max_attachment_size": 0,
- "modified": "2026-10-21 21:05:00.000000",
+ "modified": "2026-10-22 15:43:00.000000",
  "modified_by": "Administrator",
  "module": "Church Prayers",
  "name": "prayer-request-anonymous",
@@ -99,20 +99,6 @@
    "precision": "",
    "read_only": 0,
    "reqd": 0,
-   "show_in_filter": 0
-  },
-  {
-   "allow_read_on_all_link_options": 0,
-   "fieldname": "status",
-   "fieldtype": "Link",
-   "hidden": 0,
-   "label": "Status",
-   "max_length": 0,
-   "max_value": 0,
-   "options": "Prayer Request Status",
-   "precision": "",
-   "read_only": 0,
-   "reqd": 1,
    "show_in_filter": 0
   },
   {

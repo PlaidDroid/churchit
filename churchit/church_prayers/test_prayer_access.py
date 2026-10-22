@@ -7,6 +7,7 @@ import frappe
 from frappe.modules.patch_handler import PatchType, get_patches_from_app
 from frappe.tests.utils import FrappeTestCase
 
+from churchit.church_prayers.web_form.community_prayer_requests import community_prayer_requests
 from churchit.patches.v1_0 import set_prayer_request_visibility
 from churchit.tests.helpers import ensure, ensure_user
 
@@ -72,6 +73,37 @@ class TestPrayerAccess(FrappeTestCase):
 		listed, opened = self.readable(self.care)
 		self.assertIn(self.private.name, listed)
 		self.assertIn(self.private.name, opened)
+
+	def test_the_community_page_hides_closed_ended_and_unapproved_requests(self):
+		ensure("Prayer Request Status", {"status": "Answered"})
+		hidden = {
+			frappe.get_doc(
+				{
+					"doctype": "Prayer Request",
+					"title": f"_Test Access {title}",
+					"type": self.whole.type,
+					"visibility": "Whole Church",
+					**values,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+			for title, values in (
+				("Answered", {"status": "Answered"}),
+				("Ended", {"end_date": "2020-01-01 00:00:00"}),
+				("Unapproved", {"approved_for_list": 0}),
+			)
+		}
+
+		frappe.set_user(self.member)
+		context = community_prayer_requests.get_list_context(frappe._dict())
+		listed = {row.name for row in context.get_list("Prayer Request", "", [], 0, 500)}
+
+		self.assertIn(self.whole.name, listed)
+		self.assertFalse(hidden & listed)
+		self.assertTrue(frappe.get_doc("Prayer Request", self.whole.name).has_webform_permission())
+		for name in hidden:
+			self.assertFalse(frappe.get_doc("Prayer Request", name).has_webform_permission(), name)
 
 
 class TestVisibilityPatch(FrappeTestCase):
