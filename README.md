@@ -210,6 +210,8 @@ pilot -b church setup production
 
 On a plain `bench` (without Pilot), the equivalent is `bench get-app https://github.com/meichthys/churchit`, `bench --site <your-site> install-app churchit`, and `bench update` to upgrade.
 
+Churchit cannot share a site with an app that has a doctype of the same name. Today this includes ERPNext (Budget, Location), Frappe Learning (Function) and Frappe Suite (Email Address, Slide). Installing Churchit on such a site, or installing such an app on a Churchit site, stops with an error that names the shared doctypes.
+
 To make the site reachable from the internet with your own domain, see [Setting up a public domain](#setting-up-a-public-domain).
 
 ### First steps after installing

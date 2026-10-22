@@ -87,7 +87,7 @@ or raw SQL, so scope those yourself. If a particular read genuinely cannot cross
 where it happens:
 
 ```python
-# church-scope: clashes within one room, and a room belongs to one church
+# church-scope: a shared room has one diary for every church, so a clash is found across all of them
 conflicts = frappe.qb.from_(Booking).where(Booking.room == self.room)
 ```
 
@@ -307,6 +307,10 @@ people who have died. `membership.living_people_filter(Person)` is the one rule:
 `frappe.qb`, or as an item of a `get_list` filters list. For a couple, apply it to the spouse too,
 through a left join on `Person` as `spouse`.
 
+Attendance counts only the types in `church_ministries/attendance.COUNTED_TYPES`, and only on a
+Function whose start date is today or earlier. Take both from there, and a total from
+`attendance.get_total`; `test_reports_hygiene` fails on a second copy of the types.
+
 Birthdays and ages come from the Person fields, never from Life Event rows. `birth_month` and
 `birth_day` are set from the Birth event even when its year is unknown (0 when there is no
 birthday). `birth_date` needs a known year. `age` needs one too and, for someone who died, a known
@@ -424,6 +428,10 @@ doctype a web view, which renders from a template no source reads. A test fails 
 on `frappe.qb` or `frappe.db.sql` in a source's own code, but not in a helper it calls. Extend
 `code_sources()` before adding either.
 
+The scan counts any `record.fieldname` attribute in a page's code, so a page that reads a field
+whose name is also a private field of a published doctype reads it with `.get()` (the sermon
+presentation reads slide notes this way).
+
 ## Settings a church can differ on
 
 Three Singles hold site-wide configuration. Each takes per-church overrides through one resolution
@@ -452,6 +460,12 @@ Two rules the shapes differ on, and both are forced rather than chosen:
 
 The gateway override matters most: without it, a gift given on a branch's page goes through the
 merchant account the main church set up.
+
+Only the gateways in `giving_settings.SUPPORTED_GATEWAY_SETTINGS` (Stripe and PayPal) call back
+`on_payment_authorized` with an Online Donation, so Giving Settings refuses any other and
+`gateways_for` skips one stored before. A gift is recorded only through
+`OnlineDonation.record_charge`, which compares the amount and currency of the newest Completed
+Integration Request with the gift, because the checkout takes the amount from the browser.
 
 ## The switch
 
@@ -507,14 +521,16 @@ replaces `MapView.setup_view` (see the next section).
 - **Never name a field `assigned_to`.** Frappe's `assign_to` writes the assignee's User ID into any
   field with that name and clears it when the assignment goes. Care Request's Person link is
   `caregiver` for that reason.
-- **Frappe checks create before `fetch_from` fills `church`.** A doctype that takes its church from a
-  link checks in `validate`, when that link changes and the save is not `ignore_permissions`, that the
-  user may see the linked record's church, with a `refuse_another_churches_<link>` method: Communication
-  Consent, Person Note, Follow-up Card (its person and its workflow), Background Check, Care Request,
-  Care Assignment, Visitation Log, Counseling Case, Ministry Team Block, Ministry Team Position,
-  Function Check-In, Function Sign-Up, Bulletin, Alms Request, Prayer, Fund Transfer and Room Booking.
-  Ministry Team Assignment checks on insert, because its links are set once; Family checks its primary
-  contact and Possible Duplicate its pair. A Giving Statement checks its own church instead, because a
+- **Frappe checks create before `fetch_from` fills `church`.** A doctype that takes its church from
+  a link checks in `validate`, when that link changes and the save is not `ignore_permissions`, that
+  the user may see the linked record's church, with a `refuse_another_churches_<link>` method:
+  Communication Consent, Person Note, Follow-up Card (its person and its workflow), Background
+  Check, Care Request, Care Assignment, Visitation Log, Counseling Case, Ministry Team Block,
+  Ministry Team Position, Function Check-In, Function Sign-Up, Bulletin, Alms Request, Prayer, Fund
+  Transfer and Room Booking. Ministry Team Assignment checks on insert, because its links are set
+  once; Family checks its primary contact and Possible Duplicate its pair. Family also checks each
+  new member, and Person checks a changed `family`, so a household spans churches only when a user
+  who sees both churches links it. A Giving Statement checks its own church instead, because a
   statement for another church's giver stays in the issuer's church. A new doctype like these needs
   the same method.
 - **Model sync gives every existing row a new column's default before any post_model_sync patch.**
@@ -675,16 +691,20 @@ carries read-only summary fields (attendance, groups, serving, giving, care) fro
 `church_people/summaries/`, whose docstring is the contract. To add a figure, add a read-only Person
 field and an area module; do not add a hook.
 
-An area counts only the person's own church's records and shared ones (`summaries.same_church`).
-The directory is shared, so a stored figure would otherwise show one church what a person did at
+An area counts only the person's own church's records and shared ones (`summaries.same_church`). The
+directory is shared, so a stored figure would otherwise show one church what a person did at
 another. Giving and care figures carry permlevels 2 and 3 for the same reason, and
 `Person.get_permlevel_access` drops both on single-document reads when the reader cannot see the
 person's church. Lists, Report Builder and exports apply permlevels by role only. That gap is
 accepted for now: while the directory is shared, another church's finance or care role reads and
 filters these figures in lists, smart lists and exports, and Check-In, People Editor and Church
-Manager read `medical_notes` (permlevel 1) on every person. A church that must keep them apart
-ticks Keep People and Families Private to Each Church. A new figure that counts one church's
-records inherits the gap; say so in the manuals.
+Manager read `medical_notes` (permlevel 1) on every person. The same holds for Authorized Pickup
+rows in lists and exports. Family keeps pickup changes out of its Versions (`Family.save_version`),
+because the form timeline shows Versions to every reader of a record. Person Versions still record
+`medical_notes` and the other fields above permlevel 0, so every Person reader sees those changes in
+the timeline. Only a user who sees both churches can put a person into another church's Family. A
+church that must keep them apart ticks Keep People and Families Private to Each Church. A new figure
+that counts one church's records inherits the gap; say so in the manuals.
 
 `summaries.keep_stored_values` (first in `Person.before_save`) puts the stored figures and `groups`
 rows back on every save, because a refresh leaves `modified` alone. Never set a summary field
@@ -821,6 +841,9 @@ unless Guest can read the linked doctype: Frappe refuses to save or render it ot
 Person and one use; Frappe alone lets a key add records and reopen its record until it expires.
 Never put a request key in a Communication or Comment: anyone who reads the Person could use it.
 
+`Person.team_calendar_key` is at permlevel 4 (System Manager only). Code reads and writes it with
+`frappe.db`; do not read it through a document a user sees.
+
 ## Care and child safety
 
 `background_check.is_cleared(person, on_date, check_types)` is the one rule for "cleared to serve":
@@ -836,9 +859,13 @@ reader may read (`frappe.get_list`), then reads the people those rows name with 
 their church. Do not fetch Person fields through the check-in's link (`person.full_name` in
 `get_list`): Frappe applies Person permission to that join, and a child at a shared function loses
 their name. Who may collect a child is the living household Adults plus the family's Authorized
-Pickup rows. `check_in.release_children` reads the families again before it stores who collected a
-child on its Function Check-In (`collected_by`, `collected_at`, `released_by`), and locks the row,
-so a child is released once. The station finds people only through
+Pickup rows. The Authorized Pickups table is at permlevel 1 (read and write for Church Manager and
+Church People Editor, read for Church Check-In), and `Family.get_permlevel_access` drops it on a
+single read when the reader cannot see the family's church. Lists, Report Builder and `get_list` on
+the child apply permlevels by role only, the same gap as `medical_notes`.
+`check_in.release_children` reads the families again before it stores who collected a child on its
+Function Check-In (`collected_by`, `collected_at`, `released_by`), and locks the row, so a child is
+released once. The station finds people only through
 `group_by_family(matched, get_people_scope(function))`, Scan Card included, so a new way to find
 people there must use it. The roster (`get_check_ins`) and the pickup lists name people of every
 church on purpose, because they are keyed to a function the reader may read. Do not add Authorized
@@ -851,7 +878,10 @@ DocPerm reads every request; the hooks take back other people's Private requests
 only role that reads every request is Church Prayer Team. Code that reads past permissions applies
 Visibility itself: `get_community_filters` for the community page, `has_webform_permission` and
 `create_prayer`, and `WHOLE_CHURCH` only for bulletins (`bulletin.py`). A web form's
-`condition_json` reaches the community `get_list` as `{field: [operator, value]}`.
+`condition_json` reaches the community `get_list` as `{field: [operator, value]}`. A request shows
+on the community list and in bulletins only while it is open, approved for the list and not past its
+end date (`prayer_access.get_open_request_filters`). A guest request starts with Approved for List
+off.
 
 ## Follow-up cards
 
