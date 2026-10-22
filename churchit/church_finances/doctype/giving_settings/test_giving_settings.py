@@ -6,10 +6,20 @@ from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 
 
+def make_gateway(name, settings="Stripe Settings"):
+	"""A Payment Gateway called *name* that runs on the *settings* doctype."""
+	gateway = frappe.new_doc("Payment Gateway")
+	if frappe.db.exists("Payment Gateway", name):
+		gateway = frappe.get_doc("Payment Gateway", name)
+	gateway.update({"gateway": name, "gateway_settings": settings})
+	return gateway.save(ignore_permissions=True).name
+
+
 def make_settings(*gateways):
 	"""An unsaved Giving Settings with these gateways: (name, is_default[, church])."""
 	settings = frappe.new_doc("Giving Settings")
 	for name, is_default, *church in gateways:
+		make_gateway(name)
 		settings.append(
 			"gateways",
 			{"payment_gateway": name, "is_default": is_default, "church": church[0] if church else None},

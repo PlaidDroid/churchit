@@ -8,14 +8,15 @@ from frappe.exceptions import ValidationError
 from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 
+from churchit.church_finances.doctype.giving_settings.test_giving_settings import make_gateway
 from churchit.tests.helpers import RollbackEachTest, ensure, ensure_user, make_person, make_two_churches
 from churchit.www.give import get_context, start_donation
 
 
 class TestGivePage(FrappeTestCase):
 	def setUp(self):
-		self.gateway = ensure("Payment Gateway", {"gateway": "_Test Gateway"})
-		self.other_gateway = ensure("Payment Gateway", {"gateway": "_Test Other Gateway"})
+		self.gateway = make_gateway("_Test Gateway")
+		self.other_gateway = make_gateway("_Test Other Gateway")
 		self.fund = frappe.get_doc(
 			{"doctype": "Fund", "fund": "_Test Giving Fund", "allow_giving": 1}
 		).insert(ignore_permissions=True)
@@ -75,6 +76,20 @@ class TestGivePage(FrappeTestCase):
 		with self.assertRaises(ValidationError):
 			start_donation(
 				10, self.fund.name, payment_gateway="Not Offered", donor_name="A", email="a@example.com"
+			)
+
+	def test_an_unsupported_gateway_is_refused_and_not_offered(self):
+		mpesa = make_gateway("_Test Mpesa Gateway", "Mpesa Settings")
+		with self.assertRaises(ValidationError):
+			self._configure(gateways=[self.gateway, mpesa])
+
+		# A row stored before the check is skipped, on the page and when giving.
+		frappe.db.set_value("Payment Gateway", self.other_gateway, "gateway_settings", "Mpesa Settings")
+		frappe.clear_document_cache("Payment Gateway", self.other_gateway)
+		self.assertEqual([g["name"] for g in self._context().gateways], [self.gateway])
+		with self.assertRaises(ValidationError):
+			start_donation(
+				10, self.fund.name, payment_gateway=self.other_gateway, donor_name="A", email="a@example.com"
 			)
 
 	def test_start_donation_requires_a_configured_gateway(self):
@@ -167,8 +182,8 @@ class TestGivingAtABranch(RollbackEachTest):
 		cls.root, cls.branch_a, cls.branch_b = make_two_churches()
 		cls.addClassCleanup(frappe.clear_cache)
 		frappe.db.set_value("Church", cls.branch_b, "publish", 1)
-		cls.shared_gateway = ensure("Payment Gateway", {"gateway": "_Test Shared Gateway"})
-		cls.branch_gateway = ensure("Payment Gateway", {"gateway": "_Test Branch B Gateway"})
+		cls.shared_gateway = make_gateway("_Test Shared Gateway")
+		cls.branch_gateway = make_gateway("_Test Branch B Gateway")
 		settings = frappe.get_doc("Giving Settings")
 		settings.update({"enabled": 1, "allow_anonymous": 1, "gateways": []})
 		settings.append("gateways", {"payment_gateway": cls.shared_gateway})
@@ -199,6 +214,14 @@ class TestGivingAtABranch(RollbackEachTest):
 		gift = self.give(self.branch_fund)
 
 		self.assertEqual((gift.church, gift.payment_gateway), (self.branch_b, self.branch_gateway))
+
+	def test_a_branch_whose_own_gateway_is_unsupported_gets_no_shared_gateway(self):
+		frappe.db.set_value("Payment Gateway", self.branch_gateway, "gateway_settings", "Mpesa Settings")
+		frappe.clear_document_cache("Payment Gateway", self.branch_gateway)
+		self.addCleanup(frappe.clear_document_cache, "Payment Gateway", self.branch_gateway)
+
+		with self.assertRaisesRegex(ValidationError, "No payment gateway"):
+			self.give(self.branch_fund)
 
 	def test_a_shared_fund_gift_belongs_to_the_branch_whose_page_took_it(self):
 		user = ensure_user("_test_branch_a_giver@example.com", "_Test Branch A Giver")

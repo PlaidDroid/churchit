@@ -1,17 +1,22 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from itertools import groupby
+
 import frappe
 from frappe import _
+from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 from frappe.model.document import Document
-from frappe.utils import fmt_money, formatdate, now, nowdate
+from frappe.utils import flt, fmt_money, formatdate, now, nowdate
+from frappe.utils.user import get_users_with_role
 
+from churchit.church_communications.scoped_notification import drop_out_of_scope
 from churchit.church_scope import refuse_another_churches_record
 from churchit.contacts import get_primary_email
 
 # Statuses reported by Payments-app gateway controllers that mean the
 # payment succeeded. Different gateways use slightly different words.
-PAID_STATUSES = ("Authorized", "Completed", "Paid")
+PAID_STATUSES = ("Completed", "Paid")
 
 # Payment Type used for online gifts (created in after_install / patch).
 ONLINE_PAYMENT_TYPE = "Online"
@@ -31,12 +36,75 @@ class OnlineDonation(Document):
 		``run_method("on_payment_authorized", status)``.
 		"""
 		if status in PAID_STATUSES:
-			if self.status != "Paid":
-				self.record_donation()
+			self.record_charge()
 		else:
 			self.db_set("status", "Failed")
 
 		return f"/give?success={self.name}"
+
+	@frappe.whitelist(methods=["POST"])
+	def record_charged_gift(self):
+		"""Record a Pending gift the gateway charged when its callback never arrived."""
+		self.reload()
+		self.check_permission("write")
+		if self.status != "Pending":
+			frappe.throw(_("Only a Pending gift can be recorded. This gift is {0}.").format(_(self.status)))
+		if not self.get_integration_request():
+			frappe.throw(_("No completed payment was found for this gift."))
+
+		self.record_charge()
+
+	def record_charge(self):
+		"""Record the gift once, and only when the gateway charged its amount in its currency.
+
+		The checkout page sends the amount from the browser, so the gift's own amount
+		is not proof of what the donor paid. The gateway's request log is.
+		"""
+		if frappe.db.get_value(self.doctype, self.name, "status", for_update=True) == "Paid":
+			return
+
+		request = self.get_integration_request()
+		if request:
+			self.transaction_reference = request.name
+
+		problem = self.get_charge_problem(request)
+		if problem:
+			self.db_set({"status": "Needs Review", "transaction_reference": self.transaction_reference})
+			notify_finance([self], problem)
+			return
+
+		self.record_donation()
+
+	def get_integration_request(self):
+		"""The newest Completed Integration Request a gateway logged for this gift."""
+		return frappe.db.get_value(
+			"Integration Request",
+			{"reference_doctype": self.doctype, "reference_docname": self.name, "status": "Completed"},
+			["name", "data"],
+			as_dict=True,
+			order_by="creation desc",
+		)
+
+	def get_charge_problem(self, request) -> str | None:
+		"""Why *request* cannot record this gift, or None when it charged the gift exactly."""
+		if not request:
+			return _("No completed payment was found for online gift {0}.").format(self.name)
+
+		charged = frappe.parse_json(request.data or "{}")
+		precision = self.precision("amount")
+		if (
+			flt(charged.get("amount"), precision) == flt(self.amount, precision)
+			and charged.get("currency") == self.currency
+		):
+			return None
+
+		return _(
+			"Online gift {0} was charged {1}, but the gift is {2}. Check the payment before you record it."
+		).format(
+			self.name,
+			fmt_money(charged.get("amount"), currency=charged.get("currency")),
+			fmt_money(self.amount, currency=self.currency),
+		)
 
 	def record_donation(self):
 		"""Create and submit a Collection holding this single gift so it flows
@@ -117,3 +185,55 @@ class OnlineDonation(Document):
 				title="Online giving receipt failed",
 				message=frappe.get_traceback(),
 			)
+
+
+def notify_finance(gifts: list, reason: str):
+	"""Alert the Church Finance users who can see the church of *gifts* (all of one church)."""
+	users = drop_out_of_scope(get_users_with_role("Church Finance"), gifts[0], "name")
+	if not users:
+		return
+
+	enqueue_create_notification(
+		users,
+		{
+			"type": "Alert",
+			"subject": reason,
+			"document_type": "Online Donation",
+			"document_name": gifts[0].name,
+		},
+	)
+
+
+def alert_unrecorded_gifts():
+	"""Daily: tell Finance about gifts that a gateway charged but that are still Pending.
+
+	A callback that fails stores no transaction reference, so the gift is found
+	through the request log that names it.
+	"""
+	Gift = frappe.qb.DocType("Online Donation")
+	Request = frappe.qb.DocType("Integration Request")
+	# church-scope: a job over every church; notify_finance alerts only each gift's own church
+	gifts = (
+		frappe.qb.from_(Gift)
+		.join(Request)
+		.on(Request.reference_docname == Gift.name)
+		.where(
+			(Request.reference_doctype == "Online Donation")
+			& (Request.status == "Completed")
+			& (Gift.status == "Pending")
+		)
+		.select(Gift.name, Gift.church)
+		.distinct()
+		.orderby(Gift.church)
+		.orderby(Gift.name)
+		.run(as_dict=True)
+	)
+
+	for _church, rows in groupby(gifts, key=lambda gift: gift.church):
+		rows = list(rows)
+		notify_finance(
+			rows,
+			_(
+				"These online gifts were charged but are still Pending: {0}. Open each one and record it."
+			).format(", ".join(gift.name for gift in rows)),
+		)

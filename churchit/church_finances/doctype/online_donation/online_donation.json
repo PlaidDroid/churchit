@@ -55,12 +55,13 @@
   },
   {
    "default": "Pending",
+   "description": "Needs Review means the payment gateway charged a different amount or currency than the gift, so the gift was not recorded. Check the payment in the gateway.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nPaid\nFailed\nCancelled"
+   "options": "Pending\nPaid\nNeeds Review\nFailed\nCancelled"
   },
   {
    "fieldname": "column_break_giver",
@@ -136,7 +137,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-28 13:00:00",
+ "modified": "2026-10-22 15:50:00",
  "modified_by": "Administrator",
  "module": "Church Finances",
  "name": "Online Donation",

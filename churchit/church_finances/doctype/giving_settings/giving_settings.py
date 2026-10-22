@@ -5,10 +5,29 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# Gateways whose checkout takes an Online Donation and whose callback reaches on_payment_authorized.
+# Braintree is not here: its checkout loads the reference as a Payment Request.
+SUPPORTED_GATEWAY_SETTINGS = ("Stripe Settings", "PayPal Settings")
+
+
+def is_supported_gateway(payment_gateway: str) -> bool:
+	settings = frappe.get_cached_value("Payment Gateway", payment_gateway, "gateway_settings")
+	return settings in SUPPORTED_GATEWAY_SETTINGS
+
 
 class GivingSettings(Document):
 	def validate(self):
+		self.refuse_unsupported_gateways()
 		self.normalize_default_gateway()
+
+	def refuse_unsupported_gateways(self):
+		for row in self.gateways:
+			if not is_supported_gateway(row.payment_gateway):
+				frappe.throw(
+					_("Row {0}: {1} cannot take gifts. Online giving works with Stripe and PayPal.").format(
+						row.idx, frappe.bold(row.payment_gateway)
+					)
+				)
 
 	def normalize_default_gateway(self):
 		"""Keep at most one default gateway, and ensure one is chosen when any
@@ -31,9 +50,11 @@ class GivingSettings(Document):
 		with one account keeps.
 		"""
 		rows = [row for row in self.gateways if not row.church or row.church == church]
-		# A church with its own gateways uses only those; otherwise the shared ones stand in.
+		# A church with its own gateways uses only those, even when none of them is supported;
+		# otherwise the shared ones stand in.
 		own = [row for row in rows if row.church]
-		return sorted(own or rows, key=lambda row: 0 if row.is_default else 1)
+		supported = [row for row in own or rows if is_supported_gateway(row.payment_gateway)]
+		return sorted(supported, key=lambda row: 0 if row.is_default else 1)
 
 	def get_offered_gateways(self, church=None):
 		"""Return the gateways offered to *church* as ``[{"name", "label"}]``, default first."""

@@ -6,6 +6,7 @@ from unittest import mock
 import frappe
 from frappe.utils import add_days, getdate, today
 
+from churchit.church_finances.doctype.online_donation.test_online_donation import log_charge
 from churchit.church_people.summaries import giving, refresh
 from churchit.tests.helpers import RollbackEachTest, ensure, ensure_user, make_person, make_two_churches
 
@@ -57,6 +58,8 @@ class TestGivingSummary(RollbackEachTest):
 		gift = frappe.get_doc(
 			{"doctype": "Online Donation", "amount": 25, "fund": self.fund, "person": self.person}
 		).insert(ignore_permissions=True)
+		if status == "Completed":
+			log_charge(gift)
 		gift.on_payment_authorized(status)
 		return gift
 
