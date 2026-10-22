@@ -680,6 +680,9 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 - **Frappe 16.50's Map view is broken.** `ListView` sets `this.load_lib` to a Promise, which hides
   `MapView.load_lib()` (frappe/frappe#44810). `church_utils.js` replaces `MapView.setup_view`; remove
   that once Frappe fixes it.
+- **Kanban v2 keeps only the new column from a card move**, and ignores its own realtime update for
+  that card. A doctype whose save changes other card fields reloads the board in its
+  `<doctype>_kanban.js` `onAfterCardMove`, as `follow_up_card_kanban.js` does.
 - **Frappe's `send_sms` reports nothing per number.** It writes an SMS Log only for numbers the
   gateway accepted. A text copy's Communication `delivery_status` is Sent or Error from that log;
   `sending.get_people_sent` leaves out Error copies for the Sent To count, and a delivery asks with
