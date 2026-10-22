@@ -13,36 +13,16 @@ frappe.ui.form.on("Alms Request", {
 		}
 	},
 	refresh(frm) {
-		// Add a custom button that creates an Expense from the Alms Request, for whoever keeps the books
-		if (!frm.is_new() && frappe.model.can_create("Expense")) {
+		// One expense per request, for whoever keeps the books
+		if (!frm.is_new() && !frm.doc.associated_expense && frappe.model.can_create("Expense")) {
 			frm.add_custom_button(__("Create Expense"), function () {
-				if (frm.doc.associated_expense) {
-					frappe.db
-						.get_value("Expense", frm.doc.associated_expense, "title")
-						.then((r) => {
-							const title = r.message.title || frm.doc.associated_expense;
-							frappe.confirm(
-								`An expense (<a href="/app/expense/${frm.doc.associated_expense}" target="_blank">${title}</a>) already exists for this alms request. Create another?`,
-								function () {
-									frappe.call({
-										method: "churchit.church_finances.doctype.alms_request.alms_request.create_expense",
-										args: { alms_request_name: frm.doc.name },
-										callback: function () {
-											frm.reload_doc();
-										},
-									});
-								}
-							);
-						});
-				} else {
-					frappe.call({
-						method: "churchit.church_finances.doctype.alms_request.alms_request.create_expense",
-						args: { alms_request_name: frm.doc.name },
-						callback: function () {
-							frm.reload_doc();
-						},
-					});
-				}
+				frappe.call({
+					method: "churchit.church_finances.doctype.alms_request.alms_request.create_expense",
+					args: { alms_request_name: frm.doc.name },
+					callback: function () {
+						frm.reload_doc();
+					},
+				});
 			});
 		}
 	},

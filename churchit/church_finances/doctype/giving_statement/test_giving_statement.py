@@ -9,6 +9,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_finances.doctype.giving_statement.giving_statement import (
 	generate_statements,
+	get_givers,
 	get_statement_recipients,
 	statement_header,
 )
@@ -85,6 +86,13 @@ class TestGivingStatement(FrappeTestCase):
 
 		self.assertEqual(len(statement.lines), 1)
 		self.assertEqual(statement.total_amount, 75)
+
+	def test_a_gift_at_2359_on_the_last_day_is_included(self):
+		make_collection(f"{PERIOD[1]} 23:59:00", [(self.giver.name, 40)])
+		make_collection("2030-01-01 00:00:00", [(self.giver.name, 900)])
+
+		self.assertEqual(self._statement().total_amount, 40)
+		self.assertIn(self.giver.name, get_givers(PERIOD[1], PERIOD[1]))
 
 	def test_household_statement_covers_every_family_member(self):
 		family = frappe.get_doc({"doctype": "Family", "family_name": "_Test Statement Household"}).insert(

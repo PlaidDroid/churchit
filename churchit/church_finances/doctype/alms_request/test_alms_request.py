@@ -4,6 +4,7 @@
 from unittest.mock import patch
 
 import frappe
+import frappe.share
 from frappe.exceptions import ValidationError
 from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
@@ -99,7 +100,7 @@ class TestAlmsRequestAcrossChurches(RollbackEachTest):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.root, cls.branch_a, cls.branch_b = make_two_churches()
 		cls.addClassCleanup(frappe.clear_cache)
 		cls.care_b = ensure_user("_test_alms_care_b@example.com", "Care B", roles=("Church Pastoral Care",))
 		set_user_church(cls.care_b, cls.branch_b)
@@ -133,3 +134,51 @@ class TestAlmsRequestAcrossChurches(RollbackEachTest):
 		frappe.set_user(self.member_b)
 		with self.assertRaises(frappe.PermissionError):
 			self.request(self.person_a).insert()
+
+	def request_with_expense_details(self):
+		fund = _ensure(
+			"Fund", {"fund": "_Test Alms Fund B"}, {"fund": "_Test Alms Fund B", "church": self.branch_b}
+		)
+		expense_type = _ensure(
+			"Expense Type", {"type": "_Test Alms Type B"}, {"type": "_Test Alms Type B", "fund": fund}
+		)
+		alms = self.request(self.person_b)
+		alms.update({"amount": 40, "expense_type": expense_type})
+		return alms.insert(ignore_permissions=True)
+
+	def test_create_expense_takes_the_requests_church(self):
+		"""The Expense belongs to the request's church, not to the default church of who clicks."""
+		alms = self.request_with_expense_details()
+		finance = ensure_user(
+			"_test_alms_root_finance@example.com", "Root Finance", roles=("Church Finance",)
+		)
+		set_user_church(finance, self.root)
+		frappe.db.set_value("User Permission", {"user": finance, "allow": "Church"}, "hide_descendants", 0)
+		frappe.clear_cache(user=finance)
+		expenses = frappe.db.count("Expense")
+
+		frappe.set_user(finance)
+		create_expense(alms.name)
+		expense = frappe.db.get_value("Alms Request", alms.name, "associated_expense")
+		self.assertEqual(frappe.db.get_value("Expense", expense, "church"), self.branch_b)
+
+		with self.assertRaises(ValidationError):
+			create_expense(alms.name)
+		self.assertEqual(frappe.db.count("Expense"), expenses + 1)
+
+	def test_a_reader_cannot_create_an_expense(self):
+		alms = self.request_with_expense_details()
+		reader = ensure_user("_test_alms_reader_b@example.com", "Reader B", roles=("Church Staff",))
+		set_user_church(reader, self.branch_b)
+		frappe.share.add_docshare(
+			"Alms Request", alms.name, reader, read=1, flags={"ignore_share_permission": True}
+		)
+
+		frappe.set_user(reader)
+		self.assertTrue(frappe.has_permission("Alms Request", "read", doc=alms.name))
+		frappe.local.message_log = []
+		with self.assertRaises(frappe.PermissionError):
+			create_expense(alms.name)
+		# Every role that creates an Expense also writes Alms Requests, so the refusal must name the request.
+		self.assertIn("Alms Request", frappe.local.message_log[-1]["message"])
+		self.assertFalse(frappe.db.get_value("Alms Request", alms.name, "associated_expense"))

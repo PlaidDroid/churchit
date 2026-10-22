@@ -55,9 +55,11 @@ class AlmsRequest(Document):
 
 @frappe.whitelist(methods=["POST"])
 def create_expense(alms_request_name: str):
-	"""Create a Expense from the given Alms Request."""
+	"""Create the one Expense for the given Alms Request, in the request's church."""
 	alms = frappe.get_doc("Alms Request", alms_request_name)
-	alms.check_permission("read")
+	alms.check_permission("write")
+	if frappe.db.get_value("Alms Request", alms.name, "associated_expense", for_update=True):
+		frappe.throw(_("This alms request already has an expense."))
 	# Make sure an expense type and amount are provided
 	if not alms.amount:
 		frappe.throw(_("⚠️ An amount is required for an expense to be created."))
@@ -68,6 +70,7 @@ def create_expense(alms_request_name: str):
 	expense.amount = alms.amount
 	expense.type = alms.expense_type
 	expense.date = frappe.utils.now()
+	expense.church = alms.church
 	expense.insert()
 	expense.submit()
 	frappe.db.set_value("Alms Request", alms_request_name, "associated_expense", expense.name)

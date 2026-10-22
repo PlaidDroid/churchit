@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import getdate
+from frappe.utils import add_days, getdate
 
 from churchit.church_foundations.doctype.church.church import inherited_value
 from churchit.church_scope import CHURCH_FIELD, has_church_access, root_church, scoped
@@ -98,7 +98,7 @@ def get_donations(people, from_date, to_date):
 			& Donation.person.isin(people)
 			& (Collection.docstatus == 1)
 			& (Collection.date >= from_date)
-			& (Collection.date <= to_date)
+			& (Collection.date < add_days(to_date, 1))
 		)
 		.orderby(Collection.date)
 	)
@@ -153,7 +153,7 @@ def get_givers(from_date, to_date):
 			& Donation.person.isnotnull()
 			& (Collection.docstatus == 1)
 			& (Collection.date >= from_date)
-			& (Collection.date <= to_date)
+			& (Collection.date < add_days(to_date, 1))
 		)
 	)
 	return scoped(query, Collection, {}).run(pluck=True)

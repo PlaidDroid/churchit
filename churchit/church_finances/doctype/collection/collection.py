@@ -99,7 +99,7 @@ class Collection(Document):
 						"amount": fund_total,
 						"source_type": "Collection",
 						"source": self.name,
-						"date": frappe.utils.now(),
+						"date": self.date,
 					},
 				)
 				messages.append(f"💰 {fund_doc.fund} fund increased by ${fund_total}")
