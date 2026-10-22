@@ -10,6 +10,7 @@ write detection.
 
 import ast
 import os
+import tempfile
 from dataclasses import dataclass, field
 from functools import cache, cached_property
 
@@ -535,3 +536,236 @@ class TestWhitelistedDocumentMethods(FrappeTestCase):
 			if name not in methods or self.index.summary(methods[name]).writes
 		]
 		self.assertEqual(stale, [], "READ_ONLY_METHODS lists methods that are gone or now write")
+
+
+# Calls that read or write the record their second argument names, with that argument's keyword.
+NAME_READERS = {
+	"frappe.get_doc": "name",
+	"frappe.get_cached_doc": "name",
+	"frappe.db.get_value": "filters",
+	"frappe.db.set_value": "dn",
+	"frappe.db.exists": "dn",
+}
+LIST_READERS = ("frappe.get_list",)
+
+# Whitelisted functions that take a record name and check no permission on that record, and why they
+# need none. Keyed by the dotted path a client calls.
+SIGNED_LINK = "a signed email link: verify_request checks the signature over every parameter first"
+TRANSLATION = "scripture.is_readable is the read rule for a Bible Translation: Free Use text is public"
+OWN_RECORD = "a portal member holds no right on it; it refuses a record that is not the session's own"
+NAME_CHECK_EXEMPT = {
+	"churchit.church_communications.consent.renew_consent": SIGNED_LINK,
+	"churchit.church_communications.newsletter.unsubscribe": SIGNED_LINK,
+	"churchit.church_communications.doctype.bulletin.bulletin.download_pdf": (
+		"Frappe's download_pdf checks print permission on the bulletin before the date is read"
+	),
+	"churchit.church_communications.preferences.set_preference": (
+		"Communication Purpose is a global lookup; only its existence is read"
+	),
+	"churchit.church_ministries.member_attendance.change_own_attendance": (
+		"it loads only a function on the session member's own Attendance page"
+	),
+	"churchit.church_ministries.member_ministry_team.answer_own_assignment": OWN_RECORD,
+	"churchit.church_ministries.member_ministry_team.remove_own_block": OWN_RECORD,
+	"churchit.church_ministries.page.check_in.check_in.add_visitor": (
+		"Check-In reads every family; it refuses a family whose church the user cannot see (has_church_access)"
+	),
+	"churchit.church_missions.doctype.missionary.missionary.get_country_coordinates": (
+		"Country is Frappe's global reference data"
+	),
+	"churchit.church_people.group_api.join_group": (
+		"a member joins only a public portal group of their church (church_filters on session_church)"
+	),
+	"churchit.church_people.list_actions.mark_inactive": (
+		"Inactive Reason is a global lookup; each Person is checked for write"
+	),
+	"churchit.church_study.doctype.bible_memory_item.bible_memory_item.assign_memory": TRANSLATION,
+	"churchit.church_study.doctype.bible_memory_item.bible_memory_item.record_mistake": OWN_RECORD,
+	"churchit.church_study.doctype.bible_memory_item.bible_memory_item.complete_session": OWN_RECORD,
+	"churchit.scripture.get_books": TRANSLATION,
+	"churchit.scripture.get_chapter": TRANSLATION,
+	"churchit.scripture.get_passage": TRANSLATION,
+	"churchit.scripture.get_reference_preview": TRANSLATION,
+	"churchit.www.give.start_donation": "a guest may give to any fund with Allow Giving; the gift takes the fund's church",
+}
+
+
+def named_parameter(node) -> str | None:
+	"""The variable a name argument is: `name`, or `{"name": name}`."""
+	if isinstance(node, ast.Dict):
+		node = next(
+			(
+				value
+				for key, value in zip(node.keys, node.values, strict=True)
+				if isinstance(key, ast.Constant) and key.value == "name"
+			),
+			None,
+		)
+	return node.id if isinstance(node, ast.Name) else None
+
+
+@dataclass
+class NameUse:
+	"""Per parameter, the first line it names a record unchecked, and the first line it is checked."""
+
+	used: dict[str, int] = field(default_factory=dict)
+	checked: dict[str, int] = field(default_factory=dict)
+
+	def note(self, lines: dict[str, int], parameter: str | None, line: int):
+		if parameter:
+			lines[parameter] = min(line, lines.get(parameter, line))
+
+	def is_unchecked(self, parameter: str) -> bool:
+		used = self.used.get(parameter)
+		return used is not None and used < self.checked.get(parameter, used + 1)
+
+	def is_checked(self, parameter: str) -> bool:
+		checked = self.checked.get(parameter)
+		return checked is not None and checked <= self.used.get(parameter, checked)
+
+
+class RecordNames:
+	"""Follows the parameters of app functions into the record names they read and the checks they make."""
+
+	def __init__(self, index: AppIndex):
+		self.index = index
+		self.uses: dict[Function, NameUse] = {}
+
+	def loads(self, function: Function) -> dict[str, tuple[str, int]]:
+		"""`doc = frappe.get_doc("X", name)`: the variable, with the parameter and the line it loads."""
+		found = {}
+		for node in ast.walk(function.node):
+			if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+				parameter = self.named(function.module, node.value)
+				for target in node.targets:
+					if parameter and isinstance(target, ast.Name):
+						found[target.id] = (parameter, node.lineno)
+		return found
+
+	def named(self, module: Module, call: ast.Call) -> str | None:
+		"""The variable *call* passes as a record name to one of NAME_READERS."""
+		keyword_name = NAME_READERS.get(module.expand(dotted(call.func) or ""))
+		return named_parameter(argument(call, 1, keyword_name)) if keyword_name else None
+
+	def checked_variable(self, module: Module, call: ast.Call) -> str | None:
+		"""The record variable a permission check is on, or None for a call that checks no record."""
+		name, receiver = last_name(call.func), getattr(call.func, "value", None)
+		if name not in ("check_permission", "has_permission"):
+			return None
+		if receiver is None or (dotted(receiver) or "").startswith("frappe"):
+			return named_parameter(argument(call, 2, "doc"))
+		if isinstance(receiver, ast.Call):
+			return self.named(module, receiver)
+		return receiver.id if isinstance(receiver, ast.Name) else None
+
+	def use(self, function: Function, trail: tuple = ()) -> NameUse:
+		if function in self.uses:
+			return self.uses[function]
+		if function in trail:
+			return NameUse()
+		result, module, loads = NameUse(), function.module, self.loads(function)
+		checks = [(self.checked_variable(module, call), call) for call in calls(function.node)]
+		checked_loads = {variable for variable, _call in checks if variable in loads}
+		load_calls = {id(node.value) for node in ast.walk(function.node) if isinstance(node, ast.Assign)}
+		for variable, call in checks:
+			result.note(result.checked, loads.get(variable, (variable,))[0], call.lineno)
+			if module.expand(dotted(call.func) or "") in LIST_READERS:
+				for inner in ast.walk(call):
+					result.note(result.checked, getattr(inner, "id", None), call.lineno)
+			parameter = self.named(module, call)
+			if parameter and id(call) not in load_calls and not self.is_checked_receiver(call, checks):
+				result.note(result.used, parameter, call.lineno)
+			self.follow(function, call, result, (*trail, function))
+		for variable, (parameter, line) in loads.items():
+			if variable not in checked_loads:
+				result.note(result.used, parameter, line)
+		self.uses[function] = result
+		return result
+
+	def is_checked_receiver(self, call: ast.Call, checks) -> bool:
+		"""True for the `frappe.get_doc(...)` of `frappe.get_doc(...).check_permission(...)`."""
+		return any(getattr(check.func, "value", None) is call for _variable, check in checks)
+
+	def follow(self, function: Function, call: ast.Call, result: NameUse, trail: tuple):
+		"""Count what an app function called here does with the names passed to it."""
+		callee = self.index.resolve(function, call)
+		if not callee or callee == function:
+			return
+		inner = self.use(callee, trail)
+		for parameter in parameter_names(callee.node):
+			passed = named_parameter(passed_argument(callee, call, parameter))
+			if inner.is_checked(parameter):
+				result.note(result.checked, passed, call.lineno)
+			elif inner.is_unchecked(parameter):
+				result.note(result.used, passed, call.lineno)
+
+
+class TestWhitelistedFunctionsCheckTheNamedRecord(FrappeTestCase):
+	"""A module-level whitelisted function checks permission on a record the caller names.
+
+	Frappe checks nothing before such a function runs, and `frappe.get_doc`, `frappe.db.get_value`
+	and the like check nothing either. So a parameter that becomes the record name of
+	`frappe.get_doc`, `get_cached_doc`, `db.get_value`, `db.set_value` or `db.exists` (as the name or
+	as `{"name": ...}`) is first checked: `has_permission(..., doc=name)`,
+	`has_permission(doctype, ptype, name)`, `check_permission(...)` on the document it loads
+	(`doc = frappe.get_doc("X", name)` and then `doc.check_permission(...)`), or `frappe.get_list`.
+	App functions it is passed to are followed by name, with the checks and the reads they make.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.index = app_index()
+		cls.names = RecordNames(cls.index)
+		cls.functions = {
+			f"{function.module.name}.{function.name}": function
+			for function in cls.index.functions()
+			if not function.owner and is_whitelisted(function.node)
+		}
+
+	def unchecked(self, function: Function) -> list[str]:
+		use = self.names.use(function)
+		return [parameter for parameter in parameter_names(function.node) if use.is_unchecked(parameter)]
+
+	def test_a_function_checks_the_record_it_is_given(self):
+		unchecked = [
+			f"{function.location} {path}({', '.join(parameters)})"
+			for path, function in self.functions.items()
+			if path not in NAME_CHECK_EXEMPT and (parameters := self.unchecked(function))
+		]
+		assert not unchecked, (
+			"These whitelisted functions read or change a record whose name the caller sent, without "
+			'checking it first. Add `frappe.has_permission("<DocType>", doc=name, throw=True)`, or add '
+			"them to NAME_CHECK_EXEMPT with the reason: " + " | ".join(sorted(unchecked))
+		)
+
+	def test_every_exemption_names_a_function_that_still_needs_it(self):
+		stale = [
+			path
+			for path in NAME_CHECK_EXEMPT
+			if path not in self.functions or not self.unchecked(self.functions[path])
+		]
+		self.assertEqual(stale, [], "NAME_CHECK_EXEMPT lists functions that are gone or now check")
+
+	def test_an_unchecked_record_name_is_found(self):
+		source = (
+			"import frappe\n"
+			"@frappe.whitelist()\n"
+			"def unchecked(function):\n"
+			'	return frappe.get_doc("Function", function).title\n'
+			"@frappe.whitelist()\n"
+			"def checked(function):\n"
+			'	frappe.has_permission("Function", doc=function, throw=True)\n'
+			'	return frappe.db.get_value("Function", function, "title")\n'
+		)
+		with tempfile.NamedTemporaryFile("w", suffix=".py") as file:
+			file.write(source)
+			file.flush()
+			module = Module(file.name)
+		names = RecordNames(self.index)
+
+		unchecked = names.use(Function(module, module.functions["unchecked"]))
+		checked = names.use(Function(module, module.functions["checked"]))
+
+		self.assertTrue(unchecked.is_unchecked("function"))
+		self.assertFalse(checked.is_unchecked("function"))
