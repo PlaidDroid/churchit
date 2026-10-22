@@ -1,10 +1,12 @@
 # AGENTS.md
 
-Notes for anyone (person or agent) adding functionality to Churchit. `CLAUDE.md` describes the
-architecture and the commands; this file covers the things that are not visible in a diff and will
-break quietly if you do not know them.
+Notes for anyone (person or agent) adding functionality to Churchit. `README.md` covers installing,
+contributing and how the app ships its data, and each module's docstring explains how that area
+works. This file covers the things that are not visible in a diff and will break quietly if you do
+not know them.
 
-Read this before adding a doctype, a report, a chart, a notification, or a page.
+Read this before adding a doctype, a report, a chart, a notification, or a page. The general rules
+come first, from "The one invariant" to "House style". Notes on single areas of the app follow.
 
 ## The one invariant
 
@@ -19,28 +21,31 @@ other record. Records about a person, such as care requests, counseling and givi
 church either way.
 
 The failure mode is silent. Nothing errors when you get this wrong; a branch simply sees rows that
-belong to another church. That is why the rules below are enforced by
-`churchit/tests/test_church_scope_hygiene.py` rather than left to review.
+belong to another church. The hygiene tests in `churchit/tests/` (`test_*_hygiene.py`) check the
+rules below where they can. CI does not run the tests, so run them before you commit.
 
 Access rides on native Frappe **User Permissions** on `Church`. A user's `Person.church` drives the
-permission; `hide_descendants` is the "include branch churches" switch. `permission_query_conditions`
-is never used for church scoping. Person (a member lists their own record and their household's
-Children), Family (a member's own household), Person Note (Note Category roles), Follow-up Card (the
-follow-up role) and Prayer Request (Visibility) use it for other rules.
+permission; `hide_descendants` is the "include branch churches" switch. A user with no Church
+permission sees every church. `permission_query_conditions` is never used for church scoping.
+Person (a member lists their own record and the household Children they may edit, see "Member
+portal"), Family (a member's own household), Person Note (Note Category roles), Follow-up Card (the
+Church Follow-up role) and Prayer Request (Visibility) use it for other rules.
 
-The directory is the one custom piece. The `church` Link on `Person` and `Family` ships with
-`ignore_user_permissions: 1`, so User Permissions do not filter them. A User Permission cannot
-tell a read from a write, so the `has_permission` hook
+The directory is the one place where User Permissions do not limit a record by its church. The
+`church` Link on `Person` and `Family` ships with `ignore_user_permissions: 1`, so User Permissions
+do not filter them. A User Permission cannot tell a read from a write, so the `has_permission` hook
 `church_scope.refuse_changing_another_churches_people` refuses every other action outside the
 user's churches. A Frappe `has_permission` hook refuses on any falsy return, `None` included. When
 the directory is private, `multi_church.apply_people_privacy` adds a Property Setter that turns
 the flag off.
 
 A read of `Person` or `Family` that a user sees must follow the setting. `frappe.get_list` does this
-by itself. A raw read asks `church_scope.is_people_directory_private()`, as the Check-In Station does.
-A count is the opposite case. A Number Card or Dashboard Chart over `Person` or `Family` must be
-Custom and count only the reader's churches (`churchit.dashboard.count_people`). Frappe's own count
-totals every church.
+by itself. A raw read asks `church_scope.is_people_directory_private()`, as the Check-In Station
+does. A count is the opposite case: Frappe's own count totals every church. A Number Card or
+Dashboard Chart over `Person` or `Family` must be Custom and count only the reader's churches. A
+card calls `churchit.dashboard.count_people` or `count_families`, or `count_people_in_list` for a
+saved Person list. A chart source scopes its query with `scoped` or `church_query_filters`, as the
+Life Events and People Added sources do.
 
 ## Reading data: the rule that matters most
 
@@ -50,7 +55,7 @@ totals every church.
 | `frappe.get_all`         | **no**                          |
 | `frappe.db.count`        | **no**                          |
 | `frappe.qb` / raw SQL    | **no**                          |
-| Child tables, by any API | **no**, ever                    |
+| A child table            | only through `get_list` with `parent_doctype` |
 
 `frappe.get_all` looking permission-aware is the single most common mistake in this codebase; it is
 `get_list` with permissions turned off. Prefer `get_list` for anything a user will see. When you
@@ -69,11 +74,17 @@ answers "what belongs to this church", so it belongs on public pages and anywher
 from the record rather than the reader. All three admit shared records, so use them rather than
 writing `church == x` by hand, which would silently drop everything shared.
 
-Child tables are never filtered by Frappe, whatever you call, and they carry no church of their own.
-Scope the parent and join to it, the way the Life Events chart source joins `Life Event` to `Person`.
+A child table carries no church of its own. `frappe.get_list` reads one only with `parent_doctype`:
+it joins the parent and applies the parent's permissions, church included. Every other API applies
+nothing, so scope the parent and join to it, the way the Life Events chart source joins
+`Life Event` to `Person`.
 
-The hygiene test fails on any unfiltered read of a scoped doctype in a module that does not use
-`church_scope`. If a particular read genuinely cannot cross churches, say so where it happens:
+`churchit/tests/test_church_scope_hygiene.py` fails on a `frappe.get_all`, `frappe.db.count` or
+`frappe.qb.DocType` call that names a scoped doctype as a literal, unless the function holding it
+calls a `church_scope` helper. It skips reports, patches, setup and tests. It does not see a doctype
+held in a variable, `frappe.db.get_value`, `frappe.db.exists`, `frappe.get_doc`, `frappe.qb.from_`
+or raw SQL, so scope those yourself. If a particular read genuinely cannot cross churches, say so
+where it happens:
 
 ```python
 # church-scope: clashes within one room, and a room belongs to one church
@@ -81,21 +92,37 @@ conflicts = frappe.qb.from_(Booking).where(Booking.room == self.room)
 ```
 
 The reason is required and lives in the function holding the read, so review sees it and the next
-read in the same file still has to justify itself. The function, not the file, is the unit: a module
-that scopes one read used to vouch for every other read in it, which is how an unscoped Budget
-lookup sat next to a scoped one.
+read in the same file still has to justify itself.
 
 ## Whitelisted endpoints: the desk is not a rule
 
-Every scoping hole found by auditing this app from the API side had the same shape. A link field's
-dropdown filters by church and its pre-save check refuses a name typed in by hand, so the desk looks
-safe; but a whitelisted function that takes a name is called directly by anyone with a login, and
-`PRSN-.####` names are a counter anyone can walk.
+A link field's dropdown filters by church and its pre-save check refuses a name typed in by hand, so
+the desk looks safe. But a whitelisted function that takes a name is called directly by anyone with
+a login, and `PRSN-.####` names are a counter anyone can walk.
 
-- A **document method** (`self`) is safe on its own: Frappe checks read or write on the document
-  before running it.
-- A **module-level function taking a name** is not. `frappe.get_doc`, `frappe.db.get_value` and
-  `frappe.qb` check nothing. Add the check yourself, against the record the caller named:
+- A **document method** (`self`) is not safe on its own. `run_doc_method` checks only **read**, and
+  called with `docs` it checks the copy the browser sent, whose `church`, `owner` and `user` the
+  caller fills in. Before a method writes, sends, or reads anything beyond the document, it checks
+  the stored record: `self.reload()` (or `load_from_db()`) and then `self.check_permission(...)`, as
+  `ChurchEmail.load_saved` does, or `frappe.get_doc(self.doctype, self.name).check_permission(...)`.
+  A method the form calls without saving first, such as on refresh, loads the stored record into a
+  separate document (`Budget.get_progress`), because Frappe sends `self` back to the form and a
+  reloaded `self` would overwrite unsaved edits. `tests/test_doc_method_hygiene.py` fails on a write
+  before such a check.
+- A whitelisted function or document method that changes data takes `methods=["POST"]`. Frappe
+  never checks the CSRF token on a GET, and the session cookie still travels with a GET that another
+  site starts. `tests/test_http_method_hygiene.py` fails on one that takes GET; one that must take
+  GET (a signed email link, a guest read API) goes in its `GET_BY_DESIGN` with the reason.
+- A **has_permission hook sees the edited document.** A save checks write on the document after the
+  caller's changes, and REST `PUT` returns the saved document. When a hook decides access from a
+  field the caller can change (a category, a visibility), `validate` checks the stored document from
+  `get_doc_before_save()` too. (`owner` and `creation` are set-once in Frappe.) User Permissions are
+  no different: Frappe measures the `church` the caller sent, so
+  `church_scope.refuse_changing_another_churches_record` refuses a save (from `ensure_church`), a
+  cancel or an update after submit when the user cannot see the church stored on the record.
+- A **module-level function taking a name** is not checked at all. `frappe.get_doc`,
+  `frappe.db.get_value` and `frappe.qb` check nothing. Add the check yourself, against the record
+  the caller named:
 
 ```python
 frappe.has_permission("Function", doc=function, throw=True)   # before reading anything about it
@@ -105,10 +132,10 @@ frappe.get_doc("Group", group).check_permission("read")        # when you need t
 Do not reason from "this is keyed to one function, and a function belongs to one church". That says
 the *data* cannot cross churches; it says nothing about whether this caller may see that function.
 "Templates are shared on purpose" is the same trap: it justifies reading a template, not reading any
-function whose name the caller supplies, so `apply_template` checks that the source is one.
+function whose name the caller supplies. So `apply_template` takes a source the reader cannot read
+only when a Function Type names it as its template.
 
-Watch for three things that switch the checks off, because together they hid a hole where any
-manager could take any member of any church (`Member Transfer`):
+Watch for three things that switch the checks off:
 
 - **A plain Link to a scoped doctype.** Frappe applies user permissions to `Church`, not to `Person`,
   so a `person` field is never measured against whose member it is. Check the linked record's church
@@ -132,8 +159,9 @@ Scoped doctype: add this field near the top of the form, after the title field.
 ```
 
 Leave it `hidden`. `Church Features` creates site-local Property Setters that reveal it when
-multi-church is on, so single-church sites never see it. `church_scope.ensure_church` (a wildcard
-`validate` hook) fills it on save and refuses the save if it cannot.
+multi-church is on, so single-church sites never see it. They are deliberately not fixtures, so
+never export them. `church_scope.ensure_church` (a wildcard `validate` hook) fills the field on save
+and refuses the save if it cannot.
 
 Give it this `depends_on` as well, and the shareable form of it when the doctype can be shared:
 
@@ -150,8 +178,9 @@ drift: add `"fetch_from": "<link_field>.church"` and `"read_only": 1`. A sign-up
 function's church; a care request takes its person's.
 
 Global doctype: add it to `GLOBAL_DOCTYPES` in the hygiene test with its reason. The existing
-entries are lookup and type tables, shared reference data such as Bible Translation, and records
-that belong to a person rather than a church.
+entries are lookup and type tables, shared reference data such as Bible Translation, records that
+belong to a person rather than a church, the Church tree itself, and the virtual import targets. A
+virtual doctype is not exempt, so a new import source goes in the import group.
 
 ### Records a church can share
 
@@ -161,73 +190,81 @@ checkbox. Today that is the reusable content, the supplier directory, the places
 congregations share, the occasions they hold together (Function, Meeting Minutes), and the two
 containers money runs through (Fund, Ministry).
 
-**A container may be shared; money never is.** Every Collection, Expense and Online Donation keeps
-the church that gave or spent it, so per-church figures come from those rows at read time. What a
-shared container holds is the joint pot, and a stored total on it has to be the joint truth rather
-than one reader's share: `Fund.balance` is the joint balance, `Ministry.total_expenses` the combined
-spending, `Function.attendance_total` the one head count of one joint service. Say the consequence
-out loud when you add a doctype here, because it is the owning church's decision to publish that
-figure: sharing a fund publishes its balance and its ledger to every church.
+**A container may be shared; money never is.** Every Collection, Expense, Online Donation and Fund
+Transfer keeps the church that gave, spent or moved it, so per-church figures come from those rows at
+read time. A money record never takes the empty church of a shared container
+(`FundTransfer.set_church_when_the_source_is_shared`), and moves money only out of a fund of the
+user's church or a shared one (`FundTransfer.refuse_another_churches_fund`). What a shared container holds is the joint
+pot, and a stored total on it has to be the joint truth rather than one reader's share:
+`Fund.balance` is the joint balance, `Ministry.total_expenses` the combined spending,
+`Function.attendance_total` the one head count of one joint service. Say the consequence out loud
+when you add a doctype here, because it is the owning church's decision to publish that figure:
+sharing a fund publishes its balance and its ledger to every church.
 
-**A global record may not name church-owned money.** Expense Type is global and carries the Fund an
-expense debits, so every church's expenses of one type used to debit whichever single church owned
-that fund. It happened silently, through `frappe.db.get_value`, which ignores permissions. Any link from a
-global or shared record into a church-owned one needs
-`church_scope.refuse_another_churches_record(doc, doctype, name)` on the pointing document's
-`validate`: it compares churches rather than permissions, because the writes that most need it run
-with `ignore_permissions`. The fix for the church that trips over it is to share the fund.
+**A record may not use another church's money.** A church-owned record that names a Fund or another
+church-owned record, directly or through a global record such as Expense Type, calls
+`church_scope.refuse_another_churches_record(doc, doctype, name)` in its own `validate`, as Expense,
+Collection, Online Donation, Fund Transfer and Ministry Team Assignment do. The guard compares
+churches rather than permissions, because the writes that most need it run with
+`ignore_permissions`. The fix for the church that trips over it is to share the fund.
 
-Call the guard from the controller, not from a `doc_events` hook: a hook runs *after* the
-controller's own `validate`, which is where `ensure_church` settles the church, so the guard resolves
-the church itself rather than reading a field that is still empty.
+Call the guard from the controller's `validate`, as every caller does. `ensure_church` is a wildcard
+`doc_events` hook, which Frappe runs after the controller and after the doctype's own hooks, so
+`church` may still be empty in either place. The guard resolves the church itself, and any other
+`validate` check that needs the church must do the same.
 
-Listing a doctype only offers the checkbox. Nothing is shared until someone ticks it on a record, so
-widening `SHAREABLE_DOCTYPES` changes no existing data.
+Listing a doctype only offers the checkbox, and `is_shared` defaults to 0, so nothing is shared
+until someone ticks it. Belief is the exception: its box defaults to ticked, so a new Belief is
+shared unless someone unticks it. Give a newly listed doctype a default of 0. Model sync gives every
+existing row the column's default, and a ticked row is shared on its next save.
 
-**Only the church in `shared_by_church` may take a shared record away from the rest.** That covers
-unticking the box and deleting the record, which are the same loss through different doors, so both
-go through `only_the_sharing_church_may`. Administrator is nobody's church and bypasses it; a user
-holding no Church permission does not, because holding none means unrestricted *reading*, not
-ownership of what other churches shared. Records that took their church from a shared one, such as a
-booking of a shared room, are stamped back to its church by `restamp_dependents` when it stops being
-shared: without that the booking stayed on show to every church for good.
-
-A shared record stores the **empty string** in `church`, which is exactly what Frappe's permission
-clause reads as "every church", so the read side costs nothing. Two rules follow from that, and
-breaking either is how this gets confusing:
+A shared record stores the **empty string** in `church`, which Frappe's permission clause reads as
+"every church", so the read side costs nothing. That holds while System Settings' Apply Strict User
+Permissions is off, which is Frappe's default. Churchit does not check it: with it on, lists and
+forms hide shared records from every user who holds a Church permission, but the `church_scope`
+helpers still admit them. Three rules follow, and breaking any of them is how this gets confusing:
 
 - **An empty church is the empty string, not NULL.** Frappe's permission clause reads both as
-  shared, but `church == SHARED` only matches the empty string, so a NULL stopped sharing from
-  propagating to records that derive their church. `multi_church.normalise_shared_church` settles
-  this on the transition.
+  shared, but `church == SHARED` only matches the empty string, so a NULL does not pass sharing on
+  to records that derive their church. `multi_church.normalise_shared_church` settles this on the
+  transition.
 - **An empty church always means shared, never "not filled in yet".** `church` carries a
   `depends_on` so it vanishes when the box is ticked, and the desk prefills it on new documents
   (`church.prefill_church`). Keep both if you add a shareable doctype.
-- **The church that shared it is kept in `shared_by_church`**, revealed alongside the checkbox so a
-  record shared by the main church does not look like one the branch shared itself. The form also
-  notes it and locks the checkbox, from `frappe.boot.churchit.churches`
-  (`church.note_shared_by_another_church`). Unticking the box returns the record home rather than to
-  whoever happened to save it, and only that church may untick it
-  (`church_scope.refuse_unsharing_by_another_church`). A shared record is writable by every church,
-  so without that guard any branch could pull a resource out of the whole organisation, itself
-  included. There is no per-recipient opt-out: a branch that wants something gone asks the owner.
-  The guard steps aside for `ignore_permissions` saves, so patches and jobs are unaffected.
+- **A shareable doctype keeps the church that shared it in `shared_by_church`**, revealed alongside
+  the checkbox so a record shared by the main church does not look like one the branch shared
+  itself. The form notes it and locks the checkbox, from `frappe.boot.churchit.churches`
+  (`church.note_shared_by_another_church`). Unticking the box returns the record to that church
+  rather than to whoever saved it. Without the field, the guard below skips the doctype.
+
+**Only the church in `shared_by_church` may take a shared record away from the rest.** Unticking the
+box and deleting the record are the same loss through different doors, so both go through
+`only_the_sharing_church_may`. A shared record is writable by every church, so without the guard
+any branch could pull a resource out of the whole organization. Administrator is nobody's church and
+bypasses it. A user holding no Church permission does not, because holding none means unrestricted
+*reading*, not ownership of what other churches shared. The guard steps aside for
+`ignore_permissions` saves, so patches and jobs are unaffected. There is no per-recipient opt-out: a
+branch that wants something gone asks the owner.
 
 Sharing is not hierarchical: a branch may share upward and sideways, not only the main church
 downward.
 
-A record that derives its church with `fetch_from` inherits sharing too. A booking of a shared room
-is itself shared, so every church sees that the room is taken, with `shared_by_church` recording who
-booked it. `church_scope.inherits_a_shared_church` is what keeps `ensure_church` from stamping its
-own default over an inherited blank.
+A record that derives its church with `fetch_from` inherits sharing. A booking of a shared room is
+itself shared, so every church sees that the room is taken, with `shared_by_church` recording who
+booked it. `church_scope.inherits_a_shared_church` keeps `ensure_church` from stamping its own
+default over an inherited blank. When the source stops being shared, `restamp_dependents` stamps
+those records back to its church.
 
 Two shapes that are neither, and how they are handled today:
 
 - **Family** follows its primary contact's church (`Family.follow_primary_contacts_church`),
   because a household can span branches. The directory therefore lists a family under every branch
-  that has one of its members, rather than filtering on the family's own church.
+  that has one of its members, rather than filtering on the family's own church. Frappe checks the
+  family before it takes that church, so `Family.refuse_another_churches_primary_contact` refuses a
+  primary contact whose church the user cannot see, except on `ignore_permissions` saves.
 - **Function Type** templates are shared configuration, so `template_function` carries
-  `ignore_user_permissions` and `apply_template` checks the role, not the document.
+  `ignore_user_permissions`, and `apply_template` takes such a template even when the reader cannot
+  read it (see "Whitelisted endpoints").
 
 Budgets are the one aggregate anchored to a record's church rather than the reader's scope. A budget
 counts its own church, and counts the churches beneath it only when **Include Branch Churches** is
@@ -247,16 +284,23 @@ report permission.
   This is the picker, not the guard. A report without it is still scoped, because the server falls
   back to the reader's own churches; the reader simply cannot narrow to one branch.
 
-Both are enforced, with separate messages so you can tell a leak from a missing picker. Charts and
-number cards of type **Document Type**
-go through `get_list` and are scoped already. **Custom** sources and methods are not: scope them by
-hand, as `churchit/dashboard.py` and the Life Events chart source do.
+`tests/test_reports_hygiene.py` checks both, by text in each report module, with separate messages so
+you can tell a leak from a missing picker. It does not see a `frappe.get_doc` or a read in a helper
+module. A report that takes a record name in its filters checks that record itself
+(`frappe.has_permission(<doctype>, doc=name, throw=True)`), as Budget vs Actual does.
+
+Charts and number cards of type **Document Type** go through `get_list` and apply the reader's
+churches, except over `Person` and `Family`, which total every church while the directory is shared
+(see "The one invariant"). A Heatmap chart reads with `get_all` and is never scoped. **Custom**
+sources and methods are not scoped either: scope them by hand, as `churchit/dashboard.py` and the
+Life Events chart source do.
 
 A **Custom** chart or card method is whitelisted, so any signed-in user can call it, portal
-members included. Start it with `frappe.has_permission(<doctype>, "report", throw=True)`: the
-report right is what staff roles hold and Church User does not. Give a Custom chart a
-`document_type` as well. Frappe shows a chart with neither roles nor a doctype to System
-Managers only.
+members included. Start it with `frappe.has_permission(<doctype>, "report", throw=True)`: staff
+roles hold the report right, and without a document Frappe does not count Church User's `if_owner`
+one. On Prayer Request, Church Prayer Team passes this check too, so a card there also applies
+Visibility (`church_prayers/prayer_access.py`). Give a Custom chart a `document_type` as well.
+Frappe shows a chart with neither roles nor a doctype to System Managers only.
 
 A report, card or page that lists people to celebrate, contact or check in must leave out the
 people who have died. `membership.living_people_filter(Person)` is the one rule: use it in
@@ -265,9 +309,9 @@ through a left join on `Person` as `spouse`.
 
 Birthdays and ages come from the Person fields, never from Life Event rows. `birth_month` and
 `birth_day` are set from the Birth event even when its year is unknown (0 when there is no
-birthday); `birth_date` and `age` need a known year. The age column stores 0 for an unknown age, so
-test `derived.has_known_age(Person)`, not the age. For a window of days use
-`celebrations.get_birthday_rows`; for this week use
+birthday). `birth_date` needs a known year. `age` needs one too and, for someone who died, a known
+death date. The age column stores 0 for an unknown age, so test `derived.has_known_age(Person)`, not
+the age. For a window of days use `celebrations.get_birthday_rows`; for this week use
 `query.month_day_this_week(Person.birth_month, Person.birth_day)`, since a week across the new year
 needs (month, day) pairs rather than a range.
 
@@ -278,240 +322,36 @@ into Role Profiles in `fixtures/role_profile.json`:
 
 | Role | Owns |
 | --- | --- |
-| Church Staff | The baseline for every staff login: reads people, events, groups, ministries and the lookup types. Changes only records it created. |
-| Church People Editor | Person, Family, Group, Member Transfer |
-| Church Pastoral Care | Care, counseling, visitation, background checks, prayer, alms |
-| Church Finance | Collections, expenses, funds, budgets, statements, vendors |
+| Church Staff | Reads people, events, groups, ministries and the lookup types. Changes only records it created, except Church Task: it edits any task but adds none. The Church Staff, Church Office, Church Care Team and Church Treasurer profiles hold it. |
+| Church People Editor | Person, Family, Group, Member Transfer, Function Sign-Up and Inactive Reason. Adds and edits Person Notes and Follow-up Cards, edits and deletes Connection Cards, and records Communication Consent. Marks a Possible Duplicate Not a Duplicate, but cannot merge, because a merge deletes a Person. |
+| Church Pastoral Care | Care, counseling, visitation, background checks, prayer, alms. Adds and edits Person Notes and Follow-up Cards, records Communication Consent, and reads the care figures on Person (permlevel 3). |
+| Church Finance | Collections, online donations, expenses, funds and transfers, budgets, statements, vendors, and their types. Edits Alms Requests and reads the giving figures on Person (permlevel 2). |
 | Church Check-In | The Check-In Station. Reads people, families and functions. |
+| Church Follow-up | The Follow-up Cards assigned to it (`followup.has_card_permission`). Reads connection cards and follow-up workflows. |
 | Church Manager | Everything, including settings |
 
+Church Prayer Team has no desk access and is in no profile. Give it on its own to a member or staff
+user who prays for the requests: it reads Prayer Team and Whole Church requests.
+
 A new doctype gives its rights to Church Manager and to the role that owns its area, and read to
-Church Staff if staff look it up. `tests/test_role_hygiene.py` fails when a profile can fill in a
-form but cannot pick what one of its Link fields points at. Reports and workspaces carry the same
-roles.
+Church Staff if staff look it up. Church Check-In and Church Follow-up do not hold Church Staff, so
+give them read on what their forms link to. `tests/test_role_hygiene.py` fails when a profile can
+fill in a form but cannot pick what one of its Link fields points at. Reports and workspaces carry
+the same roles.
 
 A portal member reaches their own records through `if_owner` DocPerms, and their own Person
 through `church_people/member_access.py`. That module also limits their Person edits to the
-Personal Details form's fields, and a prayer or alms recipient to their own church. A web form
-renders the name of every record its Link fields may list, hidden fields included, so a member
-form must not link to Person. `tests/test_portal_members.py` checks this.
+Personal Details form's fields, and a prayer or alms recipient to their own church. A member form
+must not link to Person (see the web form bullet in "Frappe behaviours worth knowing");
+`tests/test_portal_members.py` checks this.
 
 Rights on a Frappe doctype, such as Church Manager on Data Import or Role Profile, live in that
 doctype's `church_customizations/custom/<doctype>.json` under `custom_perms`. A Custom DocPerm
 replaces the doctype's standard permissions, and migrate replaces every Custom DocPerm of that
-doctype with the file's rows, so the file lists System Manager's rows too.
+doctype with the file's rows, so the file lists System Manager's rows too. Church Manager's Data
+Import rights are `if_owner`: a Data Import has no church, and its file holds every row.
 
-## People events and history
-
-`church_people/events.py` emits `membership_changed` (field, old, new), `life_event_added`
-(event_type, date) and `person_deceased` (date) from `Person.on_update`. Subscribe in an app's
-hooks.py with `churchit_people_events = {"membership_changed": ["my_app.module.handler"]}`. Each
-handler runs as its own background job after the save commits and receives `(person, **data)`.
-Install, patches and migrate emit nothing; data import does. A `frappe.db.set_value` skips
-`on_update`, so it emits nothing.
-
-Membership history is Milestone rows written by `membership.record_changes` for
-`membership.TRACKED_FIELDS`, read by `membership.changed_between` and the Membership Changes report.
-Do not add a Frappe Milestone Tracker on Person: Frappe allows one tracker per doctype, and clearing
-the tracked field fails the save.
-
-## Person summary fields and smart lists
-
-A smart list is a saved Report Builder report on Person, so Frappe scopes and refreshes it. To
-filter on records kept elsewhere, Person carries read-only summary fields (attendance, groups,
-serving, giving, care) from `church_people/summaries/`. One module there is one area, found by
-itself; its docstring is the contract (`FIELDS`, `SOURCES`, `compute`). A wildcard doc_events hook
-queues a refresh of the people a save, cancel or delete changes, and a daily job recomputes rolling
-windows. To add a figure, add a read-only Person field and an area module; don't add a hook.
-
-An area counts only the person's own church's records and shared ones (`summaries.same_church`).
-The directory is shared, so a stored figure would otherwise show one church what a person did at
-another. Giving and care figures carry permlevels 2 and 3 for the same reason.
-
-The standard lists ship as Report Builder JSON under `report/`, which migrate syncs. The Report view
-runs the Person `listview_settings` too, so every saved list gets the Person list's Actions. Their
-server side, `church_people/list_actions.py`, takes names from the browser and checks the right on
-every record: `email` to read addresses, `write` to change them.
-
-## Engagement, pathways, map and retention
-
-A Pathway step is a smart list; `Pathway.get_steps_done` reads each list through
-`smart_lists.get_people` with the pathway's church, and the Pathway Progress report only lays it
-out. A new way to judge a step must come in as a smart list, not as code in the report.
-
-`Person.get_timeline_data` feeds the form heatmap through Frappe's `get_open_count`, which
-`churchit.connections` overrides. It reads Function attendance through `get_list`, so a reader sees
-only their churches' functions, and returns `{}` when the reader cannot read Function, because an
-error there would break the Connections counts.
-
-Only `geocoding.geocode` writes Address `latitude` and `longitude`, with `db_set`: a save would
-queue another lookup through Address `on_update`. 0 means unknown, and the Map view skips it. Every
-Nominatim request goes through `get_coordinates`, which holds a bench-wide file lock and waits a
-second, because Nominatim allows one request a second. People Settings `look_up_addresses` turns all
-of it off; check `geocoding.is_address_lookup_on()` before anything that sends address text. Custom
-fields sync after the patches, so a patch that needs one syncs its customization file first, as
-`queue_address_coordinates` does.
-
-`privacy.get_due_query` is the one rule for whose data the daily retention job removes; the
-Personal Data Due for Removal report scopes the same query.
-
-## Duplicates, merging and anonymizing
-
-`church_people/matching.find_matches` is the one matcher: the new-Person warning, the weekly scan
-(`duplicates.scan`) and the imports all call it, and its weights are in `WEIGHTS`. It reads every
-church unless it is given one, so anything that shows a match to a user must first filter it
-through `frappe.get_list`, as `get_possible_matches` does. Phone Number keeps `digits`, filled by
-`contacts.validate_contact_tables`; match or search phones on that column, never on `phone_number`.
-
-A merge is Frappe's own rename with merge. `church_people/merge.py` and the Rename dialog run the
-same Person and Family `before_rename` and `after_rename`. Frappe repoints every Link and Dynamic
-Link but not a Data field that stores a Person ID (`Milestone.reference_name`), so
-`Person.after_rename` moves those; a new Data field holding a Person ID needs the same. A new child
-table that lists each person once goes in `person_data_map.ROSTERS`, and a new Person table a merge
-carries over goes in `MERGED_TABLES`. `person_data_map.linked_records` finds every record naming a
-person from field metadata; use it instead of a list of doctypes. `privacy.anonymize_person` keeps
-the record and clears `PERSONAL_FIELDS`, so a new Person field holding personal data goes there.
-
-Frappe logs list and Report Builder exports, prints and PDFs. A new export or print path for
-personal data must call `make_access_log`, as the Church Directory PDF and `churchit/exports.py` do.
-
-Frappe 16.50 joins a linked table once for all `link.field` fetches, so a list view with two Links
-to one doctype shows the first link's title in both columns. Show Data name fields instead, as
-Possible Duplicate does.
-
-## People imports
-
-Imports run through Frappe's Data Import. Each source is a virtual DocType in Church People whose
-fields are the export's columns, labelled exactly as the export heads them, with Churchit's
-fieldnames. A provider in `church_people/imports/` is registered for it under
-`data_import_providers` in hooks.py: its `validate` adds row warnings and its `import_row` builds
-Person, Family and Address through `imports/record.py`. A person is found again by
-`legacy_system` and `legacy_id`, and a family by its household ID, only in the importer's
-churches. To add a source, add a virtual DocType that keeps Churchit's fieldnames, a
-`SourceProvider` subclass and one hook line.
-
-While `frappe.flags.in_import` is set, Frappe applies no field defaults and skips Select
-validation, so a record made from a Person save during an import must set its mandatory fields
-itself. Frappe's `import_labels` aliases work only on child-table fields, so a parent column
-matches only its label or fieldname.
-
-## Person Notes
-
-A Person Note's category decides who reads it (`notes.has_note_permission` and
-`notes.note_query_conditions`). Church scoping does not cover categories, so read notes only with
-`frappe.get_list`, or `get_doc` plus a permission check, never `get_all` or `qb`, even for a person
-the reader can see. In Frappe a share overrides both hooks, so Person Note has no `share` right: do
-not add one, and do not assign notes. Person Note does not track changes, because every System
-Manager can read Version records. A Person's timeline does not show records linked to the person;
-notes reach it through `additional_timeline_content`.
-
-## Member portal
-
-A portal member reaches their own Person, and an Adult also reads and writes the living Children of
-their household (`household.get_editable_children`), through the Person `has_permission` hook and
-`person_query_conditions`. To ask "may this member edit X", call
-`frappe.has_permission("Person", "write", doc=X)`; do not compare `Person.user`. A member reads and
-lists only their own Family, only its Adults write it, and `refuse_member_edits_beyond_photo` (first
-in `Family.validate`) limits them to the photo. It steps aside for `ignore_permissions` saves, which
-is how a Person keeps the roster, so never save a Family with `ignore_permissions` on values a member
-sent.
-
-`Person.birthday` is virtual: a value set on a save rewrites the first Birth life event
-(`sync_birthday`, before `sync_derived`). Read birthdays from `birth_month`, `birth_day` and
-`birth_date`, never from `birthday`.
-
-The defaults of `share_email`, `share_phone`, `share_address` and `share_birthday` are site-local
-Property Setters that People Settings `on_update` writes. A Single field that migrate stores without
-a save writes none, so a new People Settings default that drives a Person default needs a patch that
-calls `set_share_defaults`. A People Settings field added after a site first saved its settings reads
-as empty, not as its default: re-add `store_new_people_settings_defaults` to patches.txt (with a date
-comment) when you add one. Frappe keeps a new record's defaults in `frappe.local.new_doc_templates`
-until the request ends, so a test that changes a default pops it. People added for someone who never
-saw the choice (a card guest, the people with them, a portal sign-in) set all four to 0.
-
-`/directory` lists only active people whose Membership is not Visitor or Contact, reads with
-`frappe.get_all` and literal doctypes, and shows only public photos. The Member Directory portal menu
-row's `enabled` follows `member_directory` (`sync_directory_menu_item`); do not set it by hand. The
-published-field scanner also counts an import path such as `churchit.church_people.membership` as a
-read of the field `membership`, so `/directory` badges include fields the page does not show.
-
-`accounts.link_portal_user` (on_session_creation) sets `Person.user` with `db_set` and then calls
-`sync_church_permission`, because the member guard refuses a member's change to Portal User. A
-Person it adds carries `flags.from_portal_login`, which `refuse_member_edits_beyond_personal_details`
-lets through. Only an own primary email counts; a row with Shared From does not. A failure is logged
-and never stops the sign-in.
-
-A guest key web form (Update Your Details) may not have a Link field, or a table with Link columns,
-unless Guest can read the linked doctype: Frappe refuses to save or render it otherwise.
-`details_link.close_details_request` (Web Form Request `validate`) keeps a details link to its one
-Person and one use; Frappe alone lets a key add records and reopen its record until it expires.
-Never put a request key in a Communication or Comment: anyone who reads the Person could use it. A
-key-only form is `LINK_HOLDERS` in `published_fields.py`, not public.
-
-## Care and child safety
-
-`background_check.is_cleared(person, on_date, check_types)` is the one rule for "cleared to
-serve". A Care Request's caregiver is assigned the request through `assign_to`, which shares it only
-when the session user has the share right, so `CareRequest.assign` shares first with
-`ignore_share_permission` after checking `has_church_access`, to give a clear message.
-
-At the Check-In Station, `check_in.get_pickup_families` gates on the Function Check-In rows the
-reader may read (`frappe.get_list`), then reads the people those rows name with `get_all`, whatever
-their church. Do not fetch Person fields through the check-in's link (`person.full_name` in
-`get_list`): Frappe applies Person permission to that join, and a child at a shared function came
-back nameless. Who may collect a child is the living household Adults plus the family's Authorized
-Pickup rows. `check_in.release_children` reads the families again before it stores who collected a
-child on its Function Check-In (`collected_by`, `collected_at`, `released_by`), and locks the row,
-so a child is released once. The station opens people only through
-`group_by_family(matched, get_people_scope(function))`, Scan Card included, so a new way to find
-people there must use it. Do not add Authorized Pickup to `person_data_map.ROSTERS`: a merge would
-strip the merged person from every other family's pickup list. The Member QR Card needs
-`get_qr_code` in the `jinja` hook; never `frappe.call(...)` from print Jinja, which fails outside a
-request or a job.
-
-Prayer Request Visibility is read only through `church_prayers/prayer_access.py`. The Church Prayer
-Team DocPerm reads every request; the hooks take back other people's Private requests from a user
-whose only role that reads every request is Church Prayer Team. Code that reads past permissions
-applies Visibility itself: `get_community_filters` for the community page, `has_webform_permission`
-and `create_prayer`, and Whole Church only for bulletins. A web form's `condition_json` reaches the
-community `get_list` as `{field: [operator, value]}`.
-
-## Follow-up cards
-
-`followup.add_card` is the one way code opens a card, and `followup.start_cards` the one way a
-trigger reaches the workflows that start on it. A person has one open card per workflow: `add_card`
-locks the Person row, and the card's `validate` refuses a second one. Anything more a church wants
-on a step, an email or a desk alert, is its own Notification on Follow-up Card, not code.
-
-The workflow owns its Kanban Board: `FollowupWorkflow.sync_board` rewrites its columns and filters
-on every save, so never edit the board by hand. `Follow-up Card.step` is a Data field the card
-checks against its workflow's steps; Kanban v2 takes columns from the board, not from Select
-options. Frappe checks a Dynamic Link before `validate`, so a trigger's `value_type` is set in the
-workflow's `_validate_links` override from `followup.VALUE_TYPES`. Moving a card closes its ToDos and
-assigns through `assign_to._add(ignore_permissions=True)`, as Assignment Rule does.
-`has_card_permission` reads `_assign` from the database: a form sends none, and a caller could send
-a forged one.
-
-## Connection Cards
-
-The Connection Card web form saves as Guest, and `ConnectionCard.process` runs as a job after the
-commit, as the sender, writing with `ignore_permissions`; anything it reaches (`start_cards`,
-`add_card`, the Follow-up Card hooks) must work as Guest. Guest input never changes an existing
-Person: a card links only on `is_strong_match` and otherwise adds a Visitor and records Possible
-Duplicates. The honeypot is checked in the job, because `accept` returns the saved document to the
-sender.
-
-A web form's hidden church field is Data, not Link: a Link field puts every record name into the
-page. Frappe fills web form fields from the query string but drops it when it redirects
-`/<route>` to `/<route>/new`, so a link carrying `?church=` points at `/new`. Web Form Field has no
-Table MultiSelect: the form shows the table as a Table field and draws checkboxes from the options
-Frappe lists for its Link column (`connection_card.js`).
-
-`ConnectionCard.record_consent` turns the Stay in Touch ticks into Given (Church News, method Web
-Form) for the card's person, desk cards included. A tick never overrides a withdrawal on record,
-because guest input cannot prove who ticked it.
-
-## Notifications and email
+## Notifications
 
 `Notification` is overridden by `churchit/church_communications/scoped_notification.py`. Recipients
 resolved from a **role** are dropped when their church permission excludes the document's church,
@@ -519,60 +359,11 @@ covering email, the desk bell and SMS, for records your users create too.
 
 Recipients resolved from a document field are inherently fine. If you add a notification on a
 doctype with no church field there is nothing to filter by, so every role recipient receives it.
-
-A Church Email works out its recipients when it is sent, from its own church's people or one of
-that church's groups. Unsubscribes are Email Unsubscribe records against a church, and
-`newsletter.email_church` is the one place that says which church: the root church on a
-single-church site, where records carry none.
-
-A Church Email fills placeholders with `sending.render`, a sandboxed Jinja environment that holds
-only the four person names (also under `doc`). Never render it with `frappe.render_template`:
-Church Managers write Church Emails but not Email Templates, and Frappe's environment gives the
-author `frappe.db`. `sending.check_placeholders` refuses any other name in `validate`.
-
-Each copy is a Communication with reference Person and a timeline link to the Church Email.
-`sending.get_people_sent` reads those links to decide who already got it, and a delivery commits
-every batch (100 emails, or each text, sent before its commit), so a rerun never sends twice. Do
-not create or delete these Communications any other way. People sharing one address or number get
-one copy, recorded on the first of them by Person ID. A smart list is read only through
-`smart_lists.get_people(report, church)`, which applies `church_filters` and leaves out the dead.
-Texts go through Frappe's public `send_sms`, so the SMS Settings Allowed Roles apply in the job;
-`require_sending_set_up` checks them at click time. An unsubscribe link carries the purpose: no
-purpose or Church News still makes the church's Email Unsubscribe, another purpose records a
-withdrawal for that purpose only.
-
-Consent is answered only by `consent.allowed`, or `consent.allowed_people` for a list. A
-Notification has no purpose, so only consent for every purpose counts, and staff (System Users)
-are never dropped. An address or number is refused only when every Person holding it is refused. A
-withdrawal applies to every holder of an address; a Given is recorded only for the person who
-asked. An Email Unsubscribe made with `db_insert` runs no hooks, so call
-`consent.record_unsubscribe` after it, as `newsletter.set_subscribed` does. Texts are opt-in: with
-no record for SMS nobody gets texts, whatever the church's setting (`consent.default_statuses`).
-
-The Consent Renewal notification sends on `CommunicationConsent.is_due_for_renewal`, which asks
-`consent.is_due_for_renewal`: only a person's newest Email record, a Given, in a church that
-contacts only with consent, for a living person. Any newer record, renewed or withdrawn, ends it,
-so each yes is asked about once. The link it signs (`consent_renewal_link`, a jinja method) runs
-`consent.renew`, which records again each purpose whose newest Email record is Given, at most once
-a day.
-
-The Communication Preferences page (`church_communications/preferences.py`) changes only the
-session's own Person and takes no person argument. A switch records consent with
-`record(..., MEMBER_PORTAL)`; Church News by email also goes through `newsletter.set_subscribed`,
-and a yes to any email purpose lifts the address's global Email Unsubscribe. Only `newsletter.py`
-writes Email Unsubscribe records. Ask `sending.can_send_texts()` (an SMS Settings gateway URL or a
-`send_sms` hook) wherever the question is whether this site can send texts.
-
-Frappe keeps no machine-readable part of a received bounce report: it drops the
-`message/delivery-status` part, and links the report to the sent Communication (`in_reply_to`) only
-when the report has an In-Reply-To header, which Postfix reports lack. `bounces.record_bounce`
-reads the report's text, one pattern per format (Postfix, Gmail, Microsoft 365); a new format needs
-a pattern and a real sample in `test_bounces.py`. Read bounced addresses only through
-`bounces.bounced_addresses`. Email Bounced is cleared only in `contacts.validate_contact_tables`
-when a row's address changes; a raw write (`db.set_value`, `db_insert`) skips that.
+Consent filters recipients too (see "Church Emails, consent and bounces").
 
 A shipped Notification with a `condition` sets `"condition_type": "Python"` in its JSON. Migrate
-syncs it without field defaults, and Frappe ignores a condition whose type is empty.
+syncs it without field defaults, and Frappe ignores a condition whose type is empty
+(`tests/test_notification_templates.py` checks this).
 
 ## Public website and portal
 
@@ -601,26 +392,42 @@ before `TemplatePage`), so moving a page into `www/` means unpublishing the reco
 request with a query string, so a selected branch is never served from the shared page cache. A
 cookie would be invisible to that cache; do not swap the parameter for one.
 
-Two portal surfaces bypass document permissions by design and need the church applied by hand: the
-community prayer request list and the groups list. Guest endpoints take `church` as an argument.
-
 Frappe caches rendered pages by path alone, shared between guests and users, so
 `church_website.context.before_request` disables the cache for signed-in visitors in multi-church
 mode. Do not remove that without replacing it.
 
+Some portal surfaces read past document permissions by design and apply the member's church by
+hand: the community prayer request list (`get_community_filters`), the Join a public group picker
+(`group_api.joinable_public_groups`), `/directory`, the Function Sign-Up form's function options and
+the recipient search (`search_church_recipient`). A new one must do the same.
+
+A guest endpoint behind a public page declares no `church` parameter. `churchit.with_church`
+(`site_church.js`) sends the page's `?church=` with the call, and the endpoint reads it through
+`selected_church_name()`, which accepts only a published church. A signed link is the exception:
+`newsletter.unsubscribe` takes `church`, and Frappe's `verify_request` checks the signature.
+
 Every field a page shows carries a badge on its desk form, worked out by scanning the pages
 themselves (`church_website/published_fields.py`). Nothing is declared by hand: a new www page,
 published Web Page, Web Form or guest endpoint is picked up, and so are the helpers, jinja methods
-and included templates it calls. Each source is marked public or members-only (a web form's
-`login_required`, or a page that sends every guest to the login screen), so a portal-only field is
-not announced as public. Two things defeat the scan, and both fail a test rather than going
-quiet: reading records with `frappe.qb` or raw SQL on a public page, and giving a doctype a web
-view, which renders from a template no source reads. Extend `code_sources()` before adding either.
+and included templates it calls. The scan finds a read by the doctype it names as a string, so pass
+doctypes to `frappe.get_all` and similar calls as literals. It also counts an import path such as
+`churchit.church_people.membership` as a read of the field `membership`, so a badge can name a
+field the page does not show.
 
-### Settings a church can differ on
+Each source is public, members-only or for link holders (`PUBLIC`, `MEMBERS`, `LINK_HOLDERS`). A
+web form with `login_required`, or a page that sends every guest to the login screen, is
+members-only. A web form with only `key_required` is for whoever holds the emailed link. So a
+portal-only field is not announced as public.
 
-Four Singles hold configuration the whole site shared, and each now takes per-church
-overrides through one resolution point, so no caller threads a church around:
+Two things defeat the scan: reading records with `frappe.qb` or `frappe.db.sql`, and giving a
+doctype a web view, which renders from a template no source reads. A test fails on a web view, and
+on `frappe.qb` or `frappe.db.sql` in a source's own code, but not in a helper it calls. Extend
+`code_sources()` before adding either.
+
+## Settings a church can differ on
+
+Three Singles hold site-wide configuration. Each takes per-church overrides through one resolution
+point, so no caller threads a church around:
 
 | Single | Override | Resolved by |
 | ------ | -------- | ----------- |
@@ -639,36 +446,41 @@ Two rules the shapes differ on, and both are forced rather than chosen:
   child table inside a child table. That list is only which job titles to print;
   `sections.position_holders` reads the people from the bulletin's own church, so a
   branch already prints its own pastor.
-- **`for_church` returns a copy, never a mutated Single.** `frappe.get_cached_doc` hands
-  out one shared instance, so applying a branch's overrides onto it would follow every
-  later reader in the process.
+- **`for_church` never changes the Single.** `frappe.get_cached_doc` hands out one shared
+  instance, so a church's row is applied to a copy. With no row for the church, it returns
+  the Single itself, so treat the result as read-only.
 
-A gateway is the one with teeth: without it a gift given on a branch's page is taken
-through whichever merchant account the main church configured.
+The gateway override matters most: without it, a gift given on a branch's page goes through the
+merchant account the main church set up.
 
 ## The switch
 
 `Church Features.enable_multi_church` is off by default and a single-church site must notice nothing.
-Turning it on, once only, stamps the root church on every existing record and gives every enabled
-user a root permission with branches hidden. It cannot be turned off while branches exist. The
-transition runs on the off-to-on edge only, never on migrate, so a permission an administrator
-deleted stays deleted.
+Each off-to-on change stamps the root church on every scoped record that has no church and is not
+shared. It gives each enabled user without a Church permission, except Administrator and Guest, a
+root permission with branches hidden. The switch turns off only while no branch exists, so keep both
+steps safe to repeat. Migrate never runs them, so a permission an administrator deleted stays
+deleted.
 
-A login made **after** the switch is scoped too, by `church_access.scope_new_user` on User
-`after_insert`: it takes the church the request is about, which is the branch whose page took a
-sign-up, or the church of whoever is adding the user in the desk. Without it a user with no Church
-permission is unrestricted, so a new staff account silently saw every church. Linking a Person
-repoints the permission afterwards, so this is only the starting point.
+A user with no Church permission sees every church, so a login made **after** the switch is scoped
+too, by `church_access.scope_new_user` on User `after_insert`. It takes the church the request is
+about: the branch whose page took a sign-up, or the church of whoever adds the user in the desk.
+Linking a Person repoints a portal login's permission afterwards, so this is only the starting
+point. A staff login that a user links by hand keeps its churches (`Person.sync_church_permission`);
+a later change of the person's church and the app's own links (`ignore_permissions`) still move them.
 
 ## Client side
 
-`frappe.boot.churchit` carries `multi_church`, `church`, `include_branches`, `single_church` and
+`frappe.boot.churchit` carries `multi_church`, `church`, `shared_people`, `include_branches`,
+`single_church`, `churches` (the reader's own churches, `None` when unrestricted) and
 `expand_church_filters` (`church_scope.extend_bootinfo`). Use it rather than querying from JS.
 Anything keyed on it must behave when multi-church is off.
 
-`churchit/public/js/church_utils.js` hooks one Frappe client method so the "expand filters to
-branches" option reaches list views. It is guarded and falls back to exact matching if a Frappe
-upgrade moves that method; if list filters stop expanding after an upgrade, look there first.
+`churchit/public/js/church_utils.js` wraps `frappe.views.BaseList.prototype.get_filters_for_args` so
+the "expand filters to branches" option reaches list views. It is guarded and falls back to exact
+matching if a Frappe upgrade moves that method; if list filters stop expanding after an upgrade,
+look there first. The same file wraps `frappe.form.formatters.Link` for report link titles, and it
+replaces `MapView.setup_view` (see the next section).
 
 ## Frappe behaviours worth knowing
 
@@ -685,16 +497,29 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 - **Kanban v2 keeps only the new column from a card move**, and ignores its own realtime update for
   that card. A doctype whose save changes other card fields reloads the board in its
   `<doctype>_kanban.js` `onAfterCardMove`, as `follow_up_card_kanban.js` does.
-- **Frappe's `send_sms` reports nothing per number.** It writes an SMS Log only for numbers the
-  gateway accepted. A text copy's Communication `delivery_status` is Sent or Error from that log;
-  `sending.get_people_sent` leaves out Error copies for the Sent To count, and a delivery asks with
-  `include_failed=True`, so a failed copy is never sent again.
+- **A web form puts the records of its Link fields into the page**, hidden fields included: every
+  record on a guest form or with Allow Read On All Link Options, else the records the user owns. So
+  a guest form's hidden `church` field is Data, not Link, and a member form does not link to Person
+  (`tests/test_portal_members.py` checks both).
+- **Frappe 16.50 joins a linked table once for all `link.field` fetches**, so a list view with two
+  Links to one doctype shows the first link's title in both columns. Show Data name fields instead,
+  as Possible Duplicate does.
 - **Never name a field `assigned_to`.** Frappe's `assign_to` writes the assignee's User ID into any
   field with that name and clears it when the assignment goes. Care Request's Person link is
   `caregiver` for that reason.
 - **Frappe checks create before `fetch_from` fills `church`.** A doctype that takes its church from a
-  Person link checks the person's church in `validate`, as
-  `CommunicationConsent.refuse_another_churches_person` does.
+  link checks in `validate`, when that link changes and the save is not `ignore_permissions`, that the
+  user may see the linked record's church, with a `refuse_another_churches_<link>` method: Communication
+  Consent, Person Note, Follow-up Card (its person and its workflow), Background Check, Care Request,
+  Care Assignment, Visitation Log, Counseling Case, Ministry Team Block, Ministry Team Position,
+  Function Check-In, Function Sign-Up, Bulletin, Alms Request, Prayer, Fund Transfer and Room Booking.
+  Ministry Team Assignment checks on insert, because its links are set once; Family checks its primary
+  contact and Possible Duplicate its pair. A Giving Statement checks its own church instead, because a
+  statement for another church's giver stays in the issuer's church. A new doctype like these needs
+  the same method.
+- **Model sync gives every existing row a new column's default before any post_model_sync patch.**
+  When that default widens access, move the data in a pre_model_sync patch that syncs the doctype
+  itself (`set_prayer_request_visibility`).
 - **Assigning a record shares it.** Frappe's `assign_to` shares a record with an assignee who cannot
   read it, and the Share menu shares on purpose. `church_access.refuse_sharing_outside_the_church`
   (DocShare `validate`) refuses both when the user cannot see the record's church, and refuses
@@ -706,9 +531,10 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 - **User defaults are cached per worker** and lag a write by a request; read the `DefaultValue` row
   directly when a choice must take effect immediately.
 - **Hand-edited Workspace, Report and similar JSON is skipped by migrate** unless its `modified`
-  timestamp is newer than the row in the database. Bump it or your edit silently does nothing.
-- **Property Setters created at runtime are site-local.** The `church` field ones are deliberately
-  not fixtures, so they never ship to a single-church site.
+  timestamp is newer than the row in the database. Bump it to the current time or your edit silently
+  does nothing. Never write a future time: a site that imports it then skips every real edit made
+  before that time. If a local database row already holds a future stamp, reset that row instead
+  (`tests/test_json_hygiene.py` refuses future stamps).
 - **Frappe imports module folders only for the doctypes in its own `IMPORTABLE_DOCTYPES` list**
   (`frappe/model/sync.py`), which covers Notification but not Letter Head or Email Template. Records
   shipped as JSON beside their module for anything outside that list never reach a site, however
@@ -722,9 +548,10 @@ upgrade moves that method; if list filters stop expanding after an upgrade, look
 ## Testing
 
 Run the whole suite before committing anything broad: `bench --site <site> run-tests --app churchit`.
+CI does not run it.
 
-- The suite is **destructive on a site you care about**. `TestSampleDataRoundTrip` deletes unfiltered
-  doctypes and commits part way, so it rewrites the sample data. Restore with
+- The suite is **destructive on a site you care about**. `TestSampleDataRoundTrip` deletes the
+  sample data and creates it again, and the site keeps the result. Restore with
   `churchit.setup.sample_data.create_sample_data()`, which is idempotent, or run single modules while
   developing.
 - Tests must set `frappe.local.form_dict`, never `frappe.form_dict`, which replaces the proxy for the
@@ -737,8 +564,10 @@ Run the whole suite before committing anything broad: `bench --site <site> run-t
   not use it for a test that writes a file, because the rollback removes the File record and leaves
   the file on disk.
 - Call `frappe.clear_cache()` at most once per test class, never per test or in code that runs on every
-  save. It drops the metadata of every doctype, and rebuilding that metadata took almost half of the
-  suite's time. Clear only the doctype or document that changed.
+  save. It drops the metadata of every doctype, and rebuilding that metadata is the slowest part of
+  the suite. Clear only the doctype or document that changed.
+- Frappe keeps a new record's defaults in `frappe.local.new_doc_templates` until the request ends, so
+  a test that changes a default pops it.
 - `churchit/tests/test_church_permissions.py` is where scoping behaviour is proved. Add to it when
   you add a surface that reads church data. `make_two_churches()` and `assert_scoped()` in
   `churchit/tests/helpers.py` make that two lines:
@@ -801,9 +630,9 @@ name is global across every app, so name it after the doctype and do not prefix 
 ## Documentation obligations
 
 The `Manual: <Module>` workspaces are the in-app user documentation, not developer notes. Update the
-matching manual in the same change as any user-facing behaviour, and bump its `modified` timestamp.
-`Manual: Foundations` holds the multi-church explanation.
-These manuals are parsed to generate the documentation for the churchit.app website docs page.
+matching manual in the same change as any user-facing behaviour, and bump its `modified` timestamp
+(see "Frappe behaviours worth knowing"). `Manual: Foundations` holds the multi-church explanation.
+`docs/build_docs.py` parses these manuals into the documentation pages of the churchit.app website.
 
 Write the manuals for a church volunteer or secretary, not for a developer. Say what to click and
 what happens, name the doctype the way its form does (a Function, not an "event record"), and keep
@@ -815,7 +644,8 @@ class names, hook names, field types and file paths out: they belong in this fil
 **Never use an em dash or an en dash.** Not in code, comments, docstrings, commit messages, manuals,
 form tours, notifications, print formats, the README or the docs site. This is a hard rule, and it
 applies to the escaped forms too, whether written as an HTML entity or a unicode escape
-(U+2014 and U+2013).
+(U+2014 and U+2013). `churchit/tests/test_house_style.py` checks the file types it lists in
+`SCANNED`.
 
 Rewrite the sentence rather than swapping the character for a hyphen, which usually reads worse than
 the punctuation the sentence actually wants:
@@ -826,3 +656,285 @@ the punctuation the sentence actually wants:
 - A range becomes "to": "10 to 20 rows", never "10-20 rows".
 
 A hyphen is fine where a hyphen belongs, in a compound like `church-scoped` or `multi-church`.
+
+## People events and history
+
+`church_people/events.py` emits the people events from `Person.on_update`; its docstring lists them
+and shows how an app subscribes. Install, patches and migrate emit nothing; data import does. A
+`frappe.db.set_value` skips `on_update`, so it emits nothing.
+
+Membership history is Milestone rows written by `membership.record_changes` for
+`membership.TRACKED_FIELDS`, read by `membership.changed_between` and the Membership Changes report.
+Do not add a Frappe Milestone Tracker on Person: Frappe allows one tracker per doctype, and clearing
+the tracked field fails the save.
+
+## Person summary fields and smart lists
+
+A smart list is a saved Report Builder report on Person, so Frappe scopes and refreshes it. Person
+carries read-only summary fields (attendance, groups, serving, giving, care) from
+`church_people/summaries/`, whose docstring is the contract. To add a figure, add a read-only Person
+field and an area module; do not add a hook.
+
+An area counts only the person's own church's records and shared ones (`summaries.same_church`).
+The directory is shared, so a stored figure would otherwise show one church what a person did at
+another. Giving and care figures carry permlevels 2 and 3 for the same reason, and
+`Person.get_permlevel_access` drops both on single-document reads when the reader cannot see the
+person's church. Lists, Report Builder and exports apply permlevels by role only. That gap is
+accepted for now: while the directory is shared, another church's finance or care role reads and
+filters these figures in lists, smart lists and exports, and Check-In, People Editor and Church
+Manager read `medical_notes` (permlevel 1) on every person. A church that must keep them apart
+ticks Keep People and Families Private to Each Church. A new figure that counts one church's
+records inherits the gap; say so in the manuals.
+
+`summaries.keep_stored_values` (first in `Person.before_save`) puts the stored figures and `groups`
+rows back on every save, because a refresh leaves `modified` alone. Never set a summary field
+through a Person save.
+
+The standard lists ship as Report Builder JSON under `church_people/report/`. The Report view runs
+the Person `listview_settings` too, so every saved list gets the Person list's Actions. Their server
+side, `church_people/list_actions.py`, takes names from the browser, so it checks the right on every
+record: `email` to read addresses, `write` to change them.
+
+## Engagement, pathways, map and retention
+
+A Pathway step is a smart list (`Pathway.get_steps_done` reads it through `smart_lists.get_people`).
+A new way to judge a step must come in as a smart list, not as code in the Pathway Progress report.
+
+`get_timeline_data` in `doctype/person/person.py` feeds the form heatmap through Frappe's
+`get_open_count`, which `churchit.connections` overrides. Frappe calls it on the doctype's module,
+so it stays a module-level function. It reads Function attendance through
+`get_list` and returns `{}` when the reader cannot read Function, because an error there would break
+the Connections counts.
+
+Only `geocoding.geocode` writes Address `latitude` and `longitude`, with `db_set`: a save would
+queue another lookup through Address `on_update`. Every Nominatim request goes through
+`geocoding.get_coordinates`, which holds a bench-wide file lock because Nominatim allows one request
+a second. A form asks the server for a map pin, as the Location and Missionary forms do, and never
+calls Nominatim from the browser. People Settings `look_up_addresses` turns all of it off; check
+`geocoding.is_address_lookup_on()` before anything that sends address text. Custom fields sync
+after the patches, so a patch that needs one syncs its customization file first, as
+`queue_address_coordinates` does.
+
+`privacy.get_due_query` is the one rule for whose data the daily retention job removes; the
+Personal Data Due for Removal report scopes the same query.
+
+## Duplicates, merging and anonymizing
+
+`church_people/matching.find_matches` is the one matcher, and its weights are in `WEIGHTS`. It reads
+every church unless it is given one, so anything that shows a match to a user must first filter it
+through `frappe.get_list`, as `get_possible_matches` does. Match or search phones on Phone Number
+`digits` (filled by `contacts.validate_contact_tables`), never on `phone_number`.
+
+A merge is Frappe's own rename with merge (see `merge.py`). Frappe repoints every Link and Dynamic
+Link but not a Data field that stores a Person ID (`Milestone.reference_name`), so
+`Person.after_rename` moves those; a new Data field holding a Person ID needs the same. A new child
+table that lists each person once goes in `person_data_map.ROSTERS`. A new Person table a merge
+carries over goes in `MERGED_TABLES` in `doctype/person/person.py`. `person_data_map.linked_records`
+finds every record naming a person from field metadata; use it instead of a list of doctypes.
+Both ways of merging delete the removed record's Deleted Document when the merge commits: Frappe
+deletes the record after every hook, so Person and Family `after_rename` call
+`merge.drop_deleted_document`. Possible Duplicate pairs go with `delete_permanently`
+(`duplicates.drop_pairs`, `matching.resolve_merged`).
+
+Anonymizing (`privacy.anonymize_person`) keeps the Person, clears `PERSONAL_FIELDS` and empties
+`PERSONAL_TABLES`, so a new Person field or table holding personal data goes in one of them. A new
+doctype about one person (its subject, not a caregiver or other role) goes in
+`privacy.PERSONAL_DOCTYPES` when anonymizing should delete it, as for Person Note and Connection
+Card. Otherwise it goes in `privacy.RECORDS_ABOUT_THE_PERSON`, and anonymizing deletes its history,
+comments and attachments and blanks its messages.
+
+Frappe logs list and Report Builder exports, prints and PDFs. A new export or print path for
+personal data must call `make_access_log`, as the Church Directory PDF and `churchit/exports.py` do.
+
+## People imports
+
+Imports run through Frappe's Data Import. Each source is a virtual DocType in Church People whose
+fields are the export's columns, labelled exactly as the export heads them, with Churchit's
+fieldnames. To add a source, add such a DocType (and its `GLOBAL_DOCTYPES` entry), a
+`SourceProvider` subclass in `church_people/imports/` and one `data_import_providers` line in
+hooks.py. A person is found again by `legacy_system` and `legacy_id`, and a family by its household
+ID, only in the importer's churches.
+
+While `frappe.flags.in_import` is set, Frappe applies no field defaults and skips Select
+validation, so a record made from a Person save during an import must set its mandatory fields
+itself. Frappe reads `import_labels` aliases only for child-table fields, so a parent column matches
+only its label, its translated label, its fieldname or `Label (fieldname)`.
+
+## Person Notes
+
+A Person Note's category decides who reads it (`notes.has_note_permission` and
+`notes.note_query_conditions`). Church scoping does not cover categories, so read notes only with
+`frappe.get_list`, or `get_doc` plus a permission check, never `get_all` or `qb`, even for a person
+the reader can see. In Frappe a share overrides both hooks, so Person Note has no `share` right: do
+not add one, and do not assign notes. Person Note does not track changes, because every System
+Manager can read Version records. A Person's timeline does not show records linked to the person;
+notes reach it through `additional_timeline_content`.
+
+`PersonNote.validate` checks write on the stored note (see "A has_permission hook sees the edited
+document"). Only `church_access.has_every_church` users add or delete a Note Category or change its
+roles or Private. `tests/test_permission_hygiene.py` checks the reads, the share right and Track
+Changes.
+
+## Member portal
+
+A portal member reaches their own Person, and an Adult also reads and writes the living Children of
+their household who are under People Settings' adult age or of unknown age
+(`household.get_editable_children`), through the Person `has_permission` hook and
+`person_query_conditions`. To ask "may this member edit X", call
+`frappe.has_permission("Person", "write", doc=X)`; do not compare `Person.user`. A member reads and
+lists only their own Family, only its Adults write it, and `refuse_member_edits_beyond_photo` (first
+in `Family.validate`) limits them to the photo. It steps aside for `ignore_permissions` saves, which
+is how a Person keeps the roster, so never save a Family with `ignore_permissions` on values a member
+sent.
+
+`Person.birthday` is virtual: a value set on a save rewrites the first Birth life event
+(`sync_birthday`, before `sync_derived`). Read birthdays from `birth_month`, `birth_day` and
+`birth_date`, never from `birthday`.
+
+The defaults of `share_email`, `share_phone`, `share_address` and `share_birthday` are site-local
+Property Setters that People Settings `on_update` writes. A Single field that migrate stores without
+a save writes none, so a new People Settings default that drives a Person default needs a patch that
+calls `set_share_defaults`. A People Settings field added after a site first saved its settings reads
+as empty, not as its default: re-add `store_new_people_settings_defaults` to patches.txt (with a date
+comment) when you add one. People added for someone who never saw the choice (a card guest, the
+people with them, a walk-in at the Check-In Station, a portal sign-in) set all four to 0.
+
+`/directory` lists only active people whose Membership is not Visitor or Contact
+(`directory_filters`), and shows the list only to a viewer who passes the same rule, hidden or not;
+anyone else sees a note. It shows only public photos. The Member Directory portal menu row's
+`enabled` follows `member_directory` (`sync_directory_menu_item`); do not set it by hand.
+
+`accounts.link_portal_user` (on_session_creation) sets `Person.user` with `db_set` and then calls
+`sync_church_permission`, because the member guard refuses a member's change to Portal User. A
+Person it adds carries `flags.from_portal_login`, which `refuse_member_edits_beyond_personal_details`
+lets through. Only an own primary email counts; a row with Shared From does not. A failure is logged
+and never stops the sign-in.
+
+A login that a user links by hand, in Portal User or through Invite to Portal, must belong to no
+other Person and hold only churches the user can see (`Person.refuse_linking_another_login`). The
+app's own links save with `ignore_permissions` and skip that check, so never link a login a user
+sent with `ignore_permissions`.
+
+A guest key web form (Update Your Details) may not have a Link field, or a table with Link columns,
+unless Guest can read the linked doctype: Frappe refuses to save or render it otherwise.
+`details_link.close_details_request` (Web Form Request `validate`) keeps a details link to its one
+Person and one use; Frappe alone lets a key add records and reopen its record until it expires.
+Never put a request key in a Communication or Comment: anyone who reads the Person could use it.
+
+## Care and child safety
+
+`background_check.is_cleared(person, on_date, check_types)` is the one rule for "cleared to serve":
+code that decides who may serve calls it. `Person.background_check_status` and the Person form's
+indicator show only the latest check, so do not filter on them to find who may serve. A Care
+Request's caregiver gets the request through `assign_to`, which shares it only when the session user
+has the share right. So `CareRequest.assign` shares it first, with `ignore_share_permission`.
+`before_save` has already refused a caregiver outside the request's church
+(`refuse_a_caregiver_outside_the_church`).
+
+At the Check-In Station, `check_in.get_pickup_families` gates on the Function Check-In rows the
+reader may read (`frappe.get_list`), then reads the people those rows name with `get_all`, whatever
+their church. Do not fetch Person fields through the check-in's link (`person.full_name` in
+`get_list`): Frappe applies Person permission to that join, and a child at a shared function loses
+their name. Who may collect a child is the living household Adults plus the family's Authorized
+Pickup rows. `check_in.release_children` reads the families again before it stores who collected a
+child on its Function Check-In (`collected_by`, `collected_at`, `released_by`), and locks the row,
+so a child is released once. The station finds people only through
+`group_by_family(matched, get_people_scope(function))`, Scan Card included, so a new way to find
+people there must use it. The roster (`get_check_ins`) and the pickup lists name people of every
+church on purpose, because they are keyed to a function the reader may read. Do not add Authorized
+Pickup to `person_data_map.ROSTERS`: a merge would strip the merged person from every other family's
+pickup list. The Member QR Card needs `get_qr_code` in the `jinja` hook; never `frappe.call(...)`
+from print Jinja, which fails outside a request or a job.
+
+`church_prayers/prayer_access.py` holds the Prayer Request Visibility rules. The Church Prayer Team
+DocPerm reads every request; the hooks take back other people's Private requests from a user whose
+only role that reads every request is Church Prayer Team. Code that reads past permissions applies
+Visibility itself: `get_community_filters` for the community page, `has_webform_permission` and
+`create_prayer`, and `WHOLE_CHURCH` only for bulletins (`bulletin.py`). A web form's
+`condition_json` reaches the community `get_list` as `{field: [operator, value]}`.
+
+## Follow-up cards
+
+`followup.add_card` is the one way code opens a card. `followup.start_cards` is the one way an event
+about one person reaches the workflows that start on it; the daily `start_smart_list_cards` job reads
+the On Smart List triggers itself and calls `add_card`. A person has one open card per workflow:
+`add_card` and the card's `validate` both ask `followup.get_open_card`, which locks the Person row,
+because a plain read answers from the job's older snapshot. Anything more a church wants on a step,
+an email or a desk alert, is its own Notification on Follow-up Card, not code.
+
+The workflow owns its Kanban Board: `FollowupWorkflow.sync_board` rewrites its columns and filters
+on every save, so never edit the board by hand. `Follow-up Card.step` stays a Data field, because
+Kanban v2 takes columns from the board, not from Select options. Frappe checks a Dynamic Link before
+`validate`, so a trigger's `value_type` is set in the workflow's `_validate_links` override from
+`followup.VALUE_TYPES`. Moving a card closes its ToDos and assigns through
+`assign_to._add(ignore_permissions=True)`, as Assignment Rule does. `has_card_permission` reads
+`_assign` from the database: a form sends none, and a caller could send a forged one.
+
+## Connection Cards
+
+The Connection Card web form saves as Guest, and `ConnectionCard.process` runs as a job after the
+commit, as the sender, writing with `ignore_permissions`; anything it reaches (`start_cards`,
+`add_card`, the Follow-up Card hooks) must work as Guest. Guest input never changes an existing
+Person: a card links only on `is_strong_match` and otherwise adds a Visitor and records Possible
+Duplicates. The honeypot is checked in the job, because `accept` returns the saved document to the
+sender.
+
+Frappe fills web form fields from the query string but drops it when it redirects `/<route>` to
+`/<route>/new`, so a link carrying `?church=` points at `/new`. Web Form Field has no Table
+MultiSelect: the form shows the table as a Table field and draws checkboxes from the options Frappe
+lists for its Link column (`connection_card.js`).
+
+`ConnectionCard.record_consent` turns the Stay in Touch ticks into Given (Church News, method Web
+Form) for the card's person, desk cards included. A tick counts only for an address or number
+already on the person's record (`contacts.get_holders`, phones on `digits`), and never overrides a
+withdrawal on record, because guest input cannot prove who ticked it.
+
+## Church Emails, consent and bounces
+
+A Church Email works out its recipients when it is sent, all from its own church: its people, one
+of its groups, a smart list, or Chosen People that `validate` checks on save. A smart list is read
+only through `smart_lists.get_people(report, church)`, which applies `church_filters` and leaves out
+the dead. Unsubscribes are Email Unsubscribe records against a church, and `newsletter.email_church`
+is the one place that says which church: the root church on a single-church site, where records
+carry none.
+
+A Church Email fills placeholders with `sending.render` (see the `sending.py` docstring). Never
+render it with `frappe.render_template`, and keep `sending.check_placeholders` in `validate`.
+
+Each copy is a Communication with reference Person and a timeline link to the Church Email.
+`sending.get_people_sent` reads those links to decide who already got it, and a delivery commits
+every batch (100 emails, or each text, sent before its commit), so a rerun never sends twice. Do
+not create or delete these Communications any other way. Anonymizing blanks a copy's address and
+text and keeps the copy. People sharing one address or number get one copy, recorded on the first
+of them by Person ID.
+Frappe's `send_sms` writes an SMS Log only for numbers the gateway accepted, so a text copy's
+`delivery_status` is Sent or Error from that log. `get_people_sent` leaves out Error copies for the
+Sent To count, and a delivery asks with `include_failed=True`, so a failed copy is never sent again.
+Texts go through Frappe's public `send_sms`, so the SMS Settings Allowed Roles apply in the job, and
+`require_sending_set_up` checks them at click time. The scheduler only claims and queues `deliver`
+on the long queue; a job that times out stays Sending for the stalled retry.
+
+Consent is answered only by `consent.allowed`, or `consent.allowed_people` for a list. The newest
+record decides, ties by creation; a blank-purpose Given never undoes a withdrawal for one purpose.
+Recorded On may not be in the future. A Notification has no purpose, so only consent for every
+purpose counts, and staff (System Users) are never dropped. An address or number is refused only
+when every Person holding it is refused. An unsubscribe link or an Email Unsubscribe withdraws every
+holder of the address. A Communication Preferences switch, and any Given, records only the person
+who chose it. An Email Unsubscribe made with `db_insert` runs no hooks, so call
+`consent.record_unsubscribe` after it, as `newsletter.set_subscribed` does. Texts are opt-in: with
+no record for SMS nobody gets texts, whatever the church's setting (`consent.default_statuses`).
+
+An unsubscribe link carries the purpose and the recipient Person, signed (see
+`newsletter.unsubscribe`). The Consent Renewal notification asks `consent.is_due_for_renewal`, so
+each yes is asked about once, and its signed link (`consent_renewal_link`, a jinja method) runs
+`consent.renew`. The Communication Preferences page (`church_communications/preferences.py`) changes
+only the session's own Person and takes no person argument. Church News by email also goes through
+`newsletter.set_subscribed`, and a yes to any email purpose lifts the address's global Email
+Unsubscribe. Only `newsletter.py` writes Email Unsubscribe records. Ask `sending.can_send_texts()`
+wherever the question is whether this site can send texts.
+
+`bounces.record_bounce` reads a bounce report's text, one pattern per format (the `bounces.py`
+docstring explains why); a new format needs a pattern and a real sample in `test_bounces.py`. Decide
+whether to send to an address only through `bounces.bounced_addresses`. Email Bounced is cleared
+only in `contacts.validate_contact_tables` when a row's address changes; a raw write
+(`db.set_value`, `db_insert`) skips that.

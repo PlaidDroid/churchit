@@ -3,10 +3,11 @@
 
 """Follow-up cards: one person on one workflow, moved through its steps until someone closes it.
 
-`add_card` is the one way code opens a card, and `start_cards` is the one way a trigger
-(a connection card, a first check-in, a life event, a membership change, a smart list)
-reaches the workflows that start on it. Anything else a church wants to happen when a card
-starts or moves is a standard Notification on Follow-up Card.
+`add_card` is the one way code opens a card, and `start_cards` is the one way an event about one
+person (a connection card, a first check-in, a life event, a membership change) reaches the
+workflows that start on it. The daily `start_smart_list_cards` reads the smart-list triggers
+itself. Anything else a church wants to happen when a card starts or moves is a standard
+Notification on Follow-up Card.
 """
 
 import json

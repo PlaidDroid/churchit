@@ -70,10 +70,11 @@ class ChurchFeatures(Document):
 		clear_website_cache()
 
 	def start_multi_church(self):
-		"""One-time move to multi-church: stamp the root on every record, scope every user to it.
+		"""Move to multi-church: stamp the root on every record, scope every user to it.
 
-		Runs only on the off-to-on transition, never on migrate, so a Church
-		permission an administrator deleted afterwards stays deleted.
+		Runs on each off-to-on transition, never on migrate, so a Church permission an
+		administrator deleted afterwards stays deleted. The switch can go off again while
+		only the root exists, so both steps must be safe to repeat.
 		"""
 		root = root_church()
 		multi_church.backfill_root_church(root)
