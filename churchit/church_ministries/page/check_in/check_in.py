@@ -307,7 +307,7 @@ def get_living_people(names: list[str], fields: list[str] | None = None) -> dict
 	return {person.name: person for person in people}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def check_in(function: str, persons: str | list[str], print_tags: bool = False):
 	"""Check people in and, when asked, hand their name tags to the printer path."""
 	names = check_in_persons(function, persons)
@@ -317,12 +317,12 @@ def check_in(function: str, persons: str | list[str], print_tags: bool = False):
 	return result
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def undo_check_in(name: str):
 	frappe.delete_doc("Function Check-In", name)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_visitor(
 	first_name: str | None, last_name: str | None = None, phone: str | None = None, family: str | None = None
 ):

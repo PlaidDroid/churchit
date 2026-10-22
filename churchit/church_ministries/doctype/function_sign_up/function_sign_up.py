@@ -4,7 +4,13 @@ from frappe.model.document import Document
 from frappe.query_builder.functions import Coalesce, Sum
 
 from churchit.church_people.member_access import is_portal_member
-from churchit.church_scope import church_filters, session_church, session_person
+from churchit.church_scope import (
+	CHURCH_FIELD,
+	church_filters,
+	has_church_access,
+	session_church,
+	session_person,
+)
 from churchit.utils import resolve_link_titles
 
 
@@ -24,6 +30,7 @@ class FunctionSignUp(Document):
 		else:
 			# `person` is a plain Link, which user permissions never measure against its church.
 			frappe.has_permission("Person", doc=self.person, throw=True)
+			self.refuse_another_churches_function()
 
 		# Checked once `person` is settled: the portal form sends none of its own.
 		if frappe.db.exists(
@@ -32,6 +39,24 @@ class FunctionSignUp(Document):
 			frappe.throw(_("This person has already signed up for this function."))
 
 		self.set_item_quantities_needed()
+
+	def refuse_another_churches_function(self):
+		"""In the desk, only the function's church signs people up for it, unless the function is shared.
+
+		Frappe checks the user's rights before `church` is fetched from the function, on the church the
+		caller sent. Writes with ignore_permissions are the app's own and are not refused.
+		"""
+		if self.flags.ignore_permissions or not self.has_value_changed("function"):
+			return
+		before = self.get_doc_before_save()
+		churches = (frappe.db.get_value("Function", self.function, CHURCH_FIELD), before and before.church)
+		if not all(has_church_access(frappe.session.user, church) for church in churches):
+			frappe.throw(
+				_("{0} belongs to another church, so only that church can sign people up for it.").format(
+					frappe.db.get_value("Function", self.function, "title") or self.function
+				),
+				frappe.PermissionError,
+			)
 
 	def set_item_quantities_needed(self):
 		"""Mirror each item's function-level quantity_needed onto the sign-up row for display."""

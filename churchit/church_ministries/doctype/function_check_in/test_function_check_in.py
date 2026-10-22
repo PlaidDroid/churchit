@@ -4,14 +4,24 @@
 import json
 
 import frappe
+from frappe.api.v1 import update_doc
 from frappe.exceptions import ValidationError
+from frappe.handler import is_valid_http_method
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_ministries.doctype.function_check_in.function_check_in import (
 	check_in_persons,
 	print_name_tags,
 )
-from churchit.tests.helpers import make_function, make_person
+from churchit.tests.helpers import (
+	RollbackEachTest,
+	ensure_user,
+	make_function,
+	make_person,
+	make_two_churches,
+)
+
+CHECK_IN = "Function Check-In"
 
 
 class TestFunctionCheckIn(FrappeTestCase):
@@ -88,3 +98,48 @@ class TestFunctionCheckIn(FrappeTestCase):
 	def test_print_name_tags_needs_something_to_print(self):
 		with self.assertRaises(ValidationError):
 			print_name_tags()
+
+	def test_print_name_tags_refuses_get(self):
+		"""With a network printer it prints at once, so another site's GET must not start it.
+
+		test_http_method_hygiene.py cannot see this: a socket send is not a write it knows.
+		"""
+		frappe.local.request = frappe._dict(method="GET")
+		self.addCleanup(delattr, frappe.local, "request")
+		with self.assertRaises(frappe.PermissionError):
+			is_valid_http_method(print_name_tags)
+
+
+class TestFunctionCheckInChurches(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.volunteer_a = ensure_user("_test_check_in_a@example.com", "Volunteer", roles=("Church Check-In",))
+		make_person("_Test Check-In", "Volunteer", church=cls.branch_a, user=cls.volunteer_a)
+		cls.function_a = make_function("_Test Check-In A", church=cls.branch_a).name
+		cls.function_b = make_function("_Test Check-In B", church=cls.branch_b).name
+		cls.first, cls.second = (make_person("_Test Check-In", name).name for name in ("First", "Second"))
+
+	def tearDown(self):
+		frappe.local.form_dict = frappe._dict()
+		super().tearDown()
+
+	def test_only_the_functions_church_checks_people_in_or_moves_a_check_in(self):
+		"""Frappe checks the church the caller sends, before the check-in takes the function's church."""
+		theirs = frappe.new_doc(CHECK_IN, function=self.function_b, person=self.second).insert().name
+		frappe.set_user(self.volunteer_a)
+
+		with self.assertRaises(frappe.PermissionError):
+			frappe.new_doc(CHECK_IN, function=self.function_b, person=self.first).insert()
+		self.assertEqual(
+			frappe.new_doc(CHECK_IN, function=self.function_a, person=self.first).insert().church,
+			self.branch_a,
+		)
+
+		frappe.local.form_dict = frappe._dict(
+			data=json.dumps({"function": self.function_a, "church": self.branch_a})
+		)
+		with self.assertRaises(frappe.PermissionError):
+			update_doc(CHECK_IN, theirs)
+		self.assertEqual(frappe.db.get_value(CHECK_IN, theirs, "function"), self.function_b)

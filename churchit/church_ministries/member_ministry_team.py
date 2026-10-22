@@ -155,7 +155,7 @@ def answer(assignment, status: str, reason: str | None):
 	assignment.save(ignore_permissions=True)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def answer_own_assignment(assignment: str, status: str, reason: str | None = None):
 	"""Accept or decline one of the signed-in member's own assignments."""
 	doc = frappe.get_doc("Ministry Team Assignment", assignment)
@@ -200,7 +200,7 @@ def make_own_calendar_key():
 	)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_own_block(from_date: str, to_date: str, reason: str | None = None, whole_household: str | int = 0):
 	"""Block the signed-in member from serving from *from_date* to *to_date*."""
 	person = session_person()
@@ -221,7 +221,7 @@ def add_own_block(from_date: str, to_date: str, reason: str | None = None, whole
 	).insert(ignore_permissions=True)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_own_block(block: str):
 	"""Remove one of the signed-in member's own blocks."""
 	person = frappe.db.get_value("Ministry Team Block", block, "person")

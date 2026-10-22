@@ -48,7 +48,7 @@ def get_member_choices():
 	return ()
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def change_own_attendance(function: str, attendance_type: str):
 	"""Set the signed-in member's attendance type on one function their Attendance page lists."""
 	if attendance_type not in get_member_choices():

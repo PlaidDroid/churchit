@@ -5,18 +5,40 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from churchit.church_scope import CHURCH_FIELD, has_church_access
+
 # Roles that may clear a booking on a room whose "Requires Approval" flag is set.
 APPROVER_ROLES = {"Church Manager", "System Manager"}
 
 
 class RoomBooking(Document):
 	def validate(self):
+		self.refuse_another_churches_room()
 		if self.end_datetime and self.start_datetime and self.end_datetime <= self.start_datetime:
 			frappe.throw(_("End time must be after start time."))
 		requires_approval = bool(frappe.db.get_value("Room", self.room, "requires_approval"))
 		self.set_initial_status(requires_approval)
 		self.validate_approver(requires_approval)
 		self.check_conflicts()
+
+	def refuse_another_churches_room(self):
+		"""Only a room's own church books it, and every church books a shared room.
+
+		Frappe checks the create right before `church` is fetched from the room, so it never sees
+		whose room this is. Writes with ignore_permissions are the app's own and are not refused.
+		"""
+		if self.flags.ignore_permissions or not self.has_value_changed("room"):
+			return
+		stored = self.get_doc_before_save() or frappe._dict()
+		for room, church in (
+			(self.room, frappe.db.get_value("Room", self.room, CHURCH_FIELD)),
+			(stored.room, stored.church),
+		):
+			if not has_church_access(frappe.session.user, church):
+				frappe.throw(
+					_("{0} belongs to another church, so only that church can book it.").format(room),
+					frappe.PermissionError,
+				)
 
 	def set_initial_status(self, requires_approval):
 		"""Approve bookings outright on rooms that need no manager's OK.

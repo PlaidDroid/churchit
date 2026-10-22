@@ -8,7 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
 
-from churchit.church_scope import default_church
+from churchit.church_scope import CHURCH_FIELD, default_church, has_church_access
 
 # Letters and digits that are hard to confuse on a printed tag.
 SECURITY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -16,11 +16,31 @@ SECURITY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 class FunctionCheckIn(Document):
 	def validate(self):
+		self.refuse_another_churches_function()
 		# Prevent duplicate check-ins for the same function and person
 		if frappe.db.exists(
 			"Function Check-In", {"function": self.function, "person": self.person, "name": ("!=", self.name)}
 		):
 			frappe.throw(_("This person has already been checked in to this function."))
+
+	def refuse_another_churches_function(self):
+		"""Only the function's church checks people in to it. A shared function takes them from every church.
+
+		Frappe checks the user's rights before `church` is fetched from the function, on the church the
+		caller sent. `check_in_persons` checks the function itself and inserts with ignore_permissions,
+		which is not refused.
+		"""
+		if self.flags.ignore_permissions or not self.has_value_changed("function"):
+			return
+		before = self.get_doc_before_save()
+		churches = (frappe.db.get_value("Function", self.function, CHURCH_FIELD), before and before.church)
+		if not all(has_church_access(frappe.session.user, church) for church in churches):
+			frappe.throw(
+				_("{0} belongs to another church, so only that church can check people in to it.").format(
+					frappe.db.get_value("Function", self.function, "title") or self.function
+				),
+				frappe.PermissionError,
+			)
 
 	def before_save(self):
 		function_label = (
@@ -71,7 +91,7 @@ def new_security_code():
 	return "".join(secrets.choice(SECURITY_CODE_ALPHABET) for _ in range(4))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def check_in_persons(function_name: str, persons: str | list[str]):
 	"""Check *persons* in to a function. New check-ins made in one call share a security code."""
 	frappe.has_permission("Function Check-In", "create", throw=True)
@@ -108,7 +128,7 @@ def check_in_persons(function_name: str, persons: str | list[str]):
 	return names
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def print_name_tags(check_ins: str | list[str] | None = None, persons: str | list[str] | None = None):
 	"""Name tags for saved check-ins, or plain tags for people who are not checked in."""
 	docs = [frappe.get_doc("Function Check-In", name) for name in frappe.parse_json(check_ins) or []]

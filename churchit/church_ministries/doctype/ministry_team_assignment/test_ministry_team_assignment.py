@@ -20,6 +20,7 @@ from churchit.tests.helpers import (
 	make_person,
 	make_team_assignment,
 	make_team_position,
+	make_two_churches,
 )
 
 MODULE = "churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment"
@@ -322,3 +323,33 @@ class TestMinistryTeamAssignment(RollbackEachTest):
 		frappe.set_user(ensure_user("_test_team_member@example.com", "Member"))
 		with self.assertRaises(frappe.PermissionError):
 			get_team_emails(self.sunday.name)
+
+
+class TestMinistryTeamAssignmentChurches(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.manager_a = ensure_user("_test_team_a@example.com", "Coordinator", roles=("Church Manager",))
+		make_person("_Test Team", "Coordinator", church=cls.branch_a, user=cls.manager_a)
+		server = make_person("_Test Team", "Server").name
+		cls.teams = {}
+		for key, church in (("A", cls.branch_a), ("B", cls.branch_b)):
+			# The position is in the function's church, so only the user's access can refuse.
+			ministry = f"_Test Team Ministry {key}"
+			ensure("Ministry", {"ministry_name": ministry}, {"ministry_name": ministry, "church": church})
+			cls.teams[key] = {
+				"function": make_function(f"_Test Team {key}", church=church).name,
+				"position": make_team_position(f"_Test Team {key}", [server], ministry_name=ministry).name,
+				"person": server,
+			}
+
+	def test_only_the_functions_church_schedules_people_for_it(self):
+		"""Frappe checks the create right before the assignment takes the function's church."""
+		frappe.set_user(self.manager_a)
+
+		with self.assertRaises(frappe.PermissionError):
+			frappe.new_doc("Ministry Team Assignment", **self.teams["B"]).insert()
+		self.assertEqual(
+			frappe.new_doc("Ministry Team Assignment", **self.teams["A"]).insert().church, self.branch_a
+		)

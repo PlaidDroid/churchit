@@ -16,7 +16,7 @@ from churchit.church_people.doctype.background_check.background_check import (
 	get_current_check_types,
 	is_cleared,
 )
-from churchit.church_scope import refuse_another_churches_record, scoped
+from churchit.church_scope import has_church_access, refuse_another_churches_record, scoped
 from churchit.contacts import get_primary_email, get_primary_emails
 
 PENDING = "Pending"
@@ -35,6 +35,7 @@ class MinistryTeamAssignment(Document):
 
 	def validate(self):
 		if self.is_new():
+			self.refuse_another_churches_function()
 			self.refuse_a_person_not_on_the_position()
 			self.refuse_a_repeat()
 			refuse_another_churches_record(self, "Ministry Team Position", self.position)
@@ -44,6 +45,20 @@ class MinistryTeamAssignment(Document):
 		self.title = f"{self.person_name} as {self.position_doc.position_name} at {self.function_doc.title}"
 		if self.status in ANSWERS and self.has_value_changed("status"):
 			self.responded_on = now_datetime()
+
+	def refuse_another_churches_function(self):
+		"""Only the function's church schedules people for it. A shared function takes them from every church.
+
+		Frappe checks the create right before `church` is fetched from the function, and the
+		function is set only once. Writes with ignore_permissions are the app's own and are not refused.
+		"""
+		if not self.flags.ignore_permissions and not has_church_access(frappe.session.user, self.church):
+			frappe.throw(
+				_("{0} belongs to another church, so only that church can schedule people for it.").format(
+					self.function_doc.title
+				),
+				frappe.PermissionError,
+			)
 
 	def on_update(self):
 		if self.status == DECLINED and self.has_value_changed("status"):
@@ -222,7 +237,7 @@ def send_team_emails() -> int:
 	return send_requests() + send_reminders()
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def send_team_emails_now() -> int:
 	"""Send what the daily job would send next, for the churches the user may see."""
 	frappe.has_permission("Ministry Team Assignment", "create", throw=True)

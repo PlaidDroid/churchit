@@ -5,6 +5,9 @@ import frappe
 from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 
+from churchit.church_foundations.church_access import set_user_church
+from churchit.tests.helpers import RollbackEachTest, ensure_user, make_person, make_two_churches
+
 
 def _ensure(doctype, filters, values):
 	name = frappe.db.exists(doctype, filters)
@@ -101,3 +104,47 @@ class TestRoomBooking(FrappeTestCase):
 			self._make_booking(
 				self.open_room, start_datetime="2031-03-04 12:00:00", end_datetime="2031-03-04 11:00:00"
 			)
+
+
+class TestRoomBookingAcrossChurches(RollbackEachTest):
+	"""Only a room's own church books it, and every church books a shared room."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+		cls.staff_b = ensure_user("_test_booking_staff_b@example.com", "Staff B", roles=("Church Staff",))
+		set_user_church(cls.staff_b, cls.branch_b)
+		cls.requester_b = make_person("_Test Booking", "Requester B", church=cls.branch_b).name
+		cls.room_a, cls.shared_room = (
+			frappe.get_doc(
+				{"doctype": "Room", "room_name": name, "is_bookable": 1, "church": cls.branch_a, **values}
+			)
+			.insert(ignore_permissions=True)
+			.name
+			for name, values in (("_Test Branch A Hall", {}), ("_Test Shared Hall B", {"is_shared": 1}))
+		)
+
+	def book(self, room):
+		return frappe.get_doc(
+			{
+				"doctype": "Room Booking",
+				"room": room,
+				"requester": self.requester_b,
+				"purpose": "_Test across churches",
+				"start_datetime": "2034-02-02 09:00:00",
+				"end_datetime": "2034-02-02 10:00:00",
+				"church": self.branch_b,
+			}
+		)
+
+	def test_another_church_cannot_book_a_churchs_room(self):
+		"""Frappe checks the create right on the church the caller sends, before it fetches the room's."""
+		frappe.set_user(self.staff_b)
+		with self.assertRaises(frappe.PermissionError):
+			self.book(self.room_a).insert()
+
+	def test_every_church_books_a_shared_room(self):
+		frappe.set_user(self.staff_b)
+		self.assertEqual(self.book(self.shared_room).insert().church, "")
