@@ -372,6 +372,7 @@ override_whitelisted_methods = {
 	# The payments app replaces Frappe's web form save with an older copy that ignores Web Form
 	# Request keys, skips the form's own checks and inserts whatever doctype the browser names.
 	# The last installed app wins, so this puts Frappe's own back. No Churchit web form takes payment.
+	# Remove it once frappe/payments#276 is fixed; the steps are in #272.
 	"frappe.website.doctype.web_form.web_form.accept": "frappe.website.doctype.web_form.web_form.accept",
 	"frappe.desk.notifications.get_open_count": "churchit.connections.get_open_count",
 	"frappe.core.doctype.data_import.data_import.download_template": "churchit.exports.download_template",
