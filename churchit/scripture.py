@@ -463,8 +463,12 @@ def count_verses(books: dict) -> int:
 
 
 def download_free_use_bible(source_id: str) -> dict:
-	"""A whole translation from the Free Use Bible API, without its audio data."""
-	response = requests.get(f"{FREE_USE_BIBLE_API_URL}/{source_id}/complete.simple.json", timeout=300)
+	"""A whole translation from the Free Use Bible API, without its audio data.
+
+	Site config `free_use_bible_api_url` names a self-hosted copy of the API instead.
+	"""
+	api_url = (frappe.conf.get("free_use_bible_api_url") or FREE_USE_BIBLE_API_URL).rstrip("/")
+	response = requests.get(f"{api_url}/{source_id}/complete.simple.json", timeout=300)
 	response.raise_for_status()
 	data = response.json()
 	for book in data["books"]:

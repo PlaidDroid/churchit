@@ -128,6 +128,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 ### Bible & Study
 - A Bible reader in the desk and on the website, one chapter at a time
 - Bible translations that keep their own text: the default one downloads at install, each other free translation downloads itself the first time someone opens it, and a translation that is not free takes an import of a licensed copy that only signed-in users can read
+- Downloads from a self-hosted copy of the Free Use Bible API when the site config key `free_use_bible_api_url` names one
 - Bible references typed as plain text (such as `Romans 8:28-30; Psalm 23`) on churches, bulletins, beliefs, sermon slides and Bible Memory, kept as typed rather than reordered or expanded into verses, with their text from the church's default translation
 - Bible Memory practice in the portal, with passages managers can assign to people and groups
 
