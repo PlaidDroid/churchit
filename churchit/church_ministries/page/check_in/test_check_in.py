@@ -15,6 +15,7 @@ from churchit.church_ministries.page.check_in.check_in import (
 	search_people,
 	undo_check_in,
 )
+from churchit.church_people.doctype.people_settings.people_settings import SHARE_DEFAULTS
 from churchit.church_people.test_household import make_household, set_adult_age
 from churchit.tests.helpers import (
 	ensure,
@@ -133,6 +134,15 @@ class TestCheckInStation(FrappeTestCase):
 		self.assertEqual(person.phones[0].phone_number, "555 010 1111")
 		self.assertEqual(person.source, "Check-In")
 		self.assertEqual(self.members_of(search_people("0101111")), [["Zed", "Zelda", "Zoe"]])
+		person.delete()
+
+	def test_a_walk_in_is_a_visitor_who_shares_nothing(self):
+		"""They never saw the directory's share choices, so the member directory must not list them."""
+		person = frappe.get_doc("Person", add_visitor("Wanda", "Walkin", phone="555 010 2222")["name"])
+		self.assertEqual(person.membership, "Visitor")
+		self.assertEqual(
+			{field: person.get(field) for field in SHARE_DEFAULTS}, dict.fromkeys(SHARE_DEFAULTS, 0)
+		)
 		person.delete()
 
 

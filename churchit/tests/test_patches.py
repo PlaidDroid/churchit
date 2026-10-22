@@ -28,6 +28,7 @@ from churchit.patches.v1_0 import (
 	add_unsynced_default_records,
 	clear_unknown_person_sources,
 	list_missionary_people_in_a_table,
+	mark_check_in_walk_ins_as_visitors,
 	move_copied_function_schedules,
 	move_email_template_bodies_to_html,
 	move_to_the_apps_screen_and_dock,
@@ -57,6 +58,7 @@ from churchit.tests.helpers import (
 	RollbackEachTest,
 	ensure,
 	ensure_root_church,
+	ensure_user,
 	make_address,
 	make_function,
 	make_person,
@@ -1105,6 +1107,25 @@ class TestRemoveAveryLabelFormat(RollbackEachTest):
 
 		self.assertFalse(frappe.db.exists("Print Format", name))
 		self.assertFalse(frappe.db.exists("Property Setter", {"doc_type": "Family", "value": name}))
+
+
+class TestMarkCheckInWalkInsAsVisitors(RollbackEachTest):
+	def test_a_walk_in_becomes_a_visitor_who_shares_nothing(self):
+		walk_in = make_person("_Test Walk", "In", source="Check-In", membership=None, share_phone=1)
+		member = make_person("_Test Walk", "Member", source="Check-In", membership="Member", share_phone=1)
+		login = ensure_user("_test_walk_in_login@example.com", "WalkInLogin")
+		chose = make_person(
+			"_Test Walk", "Chose", source="Check-In", membership=None, share_phone=1, user=login
+		)
+
+		mark_check_in_walk_ins_as_visitors.execute()
+
+		def state(person):
+			return frappe.db.get_value("Person", person.name, ["membership", "share_phone"])
+
+		self.assertEqual(state(walk_in), ("Visitor", 0))
+		self.assertEqual(state(member), ("Member", 1))
+		self.assertEqual(state(chose), (None, 1), "a portal login may have chosen to share")
 
 
 class TestRestampSharedFundTransfers(RollbackEachTest):

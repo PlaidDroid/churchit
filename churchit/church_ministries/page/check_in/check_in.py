@@ -15,8 +15,9 @@ from churchit.church_ministries.doctype.function_check_in.function_check_in impo
 	print_name_tags,
 )
 from churchit.church_people import household
+from churchit.church_people.doctype.people_settings.people_settings import SHARE_DEFAULTS
 from churchit.church_people.doctype.person.person import SOURCE_CHECK_IN
-from churchit.church_people.membership import living_people_filter
+from churchit.church_people.membership import VISITOR, living_people_filter
 from churchit.church_scope import (
 	church_query_filters,
 	default_church,
@@ -279,6 +280,7 @@ def add_visitor(
 
 	Checking people in is the right that counts: a check-in volunteer holds no
 	Person create, which would otherwise ask them to read every Person lookup too.
+	The visitor never saw the directory's share choices, so they share nothing.
 	"""
 	frappe.has_permission("Function Check-In", "create", throw=True)
 	if not (first_name or "").strip():
@@ -290,6 +292,8 @@ def add_visitor(
 			"last_name": (last_name or "").strip(),
 			"family": family,
 			"source": SOURCE_CHECK_IN,
+			"membership": VISITOR,
+			**dict.fromkeys(SHARE_DEFAULTS, 0),
 		}
 	)
 	if phone:

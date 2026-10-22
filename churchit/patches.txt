@@ -70,3 +70,4 @@ churchit.patches.v1_0.queue_address_coordinates
 churchit.patches.v1_0.add_household_and_directory_menu_items
 churchit.patches.v1_0.apply_directory_share_defaults
 churchit.patches.v1_0.restamp_shared_fund_transfers
+churchit.patches.v1_0.mark_check_in_walk_ins_as_visitors
