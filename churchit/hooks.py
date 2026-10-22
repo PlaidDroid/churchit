@@ -158,6 +158,8 @@ jinja = {
 # Installation
 # ------------
 
+# Frappe keeps one doctype per name, so refuse a site where another app shares one of ours.
+before_install = "churchit.church_setup.app_clashes.refuse_clashing_installed_apps"
 after_install = "churchit.patches.after_install.execute"
 
 # Workspaces ship as standard records, so migrate re-imports them and resets the
@@ -190,8 +192,7 @@ setup_wizard_complete = [
 # To set up dependencies/integrations with other apps
 # Name of the app being installed is passed as an argument
 
-# before_app_install = "churchit.utils.before_app_install"
-# after_app_install = "churchit.utils.after_app_install"
+before_app_install = "churchit.church_setup.app_clashes.refuse_clashing_app"
 
 # Integration Cleanup
 # -------------------
