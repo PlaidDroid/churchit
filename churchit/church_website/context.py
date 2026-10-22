@@ -28,6 +28,7 @@ def update_website_context(context):
 	context["footer_church"] = get_footer_church()
 	_add_pwa_head_tags(context)
 	_add_theme_mode_script(context)
+	_add_leaflet(context)
 
 
 def before_request():
@@ -129,3 +130,14 @@ def _add_theme_mode_script(context):
 	script finds the theme-color meta it keeps in step with the switch.
 	"""
 	context["head_html"] = context["head_html"] + THEME_MODE_SCRIPT
+
+
+def _add_leaflet(context):
+	"""Load Leaflet on /missions for its map. The website bundle has no `frappe.require`.
+
+	Frappe hands every page the cached hook lists, so this assigns new lists.
+	"""
+	if getattr(frappe.local, "path", None) != "missions" or "leaflet.bundle.js" in context.web_include_js:
+		return
+	context.web_include_js = ["leaflet.bundle.js", *context.web_include_js]
+	context.web_include_css = ["leaflet.bundle.css", *context.web_include_css]
