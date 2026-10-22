@@ -122,6 +122,21 @@ class TestFinanceChurchOwnership(FrappeTestCase):
 				}
 			).insert(ignore_permissions=True)
 
+	def test_a_transfer_out_of_a_shared_fund_keeps_the_church_that_moved_it(self):
+		"""The shared fund has no church to give it, and an empty church would share the transfer."""
+		frappe.set_user(self.branch_manager)
+		transfer = frappe.get_doc(
+			{
+				"doctype": "Fund Transfer",
+				"from_fund": self.shared_fund.name,
+				"to_fund": self.branch_fund.name,
+				"amount": 5,
+				"date": nowdate(),
+			}
+		).insert()
+
+		self.assertEqual(transfer.church, self.branch)
+
 	def test_budget_vs_actual_refuses_another_churchs_budget(self):
 		"""The report reads whichever budget its filter names, so it checks that budget first."""
 		budget = frappe.get_doc(

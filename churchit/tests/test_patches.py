@@ -37,6 +37,7 @@ from churchit.patches.v1_0 import (
 	remove_email_group_onboarding,
 	remove_knowledge_base,
 	rename_agency_logo_field,
+	restamp_shared_fund_transfers,
 	restore_shipped_people_charts,
 	scope_website_pages_to_church,
 	seed_naming_series_counters,
@@ -1104,3 +1105,20 @@ class TestRemoveAveryLabelFormat(RollbackEachTest):
 
 		self.assertFalse(frappe.db.exists("Print Format", name))
 		self.assertFalse(frappe.db.exists("Property Setter", {"doc_type": "Family", "value": name}))
+
+
+class TestRestampSharedFundTransfers(RollbackEachTest):
+	def test_a_shared_transfer_takes_the_church_of_whoever_made_it(self):
+		church = ensure_root_church()
+		transfer = frappe.get_doc(
+			{"doctype": "Fund Transfer", "from_fund": "_Test Shared", "to_fund": "_Test Own", "amount": 1}
+		)
+		transfer.db_insert()
+		with (
+			mock.patch.object(restamp_shared_fund_transfers, "is_multi_church", return_value=True),
+			mock.patch.object(restamp_shared_fund_transfers, "default_church", return_value=church) as maker,
+		):
+			restamp_shared_fund_transfers.execute()
+
+		self.assertEqual(frappe.db.get_value("Fund Transfer", transfer.name, "church"), church)
+		maker.assert_any_call(transfer.owner)
