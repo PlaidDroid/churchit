@@ -1,11 +1,11 @@
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Count
+from frappe.utils import today
 
+from churchit.church_ministries.attendance import COUNTED_TYPES
 from churchit.church_scope import scoped
 from churchit.utils import set_report_link_titles
-
-COUNTED_TYPES = ("Assumed", "Confirmed", "Checked-In")
 
 
 def execute(filters=None):
@@ -31,13 +31,6 @@ def get_columns():
 def get_data(filters=None):
 	Attendance = frappe.qb.DocType("Function Attendance")
 	Function = frappe.qb.DocType("Function")
-	AttendanceType = frappe.qb.DocType("Function Attendance Type")
-
-	counted = (
-		frappe.qb.from_(AttendanceType)
-		.select(AttendanceType.name)
-		.where(AttendanceType.type.isin(list(COUNTED_TYPES)))
-	)
 
 	query = (
 		frappe.qb.from_(Attendance)
@@ -47,7 +40,7 @@ def get_data(filters=None):
 			Attendance.parent.as_("function"),
 			Count(Attendance.person).as_("attendance_count"),
 		)
-		.where(Attendance.attendance_type.isin(counted))
+		.where(Attendance.attendance_type.isin(COUNTED_TYPES) & (Function.start_date <= today()))
 		.groupby(Attendance.parent)
 	)
 	return scoped(query, Function, filters).run(as_dict=True)

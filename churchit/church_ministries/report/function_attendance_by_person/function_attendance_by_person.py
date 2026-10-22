@@ -1,7 +1,9 @@
 import frappe
 from frappe import _
+from frappe.utils import today
 from pypika import Order
 
+from churchit.church_ministries.attendance import COUNTED_TYPES
 from churchit.church_scope import scoped
 from churchit.utils import set_report_link_titles
 
@@ -46,13 +48,6 @@ def get_data(filters=None):
 
 	Attendance = frappe.qb.DocType("Function Attendance")
 	Function = frappe.qb.DocType("Function")
-	AttendanceType = frappe.qb.DocType("Function Attendance Type")
-
-	counted_types = (
-		frappe.qb.from_(AttendanceType)
-		.select(AttendanceType.name)
-		.where(AttendanceType.type.isin(["Assumed", "Confirmed", "Checked-In"]))
-	)
 
 	query = (
 		frappe.qb.from_(Attendance)
@@ -65,7 +60,7 @@ def get_data(filters=None):
 			Function.start_date,
 			Attendance.attendance_type,
 		)
-		.where(Attendance.attendance_type.isin(counted_types))
+		.where(Attendance.attendance_type.isin(COUNTED_TYPES) & (Function.start_date <= today()))
 		.orderby(Function.start_date, order=Order.desc)
 		.orderby(Attendance.person)
 	)

@@ -8,11 +8,10 @@ from frappe.query_builder.functions import Count, Max, Min
 from frappe.utils import add_days, getdate, nowdate
 from pypika import Case
 
+from churchit.church_ministries.attendance import COUNTED_TYPES
 from churchit.church_people.summaries import same_church
 
 FIELDS = ("first_attended_on", "last_attended_on", "times_attended_90d")
-# The attendance types that mean the person was there, as Function.attendance_total counts them.
-ATTENDED = ("Confirmed", "Assumed", "Checked-In")
 WINDOW_DAYS = 90
 
 
@@ -45,7 +44,7 @@ def compute(people: list[str]) -> dict[str, dict]:
 			Max(Function.start_date).as_("last"),
 			Count(Case().when(Function.start_date >= since, Function.name)).distinct().as_("recent"),
 		)
-		.where(Attendance.person.isin(people) & Attendance.attendance_type.isin(ATTENDED))
+		.where(Attendance.person.isin(people) & Attendance.attendance_type.isin(COUNTED_TYPES))
 		.where(Function.start_date <= today)
 		.where(same_church(Function, Person))
 		.groupby(Attendance.person)

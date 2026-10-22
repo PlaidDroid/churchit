@@ -11,9 +11,9 @@ import frappe
 from frappe import _
 from frappe.utils import add_months, cint, today
 
+from churchit.church_ministries.attendance import COUNTED_TYPES
 from churchit.church_people.membership import MEMBER, changed_between, living_people_filter
 from churchit.church_people.summaries import same_church
-from churchit.church_people.summaries.attendance import ATTENDED
 from churchit.church_scope import scoped
 from churchit.query import DateDiff
 from churchit.utils import set_report_link_titles
@@ -104,7 +104,7 @@ def get_people_who_came_back(people: list[str], weeks: int) -> set[str]:
 		.on(Person.name == Attendance.person)
 		.select(Attendance.person)
 		.distinct()
-		.where(Attendance.person.isin(people) & Attendance.attendance_type.isin(ATTENDED))
+		.where(Attendance.person.isin(people) & Attendance.attendance_type.isin(COUNTED_TYPES))
 		.where((days_after > 0) & (days_after <= weeks * 7) & (Function.start_date <= today()))
 		.where(same_church(Function, Person))
 		.run(pluck=True)

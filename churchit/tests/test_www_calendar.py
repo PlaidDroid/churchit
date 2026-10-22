@@ -33,6 +33,23 @@ class TestCalendarPage(FrappeTestCase):
 		self.assertNotIn(out_of_range.name, events)
 		self.assertEqual(len([e for e in events.values() if e["title"] == "_Test Private Event"]), 0)
 
+	def test_a_function_that_starts_before_the_range_and_ends_inside_it_is_listed(self):
+		ongoing = make_function(
+			"_Test Ongoing Camp", start_date=add_days(getdate(), -5), end_date=getdate(), publish=1
+		)
+		finished = make_function(
+			"_Test Finished Camp",
+			start_date=add_days(getdate(), -5),
+			end_date=add_days(getdate(), -3),
+			publish=1,
+		)
+		one_day = make_function("_Test Past Day", start_date=add_days(getdate(), -3), publish=1)
+
+		events = self._events()
+		self.assertIn(ongoing.name, events)
+		self.assertNotIn(finished.name, events)
+		self.assertNotIn(one_day.name, events)
+
 	def test_requests_are_clamped_to_the_public_window(self):
 		old = make_function("_Test Ancient Event", start_date=add_months(getdate(), -2), publish=1)
 		far = make_function("_Test Distant Event", start_date=add_months(getdate(), 8), publish=1)

@@ -72,3 +72,4 @@ churchit.patches.v1_0.apply_directory_share_defaults
 churchit.patches.v1_0.restamp_shared_fund_transfers
 churchit.patches.v1_0.mark_check_in_walk_ins_as_visitors
 churchit.patches.v1_0.date_future_consent_when_entered
+churchit.patches.v1_0.zero_future_attendance_totals

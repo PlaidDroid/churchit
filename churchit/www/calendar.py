@@ -23,7 +23,7 @@ def get_context(context):
 
 @frappe.whitelist(allow_guest=True)
 def get_events(start: str | date, end: str | date):
-	"""Return published Functions whose start_date falls within [start, end]."""
+	"""Return published Functions that take place on any day in [start, end]; a blank end_date means one day."""
 	start_date = getdate(start)
 	end_date = getdate(end)
 
@@ -38,9 +38,8 @@ def get_events(start: str | date, end: str | date):
 
 	rows = frappe.get_all(
 		"Function",
-		filters=church_filters(
-			selected_church_name(), publish=1, start_date=["between", [start_date, end_date]]
-		),
+		filters=church_filters(selected_church_name(), publish=1, start_date=["<=", end_date]),
+		or_filters=[["end_date", ">=", start_date], ["start_date", ">=", start_date]],
 		fields=[
 			"name",
 			"function_name",

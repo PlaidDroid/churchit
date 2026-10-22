@@ -18,6 +18,8 @@ format their own clickable cells, and reports with no Link or Dynamic Link
 columns have nothing for the helper to resolve.
 """
 
+import ast
+import glob
 import os
 import re
 
@@ -29,6 +31,7 @@ REPORTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 QUERIED_DOCTYPE = re.compile(r'(?:DocType|get_all|get_list|db\.count)\(\s*"([^"]+)"')
 # Lists churches themselves through frappe.get_list, so it is scoped by user permissions.
 SCOPE_EXEMPT_REPORTS = {"church_foundations/report/churches/churches.py"}
+COUNTED_TYPES_OWNER = "church_ministries/attendance.py"
 
 
 def _walk_report_python_files():
@@ -90,4 +93,28 @@ class TestReportsHygiene(FrappeTestCase):
 		assert not missing, (
 			"These reports are scoped but offer no Church filter. Spread it into their filters: "
 			"`filters: [...church.report_filters(), ...]` in " + ", ".join(sorted(missing))
+		)
+
+	def test_only_attendance_py_lists_the_counted_attendance_types(self):
+		"""Every reader of attendance takes COUNTED_TYPES from church_ministries/attendance.py."""
+		copies = []
+		for path in glob.glob(os.path.join(REPORTS_DIR, "**", "*.py"), recursive=True):
+			relative = os.path.relpath(path, REPORTS_DIR)
+			name = os.path.basename(path)
+			if (
+				relative in (COUNTED_TYPES_OWNER, "hooks.py")
+				or name.startswith("test_")
+				or "tests/" in relative
+			):
+				continue
+			with open(path) as fh:
+				tree = ast.parse(fh.read())
+			for node in ast.walk(tree):
+				if isinstance(node, ast.List | ast.Tuple | ast.Set):
+					values = {element.value for element in node.elts if isinstance(element, ast.Constant)}
+					if {"Assumed", "Checked-In"} <= values:
+						copies.append(f"{relative}:{node.lineno}")
+		assert not copies, (
+			"These files list the counted attendance types themselves. Import COUNTED_TYPES from "
+			"churchit.church_ministries.attendance instead: " + ", ".join(sorted(copies))
 		)

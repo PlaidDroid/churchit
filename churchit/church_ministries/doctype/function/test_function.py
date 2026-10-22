@@ -35,7 +35,7 @@ class TestFunction(FrappeTestCase):
 		self.assertEqual(function.title, "_Test Titled: 2031-05-01")
 
 	def test_attendance_total_counts_only_present_types(self):
-		function = make_function("_Test Counted")
+		function = make_function("_Test Counted", start_date=getdate())
 		for attendance_type in ("Confirmed", "Assumed", "Checked-In", "Absent", "Signed-Up"):
 			function.append(
 				"attendance",

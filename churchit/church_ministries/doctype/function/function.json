@@ -164,7 +164,7 @@
    "options": "Function Attendance"
   },
   {
-   "description": "Includes `Confirmed`, `Assumed` attendance.",
+   "description": "Counts Confirmed, Assumed and Checked-In attendance, from the day the function starts.",
    "fieldname": "attendance_total",
    "fieldtype": "Int",
    "label": "Attendance Total",
@@ -342,7 +342,7 @@
    "link_fieldname": "function"
   }
  ],
- "modified": "2026-10-11 12:00:00.000000",
+ "modified": "2026-10-22 16:25:52.000000",
  "modified_by": "Administrator",
  "module": "Church Ministries",
  "name": "Function",

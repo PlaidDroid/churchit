@@ -342,6 +342,7 @@ standard_navbar_items = [
 scheduler_events = {
 	"daily": [
 		"churchit.church_ministries.doctype.function.function.create_scheduled_functions",
+		"churchit.church_ministries.attendance.refresh_started_totals",
 		"churchit.church_missions.doctype.missionary.missionary.create_missionary_expenses",
 		"churchit.church_people.doctype.background_check.background_check.expire_background_checks",
 		"churchit.church_people.derived.refresh_daily",

@@ -16,13 +16,15 @@ from frappe.utils import (
 	getdate,
 )
 
+from churchit.church_ministries.attendance import COUNTED_TYPES
 from churchit.church_scope import church_query_filters, scoped
 
 
 @frappe.whitelist()
 def count_weekly_attendance():
 	frappe.has_permission("Function", "report", throw=True)
-	last_week = frappe.utils.add_days(frappe.utils.nowdate(), -7)
+	today = frappe.utils.nowdate()
+	last_week = frappe.utils.add_days(today, -7)
 
 	Attendance = frappe.qb.DocType("Function Attendance")
 	Function = frappe.qb.DocType("Function")
@@ -32,7 +34,8 @@ def count_weekly_attendance():
 		.join(Function)
 		.on(Attendance.parent == Function.name)
 		.select(Count(Attendance.name))
-		.where(Function.start_date >= last_week)
+		.where((Function.start_date >= last_week) & (Function.start_date <= today))
+		.where(Attendance.attendance_type.isin(COUNTED_TYPES))
 	)
 	count = scoped(query, Function, {}).run()[0][0]
 

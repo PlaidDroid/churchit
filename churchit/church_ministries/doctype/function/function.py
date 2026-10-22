@@ -18,6 +18,7 @@ from frappe.utils import (
 	now_datetime,
 )
 
+from churchit.church_ministries.attendance import get_total
 from churchit.utils import link_title
 
 TIME_FORMAT = "h:mm a"
@@ -41,14 +42,7 @@ class Function(Document):
 		else:
 			self.title = name
 
-		counted_types = frappe.get_all(
-			"Function Attendance Type",
-			filters={"type": ["in", ["Confirmed", "Assumed", "Checked-In"]]},
-			pluck="name",
-		)
-		self.attendance_total = sum(
-			1 for row in (self.attendance or []) if row.attendance_type in counted_types
-		)
+		self.attendance_total = get_total(self.attendance or [], self.start_date)
 
 
 @frappe.whitelist()
