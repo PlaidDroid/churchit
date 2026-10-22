@@ -11,7 +11,7 @@ from churchit.church_communications.doctype.bulletin.sections import BulletinSec
 from churchit.church_missions.doctype.missionary_status.missionary_status import INACTIVE
 from churchit.church_prayers.doctype.prayer_request.prayer_request import CLOSED_STATUSES
 from churchit.church_prayers.prayer_access import WHOLE_CHURCH
-from churchit.church_scope import church_filters
+from churchit.church_scope import CHURCH_FIELD, church_filters, has_church_access
 from churchit.scripture import format_reference
 
 PRINT_FORMAT = "Bulletin"
@@ -34,10 +34,29 @@ SECTION_FIELDS = (
 
 class Bulletin(BulletinSections, Document):
 	def validate(self):
+		self.refuse_another_churches_function()
 		self.title = f"{self.function_name} ({formatdate(self.function_date)})"
 		self.verse = format_reference(self.verse)
 		self.validate_missionary_is_printable()
 		self.validate_prayer_requests_are_printable()
+
+	def refuse_another_churches_function(self):
+		"""Only the function's church makes its bulletin. A shared function's bulletin is shared.
+
+		Frappe checks the user's rights before `church` is fetched from the function, on the church the
+		caller sent. Writes with ignore_permissions are the app's own and are not refused.
+		"""
+		if self.flags.ignore_permissions or not self.has_value_changed("function"):
+			return
+		before = self.get_doc_before_save()
+		churches = (frappe.db.get_value("Function", self.function, CHURCH_FIELD), before and before.church)
+		if not all(has_church_access(frappe.session.user, church) for church in churches):
+			frappe.throw(
+				_("{0} belongs to another church, so only that church can make its bulletin.").format(
+					self.function_name or self.function
+				),
+				frappe.PermissionError,
+			)
 
 	def validate_missionary_is_printable(self):
 		if not self.missionary or self.settings.include_sensitive_missionaries:

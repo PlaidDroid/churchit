@@ -3,8 +3,9 @@
 
 import frappe
 from frappe.email.receive import InboundMail
+from frappe.utils import add_days, now_datetime
 
-from churchit.church_communications.bounces import bounced_addresses, record_bounce
+from churchit.church_communications.bounces import RECENT_DAYS, bounced_addresses, record_bounce
 from churchit.tests.helpers import RollbackEachTest, ensure_root_church, force_single_church, make_person
 
 CHURCH_INBOX = frappe._dict({"email_id": "church@example.org"})
@@ -346,6 +347,21 @@ def receive(raw: bytes, original_id: str = "") -> str:
 	return InboundMail(raw.replace(b"ORIGINAL_ID", original_id.encode()), CHURCH_INBOX).process().name
 
 
+def mail_sent_to(*recipients: str, days_ago: int = 0):
+	"""Keep an Email Queue the site sent to *recipients* *days_ago* days back, as Frappe does."""
+	queue = frappe.get_doc(
+		{
+			"doctype": "Email Queue",
+			"status": "Sent",
+			"message": "Church News",
+			"recipients": [{"recipient": recipient, "status": "Sent"} for recipient in recipients],
+		}
+	).insert(ignore_permissions=True)
+	if days_ago:
+		sent_on = add_days(now_datetime(), -days_ago)
+		frappe.db.set_value("Email Queue Recipient", {"parent": queue.name}, "creation", sent_on)
+
+
 def is_bounced(parenttype, parent):
 	return frappe.db.get_value("Email Address", {"parenttype": parenttype, "parent": parent}, "is_bounced")
 
@@ -359,6 +375,13 @@ class TestRecordBounce(RollbackEachTest):
 
 	def setUp(self):
 		super().setUp()
+		mail_sent_to(
+			"Gone Person <gone.person@example.com>",
+			"gone.person@gmail.com",
+			"moved.away@example.net",
+			"office@example.org",
+			"church@example.org",
+		)
 		self.original_id = f"{frappe.generate_hash()}@{frappe.local.site}"
 		self.sent = (
 			frappe.get_doc(
@@ -467,6 +490,36 @@ class TestRecordBounce(RollbackEachTest):
 		receive(HTML_ONLY_FAILED)
 
 		self.assertEqual(is_bounced("Person", person.name), 1)
+
+	def test_a_report_marks_only_addresses_the_site_mailed_lately(self):
+		people = [
+			make_person("_Test Bounce", "Mailed", emails=[{"email_address": "gone.person@example.com"}]),
+			make_person("_Test Bounce", "Never", emails=[{"email_address": "never.mailed@example.com"}]),
+			make_person("_Test Bounce", "Old", emails=[{"email_address": "long.ago@example.com"}]),
+		]
+		mail_sent_to("long.ago@example.com", days_ago=RECENT_DAYS + 1)
+		forged = b"\n".join(
+			f"<{address}>: host mx.example.com said: 550 5.1.1 User unknown".encode()
+			for address in ("never.mailed@example.com", "long.ago@example.com", "gone.person@example.com")
+		)
+
+		receive(
+			POSTFIX_FAILED.replace(b"<Gone.Person@example.com>: host", forged + b"\n<x@example.com>: host")
+		)
+
+		self.assertEqual([is_bounced("Person", person.name) for person in people], [1, 0, 0])
+
+	def test_a_policy_block_or_a_full_mailbox_marks_nothing(self):
+		person = make_person("_Test Bounce", "Blocked", emails=[{"email_address": "gone.person@example.com"}])
+
+		for code in ("5.7.1", "5.7.26", "5.2.2"):
+			with self.subTest(code):
+				receive(
+					POSTFIX_FAILED.replace(b"said: 550 5.1.1", f"said: 550 {code}".encode()).replace(
+						b"4F2A31C0A3B@mail", f"{code}@mail".encode()
+					)
+				)
+				self.assertEqual(is_bounced("Person", person.name), 0)
 
 	def test_a_delay_warning_changes_nothing(self):
 		people = [

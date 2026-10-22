@@ -72,18 +72,21 @@ def unsubscribe_filters(email, church):
 
 
 @frappe.whitelist(allow_guest=True)
-def unsubscribe(email: str, church: str, purpose: str | None = None, **signed_params):
+def unsubscribe(
+	email: str, church: str, purpose: str | None = None, person: str | None = None, **signed_params
+):
 	"""The link at the foot of every Church Email: stop that church's emails, or those for one purpose.
 
 	A link with no purpose, or Church News, stops all of the church's emails to the address, as links
-	always have. A purpose that no longer exists does the same, so the opt-out is still kept.
+	always have. A purpose that no longer exists does the same, so the opt-out is still kept. *person*,
+	signed into links sent since, is the person the copy went to, whatever their church.
 	"""
 	if not frappe.in_test and not verify_request():
 		return
 
 	church_name = frappe.db.get_value("Church", church, "church_name") or church
 	if purpose and purpose != CHURCH_NEWS and frappe.db.exists("Communication Purpose", purpose):
-		withdraw_purpose(email, church, purpose)
+		withdraw_purpose(email, church, purpose, person)
 		message = _("{0} will no longer receive {1} emails from {2}.").format(email, _(purpose), church_name)
 	else:
 		set_subscribed(email, church, False)
@@ -92,13 +95,18 @@ def unsubscribe(email: str, church: str, purpose: str | None = None, **signed_pa
 	frappe.respond_as_web_page(_("Unsubscribed"), message, indicator_color="green")
 
 
-def withdraw_purpose(email: str, church: str, purpose: str):
-	"""Withdraw Email for *purpose* from each of *church*'s people holding *email* who still allow it."""
+def withdraw_purpose(email: str, church: str, purpose: str, person: str | None = None):
+	"""Withdraw Email for *purpose* from *person* and each of *church*'s people holding *email* who still allow it.
+
+	A Group may hold another church's people, so the person the copy went to is named.
+	"""
 	from churchit.church_communications import consent  # consent imports this module
 
 	people = consent.people_with_email(email, church)
+	if person and person not in people:
+		people.append(person)
 	allowed = consent.allowed_people(people, EMAIL, purpose)
-	record([person for person in people if person in allowed], EMAIL, WITHDRAWN, purpose, UNSUBSCRIBE_LINK)
+	record([holder for holder in people if holder in allowed], EMAIL, WITHDRAWN, purpose, UNSUBSCRIBE_LINK)
 
 
 def has_unsubscribed(person) -> bool:

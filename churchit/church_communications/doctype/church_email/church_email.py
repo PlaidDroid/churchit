@@ -6,6 +6,7 @@ from frappe import _
 from frappe.core.doctype.sms_settings.sms_settings import check_sms_permission
 from frappe.model.document import Document
 from frappe.utils import add_to_date, get_datetime, now_datetime
+from rq.timeouts import JobTimeoutException
 
 from churchit.church_communications.consent import allowed_people
 from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL, SMS
@@ -120,11 +121,13 @@ class ChurchEmail(Document):
 
 	@frappe.whitelist()
 	def get_recipient_count(self) -> int:
+		self.load_saved("read")
 		return len(self.get_recipients())
 
 	@frappe.whitelist()
 	def get_preview(self, person: str | None = None) -> dict:
 		"""How *person*, or else the first person it goes to, gets this message, and how many people get it."""
+		self.load_saved("read")
 		recipients = self.get_recipients()
 		preview: dict = {"count": len(recipients)}
 		recipient = self.get_recipient(recipients, person)
@@ -137,14 +140,14 @@ class ChurchEmail(Document):
 	@frappe.whitelist(methods=["POST"])
 	def send_test(self) -> str:
 		"""Send this message to the reader alone, straight away, with their own name. Returns where it went."""
-		self.check_permission("write")
+		self.load_saved("write")
 		self.require_sending_set_up()
 		return Delivery(self).send_test()
 
 	@frappe.whitelist(methods=["POST"])
 	def send(self) -> str:
 		"""Send it now, or schedule it when Send At is still ahead. Returns the new status."""
-		self.check_permission("write")
+		self.load_saved("write")
 		self.require_sending_set_up()
 		if frappe.db.get_value(self.doctype, self.name, "status", for_update=True) != DRAFT:
 			frappe.throw(_("This message has already been sent or scheduled."))
@@ -160,9 +163,17 @@ class ChurchEmail(Document):
 	@frappe.whitelist(methods=["POST"])
 	def unschedule(self):
 		"""Turn a scheduled message back into a draft, so it is not sent at Send At."""
-		self.check_permission("write")
+		self.load_saved("write")
 		if frappe.db.get_value(self.doctype, self.name, "status", for_update=True) == SCHEDULED:
 			self.db_set("status", DRAFT)
+
+	def load_saved(self, ptype: str):
+		"""Act on the saved message, once the user may *ptype* it.
+
+		Frappe builds a whitelisted method's document from the browser's copy and checks only read on that copy.
+		"""
+		self.load_from_db()
+		self.check_permission(ptype)
 
 	def require_sending_set_up(self):
 		"""Refuse a message the site cannot deliver, or a text the user may not send."""
@@ -249,13 +260,18 @@ def enqueue_delivery(name: str):
 
 
 def deliver(name: str):
-	"""Background job: send a copy to everyone it is for, once however often the job runs."""
+	"""Background job: send a copy to everyone it is for, once however often the job runs.
+
+	A job that runs out of time stays Sending, so the stalled retry goes on with the people still waiting.
+	"""
 	if frappe.db.get_value("Church Email", name, "status", for_update=True) != SENDING:
 		return
 
 	email = frappe.get_doc("Church Email", name)
 	try:
 		Delivery(email).send_all()
+	except JobTimeoutException:
+		raise
 	except Exception as error:
 		# The copies already committed stay sent, so sending again reaches only the people still waiting.
 		frappe.db.rollback()
@@ -273,7 +289,7 @@ def deliver(name: str):
 
 
 def send_scheduled():
-	"""Scheduler: send each scheduled message whose Send At has come, and retry stalled deliveries."""
+	"""Scheduler: queue each scheduled message whose Send At has come, and retry stalled deliveries."""
 	channels = get_ready_channels()
 	if not channels:
 		return
@@ -293,12 +309,11 @@ def send_scheduled():
 		pluck="name",
 	)
 	for name in due + stalled:
-		if claim(name):
-			try:
-				deliver(name)
-			except Exception:
-				frappe.log_error(f"Church Email {name} was not sent")
+		# The lists were read in an older snapshot; a commit lets the claim see what other workers committed.
 		frappe.db.commit()
+		if claim(name):
+			enqueue_delivery(name)
+	frappe.db.commit()
 
 
 def get_ready_channels() -> list[str]:

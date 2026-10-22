@@ -46,9 +46,9 @@ def allowed_people(people: list[str], channel: str, purpose: str | None = None) 
 	"""The people among *people* whom the church may contact on *channel* for *purpose*.
 
 	Nobody who has died is contacted. Otherwise the newest record for the channel decides,
-	whether it names this purpose or is blank for every purpose. With no record, nobody
-	gets texts, and the person's church decides the other channels. A few queries answer
-	for any number of people.
+	whether it names this purpose or is blank for every purpose, but a yes for every purpose
+	never undoes a no for this one. With no record, nobody gets texts, and the person's church
+	decides the other channels. A few queries answer for any number of people.
 	"""
 	people = [person for person in people if person]
 	if not people:
@@ -77,7 +77,8 @@ def default_statuses(people: list[frappe._dict], channel: str) -> dict[str, str]
 def latest_statuses(people: list[str], channel: str, purpose: str | None = None) -> dict[str, str]:
 	"""Each person's newest status on *channel* for *purpose* or for every purpose.
 
-	At the same Recorded On, a record naming the purpose beats a blank one, then the later entry wins.
+	At the same Recorded On the later entry wins. A yes for every purpose is skipped while
+	a no for *purpose* stands: only a later yes for *purpose* undoes that.
 	"""
 	Consent = frappe.qb.DocType("Communication Consent")
 	purposes = Consent.purpose.isnull() | (Consent.purpose == "")
@@ -86,14 +87,24 @@ def latest_statuses(people: list[str], channel: str, purpose: str | None = None)
 	# church-scope: a person's consent counts wherever it was recorded
 	rows = (
 		frappe.qb.from_(Consent)
-		.select(Consent.person, Consent.status)
+		.select(Consent.person, Consent.purpose, Consent.status)
 		.where(Consent.person.isin(people) & (Consent.channel == channel) & purposes)
 		.orderby(Consent.recorded_on)
-		.orderby(Consent.purpose)
 		.orderby(Consent.creation)
 		.run(as_dict=True)
 	)
-	return {row.person: row.status for row in rows}
+
+	statuses: dict[str, str] = {}
+	withdrawn_for_purpose: set[str] = set()
+	for row in rows:
+		if row.purpose and row.status == WITHDRAWN:
+			withdrawn_for_purpose.add(row.person)
+		elif row.purpose:
+			withdrawn_for_purpose.discard(row.person)
+		elif row.status == GIVEN and row.person in withdrawn_for_purpose:
+			continue
+		statuses[row.person] = row.status
+	return statuses
 
 
 def refused_values(values: list[str], channel: str) -> set[str]:
@@ -202,9 +213,10 @@ def is_due_for_renewal(doc) -> bool:
 			"recorded_on": (">=", recorded_on),
 			"name": ("!=", doc.name),
 		},
-		fields=["name", "recorded_on"],
+		fields=["recorded_on", "creation"],
 	)
-	return not any(row.recorded_on > recorded_on or row.name > doc.name for row in others)
+	creation = get_datetime(doc.creation)
+	return not any(row.recorded_on > recorded_on or row.creation > creation for row in others)
 
 
 def consent_renewal_link(doc) -> str:

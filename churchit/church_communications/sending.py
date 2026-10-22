@@ -89,7 +89,7 @@ class Delivery:
 		copy = self.email.get_copy(values)
 		communication = self.record(recipient, copy)
 		if not self.email.is_text_message:
-			self.send_email(recipient.address, copy, communication)
+			self.send_email(recipient.address, copy, communication, person=recipient.person)
 			return True
 
 		is_sent = send_text(recipient.address, copy.text)
@@ -141,8 +141,17 @@ class Delivery:
 		return communication.insert(ignore_permissions=True).name
 
 	def send_email(
-		self, address: str, copy: frappe._dict, communication: str | None = None, now: bool = False
+		self,
+		address: str,
+		copy: frappe._dict,
+		communication: str | None = None,
+		now: bool = False,
+		person: str | None = None,
 	):
+		"""Queue *copy* for *address*, with an unsubscribe link that names *person*, the one it is for."""
+		unsubscribe_params = {"church": self.email.sending_church, "purpose": self.email.purpose}
+		if person:
+			unsubscribe_params["person"] = person
 		queued = frappe.sendmail(
 			recipients=[address],
 			subject=copy.subject,
@@ -152,7 +161,7 @@ class Delivery:
 			reference_name=self.email.name,
 			communication=communication,
 			unsubscribe_method=UNSUBSCRIBE_METHOD,
-			unsubscribe_params={"church": self.email.sending_church, "purpose": self.email.purpose},
+			unsubscribe_params=unsubscribe_params,
 			unsubscribe_message=_("Unsubscribe"),
 			send_priority=0,
 			now=now,

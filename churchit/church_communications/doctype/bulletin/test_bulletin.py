@@ -1,7 +1,10 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+import json
+
 import frappe
+from frappe.api.v1 import update_doc
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days
 
@@ -13,7 +16,15 @@ from churchit.church_communications.doctype.bulletin.bulletin import (
 )
 from churchit.church_foundations.doctype.church.church import get_church
 from churchit.church_study.doctype.sermon_handout.sermon_handout import make_handout
-from churchit.tests.helpers import ensure, make_function, make_person, make_translation
+from churchit.tests.helpers import (
+	RollbackEachTest,
+	ensure,
+	ensure_user,
+	make_function,
+	make_person,
+	make_translation,
+	make_two_churches,
+)
 
 FUNCTION_DATE = "2031-05-04"
 
@@ -318,3 +329,36 @@ class TestBulletin(FrappeTestCase):
 		self.assertTrue(bulletin.has_website_permission("read", "member@example.com"))
 		self.assertFalse(bulletin.has_website_permission("read", "Guest"))
 		self.assertFalse(bulletin.has_website_permission("write", "member@example.com"))
+
+
+class TestBulletinChurches(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.manager_a = ensure_user("_test_bulletin_a@example.com", "Editor", roles=("Church Manager",))
+		make_person("_Test Bulletin", "Editor", church=cls.branch_a, user=cls.manager_a)
+		cls.function_a, cls.function_b = (
+			make_function(f"_Test Bulletin {key}", church=church, start_date=FUNCTION_DATE).name
+			for key, church in (("A", cls.branch_a), ("B", cls.branch_b))
+		)
+
+	def tearDown(self):
+		frappe.local.form_dict = frappe._dict()
+		super().tearDown()
+
+	def test_only_the_functions_church_makes_its_bulletin_or_moves_one(self):
+		"""Frappe checks the church the caller sends, before the bulletin takes the function's church."""
+		theirs = frappe.new_doc("Bulletin", function=self.function_b).insert().name
+		frappe.set_user(self.manager_a)
+
+		with self.assertRaises(frappe.PermissionError):
+			frappe.new_doc("Bulletin", function=self.function_b).insert()
+		self.assertEqual(frappe.new_doc("Bulletin", function=self.function_a).insert().church, self.branch_a)
+
+		frappe.local.form_dict = frappe._dict(
+			data=json.dumps({"function": self.function_a, "church": self.branch_a})
+		)
+		with self.assertRaises(frappe.PermissionError):
+			update_doc("Bulletin", theirs)
+		self.assertEqual(frappe.db.get_value("Bulletin", theirs, "function"), self.function_b)

@@ -5,9 +5,12 @@ import json
 from unittest import mock
 
 import frappe
+from frappe.handler import run_doc_method
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_to_date, now_datetime
+from rq.timeouts import JobTimeoutException
 
+from churchit.church_communications.consent import allowed
 from churchit.church_communications.doctype.church_email.church_email import deliver, send_scheduled
 from churchit.church_communications.doctype.communication_consent.communication_consent import (
 	EMAIL,
@@ -21,7 +24,7 @@ from churchit.church_communications.doctype.communication_purpose.communication_
 	PASTORAL_CARE,
 	create_communication_purposes,
 )
-from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, set_subscribed
+from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, set_subscribed, unsubscribe
 from churchit.church_communications.sending import Delivery, Recipient
 from churchit.church_communications.test_sending import log_sms
 from churchit.tests.helpers import (
@@ -55,6 +58,23 @@ def deliver_now(name):
 	"""Run the delivery job without committing the test's transaction."""
 	with mock.patch.object(frappe.db, "commit"):
 		deliver(name)
+
+
+def run_scheduler():
+	"""Run the scheduled job without committing, and return the names it queued for delivery."""
+	with mock.patch.object(frappe.db, "commit"), mock.patch(f"{MODULE}.enqueue_delivery") as enqueue:
+		send_scheduled()
+	return [call.args[0] for call in enqueue.call_args_list]
+
+
+def call_from_browser(method, doc, **args):
+	"""Run a Church Email method as the desk does: on the copy of the document the browser sends."""
+	frappe.local.request = frappe._dict(method="POST")
+	try:
+		run_doc_method(method, docs=frappe.as_json(doc), args=frappe.as_json(args))
+	finally:
+		del frappe.local.request
+	return frappe.response.pop("message", None)
 
 
 def make_people_list(name, **filters):
@@ -237,7 +257,10 @@ class TestChurchEmail(ChurchEmailTestCase):
 		self.assertEqual(member["subject"], "Hello Member")
 		self.assertIn("Dear Member _Test Church Email", member["message"])
 		self.assertEqual(member["unsubscribe_method"], UNSUBSCRIBE_METHOD)
-		self.assertEqual(member["unsubscribe_params"], {"church": self.church, "purpose": CHURCH_NEWS})
+		self.assertEqual(
+			member["unsubscribe_params"],
+			{"church": self.church, "purpose": CHURCH_NEWS, "person": self.member.name},
+		)
 		self.assertEqual(member["reference_name"], email.name)
 
 		copies = copies_of(email.name)
@@ -297,8 +320,10 @@ class TestChurchEmail(ChurchEmailTestCase):
 		self.assertEqual(len(queues), 2)
 		for queue in queues:
 			self.assertIn("<!--unsubscribe_url-->", queue.message)
+			person = frappe.db.get_value("Communication", queue.communication, "reference_name")
 			self.assertEqual(
-				frappe.parse_json(queue.unsubscribe_params), {"church": self.church, "purpose": CHURCH_NEWS}
+				frappe.parse_json(queue.unsubscribe_params),
+				{"church": self.church, "purpose": CHURCH_NEWS, "person": person},
 			)
 			self.assertEqual(
 				frappe.db.get_value("Communication", queue.communication, "reference_doctype"), "Person"
@@ -313,23 +338,19 @@ class TestChurchEmail(ChurchEmailTestCase):
 			update_modified=False,
 		)
 
-		with mock.patch.object(frappe.db, "commit"):
-			send_scheduled()
+		self.assertIn(email.name, run_scheduler())
+		deliver_now(email.name)
 
 		self.assertEqual(frappe.db.get_value("Church Email", email.name, "status"), "Sent")
 
 	def test_a_send_at_ahead_waits_for_the_scheduled_job(self):
 		email = self.make_email(send_after=add_to_date(now_datetime(), hours=1))
 		self.assertEqual(email.send(), "Scheduled")
+		self.assertNotIn(email.name, run_scheduler())
 
-		with mock.patch.object(frappe.db, "commit"):
-			send_scheduled()
-			self.sendmail.assert_not_called()
-
-			frappe.db.set_value(
-				"Church Email", email.name, "send_after", add_to_date(now_datetime(), hours=-1)
-			)
-			send_scheduled()
+		frappe.db.set_value("Church Email", email.name, "send_after", add_to_date(now_datetime(), hours=-1))
+		self.assertIn(email.name, run_scheduler())
+		deliver_now(email.name)
 
 		self.sendmail.assert_called()
 		self.assertEqual(frappe.db.get_value("Church Email", email.name, "status"), "Sent")
@@ -340,11 +361,44 @@ class TestChurchEmail(ChurchEmailTestCase):
 		email.unschedule()
 		frappe.db.set_value("Church Email", email.name, "send_after", add_to_date(now_datetime(), hours=-1))
 
-		with mock.patch.object(frappe.db, "commit"):
+		self.assertNotIn(email.name, run_scheduler())
+		self.assertEqual(frappe.db.get_value("Church Email", email.name, "status"), "Draft")
+
+	def test_the_scheduled_job_claims_each_due_email_and_queues_it_on_the_long_queue(self):
+		emails = [
+			self.make_email(send_to="Chosen People", people=[{"person": person.name}])
+			for person in (self.member, self.visitor)
+		]
+		for email in emails:
+			frappe.db.set_value(
+				"Church Email",
+				email.name,
+				{"status": "Scheduled", "send_after": add_to_date(now_datetime(), hours=-1)},
+			)
+
+		with mock.patch.object(frappe.db, "commit"), mock.patch("frappe.enqueue") as enqueue:
 			send_scheduled()
 
 		self.sendmail.assert_not_called()
-		self.assertEqual(frappe.db.get_value("Church Email", email.name, "status"), "Draft")
+		queued = [call.kwargs["name"] for call in enqueue.call_args_list]
+		self.assertTrue(all(email.name in queued for email in emails))
+		self.assertEqual({call.kwargs["queue"] for call in enqueue.call_args_list}, {"long"})
+		statuses = {frappe.db.get_value("Church Email", e.name, "status") for e in emails}
+		self.assertEqual(statuses, {"Sending"})
+
+	def test_each_claim_starts_after_a_commit(self):
+		email = self.make_email(send_after=add_to_date(now_datetime(), hours=1))
+		email.send()
+		frappe.db.set_value("Church Email", email.name, "send_after", add_to_date(now_datetime(), hours=-1))
+		calls = []
+
+		with (
+			mock.patch.object(frappe.db, "commit", side_effect=lambda: calls.append("commit")),
+			mock.patch(f"{MODULE}.claim", side_effect=lambda name: calls.append("claim")),
+		):
+			send_scheduled()
+
+		self.assertEqual(calls[:2], ["commit", "claim"])
 
 	def test_a_failed_delivery_returns_the_email_to_draft_and_says_why(self):
 		email = self.make_email()
@@ -361,22 +415,19 @@ class TestChurchEmail(ChurchEmailTestCase):
 		)
 		self.assertTrue([comment for comment in comments if "_Test mail server down" in comment])
 
-	def test_one_failed_scheduled_email_does_not_hold_back_the_others(self):
-		first = self.make_email(send_to="Chosen People", people=[{"person": self.member.name}])
-		second = self.make_email(send_to="Chosen People", people=[{"person": self.visitor.name}])
-		for email in (first, second):
-			frappe.db.set_value(
-				"Church Email",
-				email.name,
-				{"status": "Scheduled", "send_after": add_to_date(now_datetime(), hours=-1)},
-			)
-		self.sendmail.side_effect = [frappe.OutgoingEmailError("_Test refused"), mock.DEFAULT]
+	def test_a_delivery_that_runs_out_of_time_stays_sending_for_the_retry(self):
+		email = self.make_email()
+		frappe.db.set_value("Church Email", email.name, "status", "Sending")
+		self.sendmail.side_effect = JobTimeoutException("_Test job timed out")
 
 		with mock.patch.object(frappe.db, "commit"), mock.patch.object(frappe.db, "rollback"):
-			send_scheduled()
+			with self.assertRaises(JobTimeoutException):
+				deliver(email.name)
 
-		statuses = {frappe.db.get_value("Church Email", e.name, "status") for e in (first, second)}
-		self.assertEqual(statuses, {"Draft", "Sent"})
+		self.assertEqual(frappe.db.get_value("Church Email", email.name, "status"), "Sending")
+		self.assertFalse(
+			frappe.db.exists("Comment", {"reference_name": email.name, "comment_type": "Comment"})
+		)
 
 	def test_an_email_is_sent_only_once(self):
 		email = self.make_email()
@@ -548,6 +599,83 @@ class TestChurchEmailPerChurch(FrappeTestCase):
 		_root, cls.branch_a, cls.branch_b = make_two_churches()
 		cls.addClassCleanup(frappe.clear_cache)
 		ensure("Member Status", {"status": "Active"})
+		create_communication_purposes()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+
+	def make_group(self, name, church, people):
+		return frappe.get_doc(
+			{
+				"doctype": "Group",
+				"group_name": name,
+				"church": church,
+				"members": [{"person": person.name} for person in people],
+			}
+		).insert(ignore_permissions=True)
+
+	def make_church_email(self, church, **values):
+		return frappe.get_doc(
+			{
+				"doctype": "Church Email",
+				"subject": "_Test Branch",
+				"message": "Hi",
+				"church": church,
+				**values,
+			}
+		).insert()
+
+	def test_a_purpose_unsubscribe_reaches_another_churchs_person_in_the_group(self):
+		theirs = make_reader("GroupTheirs", church=self.branch_b)
+		group = self.make_group("_Test Church Email Mixed Group", self.branch_a, [theirs])
+		email = self.make_church_email(
+			self.branch_a, send_to="Group", group=group.name, purpose=PASTORAL_CARE
+		)
+		frappe.db.set_value("Church Email", email.name, "status", "Sending")
+		with mock.patch("frappe.sendmail") as sendmail:
+			deliver_now(email.name)
+		params = sendmail.call_args.kwargs["unsubscribe_params"]
+
+		frappe.set_user("Guest")
+		with mock.patch.object(frappe.db, "commit"):
+			unsubscribe(email=email_of(theirs), doctype="Church Email", name=email.name, **params)
+		frappe.set_user("Administrator")
+
+		self.assertFalse(allowed(theirs.name, EMAIL, PASTORAL_CARE))
+		self.assertTrue(allowed(theirs.name, EMAIL, CHURCH_NEWS))
+
+	def test_a_reader_gets_the_saved_messages_people_not_the_ones_they_send(self):
+		mine = make_reader("SavedMine", church=self.branch_a)
+		theirs = [make_reader(f"Probed{n}", church=self.branch_b) for n in (1, 2)]
+		group_b = self.make_group("_Test Church Email Probed Group", self.branch_b, theirs)
+		email = self.make_church_email(self.branch_a, send_to="Chosen People", people=[{"person": mine.name}])
+		staff = ensure_user("_test_church_email_staff_a@example.com", "StaffA", roles=("Church Staff",))
+		make_person("_Test Church Email Staff", "A", church=self.branch_a, user=staff)
+		forged = {**email.as_dict(), "send_to": "Group", "group": group_b.name, "people": []}
+
+		frappe.set_user(staff)
+		count = call_from_browser("get_recipient_count", forged)
+		preview = call_from_browser("get_preview", forged)
+
+		self.assertEqual(count, 1)
+		self.assertEqual((preview["count"], preview["person"]), (1, mine.name))
+
+	def test_another_churchs_message_cannot_be_sent_by_naming_my_church(self):
+		email = self.make_church_email(self.branch_b, send_after=add_to_date(now_datetime(), hours=1))
+		manager = ensure_user(
+			"_test_church_email_manager_a@example.com", "ManagerA", roles=("Church Manager",)
+		)
+		make_person("_Test Church Email Manager", "A", church=self.branch_a, user=manager)
+		forged = {**email.as_dict(), "church": self.branch_a}
+
+		frappe.set_user(manager)
+		with mock.patch(f"{MODULE}.can_send_email", return_value=True), mock.patch("frappe.enqueue"):
+			for method in ("send", "send_test", "unschedule"):
+				with self.subTest(method), self.assertRaises(frappe.PermissionError):
+					call_from_browser(method, forged)
+		frappe.set_user("Administrator")
+
+		self.assertEqual(frappe.db.get_value("Church Email", email.name, "status"), "Draft")
 
 	def test_an_unsubscribe_from_one_church_leaves_the_others_emails_coming(self):
 		reader = make_reader("Both", church=self.branch_b)

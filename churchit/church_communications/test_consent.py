@@ -5,6 +5,7 @@ from unittest import mock
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_to_date, now_datetime
 
 from churchit.church_communications import newsletter
 from churchit.church_communications.consent import (
@@ -28,7 +29,7 @@ from churchit.church_communications.doctype.communication_purpose.communication_
 	PASTORAL_CARE,
 	create_communication_purposes,
 )
-from churchit.patches.v1_0 import record_consent_from_unsubscribes
+from churchit.patches.v1_0 import date_future_consent_when_entered, record_consent_from_unsubscribes
 from churchit.tests.helpers import (
 	RollbackEachTest,
 	ensure,
@@ -121,18 +122,65 @@ class TestAllowed(RollbackEachTest):
 		record([self.person.name], EMAIL, GIVEN, recorded_on="2026-01-01 10:00:00")
 		self.assertTrue(allowed(self.person.name, EMAIL, PASTORAL_CARE))
 
-	def test_a_newer_record_for_every_purpose_beats_an_older_one_for_one_purpose(self):
+	def test_a_yes_for_every_purpose_never_undoes_a_no_for_one_purpose(self):
 		record([self.person.name], EMAIL, WITHDRAWN, CHURCH_NEWS, recorded_on="2024-01-01 10:00:00")
 		self.assertTrue(allowed(self.person.name, EMAIL), "One purpose says nothing about the rest")
 
 		record([self.person.name], EMAIL, GIVEN, recorded_on="2025-01-01 10:00:00")
+		self.assertFalse(allowed(self.person.name, EMAIL, CHURCH_NEWS))
+		self.assertTrue(allowed(self.person.name, EMAIL, PASTORAL_CARE))
+
+		record([self.person.name], EMAIL, GIVEN, CHURCH_NEWS, recorded_on="2026-01-01 10:00:00")
 		self.assertTrue(allowed(self.person.name, EMAIL, CHURCH_NEWS))
 
-	def test_at_the_same_moment_the_purpose_beats_every_purpose(self):
+	def test_a_no_for_every_purpose_undoes_every_yes_before_it(self):
+		record([self.person.name], EMAIL, GIVEN, CHURCH_NEWS, recorded_on="2024-01-01 10:00:00")
+		record([self.person.name], EMAIL, WITHDRAWN, recorded_on="2025-01-01 10:00:00")
+		self.assertFalse(allowed(self.person.name, EMAIL, CHURCH_NEWS))
+
+		record([self.person.name], EMAIL, GIVEN, recorded_on="2026-01-01 10:00:00")
+		self.assertTrue(allowed(self.person.name, EMAIL, CHURCH_NEWS))
+
+	def test_at_the_same_moment_the_later_entry_wins(self):
 		moment = "2025-03-01 09:00:00"
 		record([self.person.name], EMAIL, GIVEN, CHURCH_NEWS, recorded_on=moment)
 		record([self.person.name], EMAIL, WITHDRAWN, recorded_on=moment)
+		self.assertFalse(allowed(self.person.name, EMAIL, CHURCH_NEWS))
+
+		later = "2025-04-01 09:00:00"
+		record([self.person.name], EMAIL, WITHDRAWN, recorded_on=later)
+		record([self.person.name], EMAIL, GIVEN, CHURCH_NEWS, recorded_on=later)
 		self.assertTrue(allowed(self.person.name, EMAIL, CHURCH_NEWS))
+
+	def test_a_recorded_on_in_the_future_is_refused(self):
+		soon = add_to_date(now_datetime(), minutes=2)
+		record([self.person.name], EMAIL, WITHDRAWN, recorded_on=soon)
+
+		consent = frappe.get_doc(
+			{
+				"doctype": "Communication Consent",
+				"person": self.person.name,
+				"channel": EMAIL,
+				"status": GIVEN,
+				"recorded_on": "2062-01-01 10:00:00",
+			}
+		)
+		with self.assertRaisesRegex(frappe.ValidationError, "future"):
+			consent.insert()
+		self.assertFalse(allowed(self.person.name, EMAIL))
+
+	def test_the_patch_dates_a_future_consent_when_it_was_entered(self):
+		(future,) = record([self.person.name], EMAIL, GIVEN)
+		frappe.db.set_value("Communication Consent", future, "recorded_on", "2062-01-01 10:00:00")
+		record([self.person.name], EMAIL, WITHDRAWN)
+		self.assertTrue(allowed(self.person.name, EMAIL))
+
+		date_future_consent_when_entered.execute()
+
+		self.assertEqual(
+			frappe.db.get_value("Communication Consent", future, "recorded_on"),
+			frappe.db.get_value("Communication Consent", future, "creation"),
+		)
 		self.assertFalse(allowed(self.person.name, EMAIL))
 
 	def test_many_people_are_answered_at_once(self):
