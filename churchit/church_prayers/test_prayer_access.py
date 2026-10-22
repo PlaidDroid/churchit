@@ -1,9 +1,13 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from unittest.mock import patch
+
 import frappe
+from frappe.modules.patch_handler import PatchType, get_patches_from_app
 from frappe.tests.utils import FrappeTestCase
 
+from churchit.patches.v1_0 import set_prayer_request_visibility
 from churchit.tests.helpers import ensure, ensure_user
 
 
@@ -71,9 +75,7 @@ class TestPrayerAccess(FrappeTestCase):
 
 
 class TestVisibilityPatch(FrappeTestCase):
-	def test_a_ticked_request_becomes_private_once(self):
-		from churchit.patches.v1_0 import set_prayer_request_visibility
-
+	def ticked_and_plain(self):
 		if not frappe.db.has_column("Prayer Request", "is_private"):
 			self.skipTest("This site never had Is Private")
 		request_type = ensure("Prayer Request Type", {"type": "Health"})
@@ -84,6 +86,33 @@ class TestVisibilityPatch(FrappeTestCase):
 			for title in ("Ticked", "Plain")
 		)
 		frappe.db.set_value("Prayer Request", ticked.name, "is_private", 1)
+		return ticked, plain
+
+	def test_the_ticks_move_before_model_sync(self):
+		"""Model sync gives every request the default, Whole Church, so a later patch would leave a gap."""
+		self.assertIn(
+			set_prayer_request_visibility.__name__, get_patches_from_app("churchit", PatchType.pre_model_sync)
+		)
+
+	def test_before_model_sync_the_patch_adds_visibility_itself(self):
+		ticked, _plain = self.ticked_and_plain()
+		has_column = frappe.db.has_column
+
+		with (
+			patch.object(
+				frappe.local.db,
+				"has_column",
+				side_effect=lambda doctype, column: column != "visibility" and has_column(doctype, column),
+			),
+			patch("frappe.reload_doc") as reload_doc,
+		):
+			set_prayer_request_visibility.execute()
+
+		reload_doc.assert_called_once_with("church_prayers", "doctype", "prayer_request", force=True)
+		self.assertEqual(frappe.db.get_value("Prayer Request", ticked.name, "visibility"), "Private")
+
+	def test_a_ticked_request_becomes_private_once(self):
+		ticked, plain = self.ticked_and_plain()
 
 		set_prayer_request_visibility.execute()
 		self.assertEqual(frappe.db.get_value("Prayer Request", ticked.name, "visibility"), "Private")

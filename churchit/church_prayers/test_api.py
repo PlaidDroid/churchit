@@ -1,8 +1,11 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from unittest.mock import patch
+
 import frappe
 from frappe.exceptions import PermissionError, ValidationError
+from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_prayers.api import create_prayer
@@ -77,3 +80,15 @@ class TestPrayerApi(FrappeTestCase):
 			[(row.topic_type, row.topic) for row in prayer.topics],
 			[("Prayer Request", self.request.name)],
 		)
+
+	def test_praying_takes_a_post(self):
+		"""Frappe checks the CSRF token only on a POST, and a GET from another site carries the session."""
+		frappe.set_user(self.user)
+		with (
+			patch.object(frappe.local, "request", frappe._dict(method="GET"), create=True),
+			patch.object(frappe.local, "form_dict", frappe._dict(prayer_request=self.request.name)),
+			self.assertRaises(PermissionError),
+		):
+			execute_cmd("churchit.church_prayers.api.create_prayer")
+
+		self.assertFalse(frappe.db.exists("Prayer", {"person": self.person}))

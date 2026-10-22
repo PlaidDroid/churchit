@@ -3,7 +3,7 @@ from frappe import _
 from frappe.utils import now_datetime
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_prayer(prayer_request: str, content: str | None = None):
 	"""Record a Prayer for a Prayer Request on behalf of the current user.
 
