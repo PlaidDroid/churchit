@@ -12,7 +12,13 @@ from churchit.church_people.derived import refresh_daily
 from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
 from churchit.church_people.doctype.person.person import SOURCE_IMPORT
 from churchit.patches.v1_0 import set_inactive_since_from_history
-from churchit.tests.helpers import ensure_user, make_person, make_primary_contact
+from churchit.tests.helpers import (
+	RollbackEachTest,
+	ensure_user,
+	make_person,
+	make_primary_contact,
+	make_two_churches,
+)
 
 
 def _ensure(doctype, filters, values):
@@ -704,3 +710,24 @@ class TestPersonDerivedFields(FrappeTestCase):
 		person.save()
 
 		self.assertEqual(person.life_stage, "Child")
+
+
+class TestNewFamilyAcrossChurches(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+
+	def test_a_new_family_joins_only_a_family_of_the_persons_own_church(self):
+		"""Another church's household of the same name is not this person's family."""
+		person = make_person("_Test New Family", "Twin", church=self.branch_a)
+		theirs = frappe.get_doc(
+			{"doctype": "Family", "family_name": person.household_name, "church": self.branch_b}
+		).insert(ignore_permissions=True)
+
+		person.new_family_from_person()
+
+		family = frappe.db.get_value("Person", person.name, "family")
+		self.assertTrue(family)
+		self.assertNotEqual(family, theirs.name)

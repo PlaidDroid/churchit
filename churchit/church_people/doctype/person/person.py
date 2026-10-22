@@ -363,8 +363,11 @@ class Person(Document):
 
 	@frappe.whitelist()
 	def new_family_from_person(self):
-		# Check if a family with this person's name already exists
-		existing_family = frappe.db.exists("Family", {"family_name": self.household_name})
+		# Check if a family with this person's name already exists in the person's own church
+		filters = {"family_name": self.household_name}
+		if is_multi_church():
+			filters["church"] = frappe.db.get_value(self.doctype, self.name, "church")
+		existing_family = frappe.db.exists("Family", filters)
 
 		if existing_family:
 			# Set this person's family to the existing one
