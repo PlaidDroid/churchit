@@ -280,6 +280,26 @@ class TestStationBetweenChurches(FrappeTestCase):
 			[(child, "Cleo _Test Station Joint Child")],
 		)
 
+	def test_a_joint_service_pickup_lists_another_churchs_authorized_pickups(self):
+		"""The pickup table is hidden from another church's form, but the station still reads it."""
+		joint = make_function("_Test Station Joint Pickups", church=self.branch_b, is_shared=1)
+		child = make_person("Cody", "_Test Station Pickup Child", church=self.branch_b)
+		aunt = make_person("Ava", "_Test Station Pickup Aunt", church=self.branch_b).name
+		family = frappe.get_doc(
+			{
+				"doctype": "Family",
+				"family_name": "_Test Station Pickup Family",
+				"members": [{"member": child.name}],
+				"authorized_pickups": [{"person": aunt}],
+			}
+		).insert(ignore_permissions=True)
+		check_in_with_code(joint.name, child.name, "P1CK")
+
+		frappe.set_user(self.volunteer_a)
+		(found,) = get_pickup_families("P1CK")
+		self.assertEqual(found["family"], family.name)
+		self.assertEqual([pickup["person"] for pickup in found["pickups"]], [aunt])
+
 	def test_a_card_finds_only_people_a_search_may_find(self):
 		"""With a private directory a card from another church opens no one, except at a joint service."""
 		set_private_people(True)
@@ -293,3 +313,18 @@ class TestStationBetweenChurches(FrappeTestCase):
 			[member.name for group in find_card_holder(holder, joint) for member in group["members"]],
 			[holder],
 		)
+
+	def test_add_visitor_refuses_another_churches_family(self):
+		family_a = frappe.get_doc(
+			{"doctype": "Family", "family_name": "_Test Station Family A", "church": self.branch_a}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(self.volunteer_b)
+		with self.assertRaises(frappe.PermissionError):
+			add_visitor("Vera", "_Test Station Visitor", family=family_a.name)
+		self.assertFalse(frappe.db.exists("Person", {"last_name": "_Test Station Visitor"}))
+		self.assertEqual(frappe.get_doc("Family", family_a.name).members, [])
+
+		frappe.set_user(self.volunteer_a)
+		visitor = add_visitor("Vera", "_Test Station Visitor", family=family_a.name)
+		self.assertEqual(visitor["family"], family_a.name)

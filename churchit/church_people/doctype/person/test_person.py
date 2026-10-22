@@ -7,6 +7,7 @@ from frappe.client import get as client_get
 from frappe.desk.form.load import getdoc
 from frappe.desk.search import search_link
 from frappe.handler import run_doc_method
+from frappe.permissions import add_user_permission
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_years, getdate, nowdate
 
@@ -751,6 +752,53 @@ class TestPersonAcrossChurches(RollbackEachTest):
 		frappe.local.request = frappe._dict(method="POST")
 		self.addCleanup(delattr, frappe.local, "request")
 
+	def test_a_person_cannot_join_another_churchs_family(self):
+		parent = make_person("_Test Across", "Parent", church=self.branch_a).name
+		family = frappe.get_doc(
+			{"doctype": "Family", "family_name": "_Test Across Family A", "members": [{"member": parent}]}
+		).insert(ignore_permissions=True)
+		family.primary_contact = parent
+		family.save(ignore_permissions=True)
+		joiner = make_person("_Test Across", "Joiner", church=self.branch_b).name
+
+		frappe.set_user(self.staff["b"])
+		person = frappe.get_doc("Person", joiner)
+		person.family = family.name
+		with self.assertRaises(frappe.PermissionError):
+			person.save()
+		frappe.set_user("Administrator")
+		self.assertIsNone(frappe.db.get_value("Person", joiner, "family"))
+		self.assertEqual([row.member for row in frappe.get_doc("Family", family.name).members], [parent])
+
+		frappe.set_user(user_of_both_churches(self.branch_a, self.branch_b))
+		person = frappe.get_doc("Person", joiner)
+		person.family = family.name
+		person.save()
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			[row.member for row in frappe.get_doc("Family", family.name).members], [parent, joiner]
+		)
+
+	def test_a_person_cannot_bring_another_churchs_spouse_into_their_family(self):
+		spouse = make_person("_Test Across", "Spouse", church=self.branch_a).name
+		head = make_person("_Test Across", "Head", church=self.branch_b).name
+
+		frappe.set_user(self.staff["b"])
+		person = frappe.get_doc("Person", head)
+		person.update({"spouse": spouse, "marital_status": "Married"})
+		with self.assertRaises(frappe.PermissionError):
+			person.save()
+		frappe.set_user("Administrator")
+		self.assertIsNone(frappe.db.get_value("Person", spouse, "family"))
+		self.assertIsNone(frappe.db.get_value("Person", spouse, "spouse"))
+
+		frappe.set_user(user_of_both_churches(self.branch_a, self.branch_b))
+		person = frappe.get_doc("Person", head)
+		person.update({"spouse": spouse, "marital_status": "Married"})
+		person.save()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Person", spouse, "family"), person.family)
+
 	def person_in_a(self, email):
 		return make_person(
 			"_Test Across",
@@ -902,3 +950,13 @@ class TestNewFamilyAcrossChurches(RollbackEachTest):
 		family = frappe.db.get_value("Person", person.name, "family")
 		self.assertTrue(family)
 		self.assertNotEqual(family, theirs.name)
+
+
+def user_of_both_churches(church_a, church_b):
+	"""A People Editor who sees *church_a* and *church_b*."""
+	user = ensure_user(
+		"_test_both_churches@example.com", "Both", roles=("Church Staff", "Church People Editor")
+	)
+	set_user_church(user, church_a)
+	add_user_permission("Church", church_b, user, ignore_permissions=True, hide_descendants=1)
+	return user

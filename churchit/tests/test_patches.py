@@ -37,6 +37,7 @@ from churchit.patches.v1_0 import (
 	remove_duplicate_new_members_chart,
 	remove_email_group_onboarding,
 	remove_knowledge_base,
+	remove_private_fields_from_versions,
 	rename_agency_logo_field,
 	restamp_shared_fund_transfers,
 	restore_shipped_people_charts,
@@ -1143,3 +1144,35 @@ class TestRestampSharedFundTransfers(RollbackEachTest):
 
 		self.assertEqual(frappe.db.get_value("Fund Transfer", transfer.name, "church"), church)
 		maker.assert_any_call(transfer.owner)
+
+
+class TestRemovePrivateFieldsFromVersions(RollbackEachTest):
+	def test_private_changes_leave_the_versions_once(self):
+		def version(ref_doctype, **diff):
+			return frappe.get_doc(
+				{
+					"doctype": "Version",
+					"ref_doctype": ref_doctype,
+					"docname": "_Test Private Fields",
+					"data": frappe.as_json(
+						{"changed": [], "added": [], "removed": [], "row_changed": [], **diff}
+					),
+				}
+			).insert(ignore_permissions=True)
+
+		pickup = ["authorized_pickups", {"person": "PRSN-X", "notes": "_Test gate code"}]
+		mixed = version("Family", changed=[["family_name", "Old", "New"]], added=[pickup])
+		only_pickups = version("Family", removed=[pickup], row_changed=[["authorized_pickups", 0, "row", []]])
+		key = ["team_calendar_key", None, "_test_key"]
+		merged = version("Person", changed=[key, ["gender", "Unknown", "Female"]])
+		only_key = version("Person", changed=[key])
+
+		remove_private_fields_from_versions.execute()
+		remove_private_fields_from_versions.execute()
+
+		data = frappe.parse_json(frappe.db.get_value("Version", mixed.name, "data"))
+		self.assertEqual((data.changed, data.added), ([["family_name", "Old", "New"]], []))
+		self.assertFalse(frappe.db.exists("Version", only_pickups.name))
+		data = frappe.parse_json(frappe.db.get_value("Version", merged.name, "data"))
+		self.assertEqual(data.changed, [["gender", "Unknown", "Female"]])
+		self.assertFalse(frappe.db.exists("Version", only_key.name))

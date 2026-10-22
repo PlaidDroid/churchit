@@ -1,7 +1,12 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from unittest.mock import patch
+
 import frappe
+from frappe.api.v1 import read_doc
+from frappe.desk.form.load import getdoc
+from frappe.permissions import add_user_permission
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_foundations.church_access import set_user_church
@@ -334,6 +339,102 @@ class TestFamilyAcrossChurches(RollbackEachTest):
 		self.assertEqual(
 			frappe.db.get_value("Family", household, ["primary_contact", "church"]), (mine, self.branch_a)
 		)
+
+	def test_another_churchs_person_cannot_be_added(self):
+		mine = make_person("_Test Across", "Head", church=self.branch_a).name
+		theirs = make_person("_Test Across", "Newcomer", church=self.branch_b).name
+		household = make_household_of(mine, primary_contact=mine)
+
+		frappe.set_user(self.editor_a)
+		try:
+			family = frappe.get_doc("Family", household)
+			family.append("members", {"member": theirs})
+			with self.assertRaises(frappe.PermissionError):
+				family.save()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual([row.member for row in frappe.get_doc("Family", household).members], [mine])
+		self.assertIsNone(frappe.db.get_value("Person", theirs, "family"))
+
+		both = self.user("_test_family_both@example.com", "Church People Editor", self.branch_a)
+		add_user_permission("Church", self.branch_b, both, ignore_permissions=True, hide_descendants=1)
+		frappe.set_user(both)
+		try:
+			family = frappe.get_doc("Family", household)
+			family.append("members", {"member": theirs})
+			family.save()
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Person", theirs, "family"), household)
+
+	def test_pickups_are_hidden_from_staff_and_other_churches(self):
+		parent = make_person("_Test Pickup", "Parent", church=self.branch_a).name
+		aunt = make_person("_Test Pickup", "Aunt", church=self.branch_a).name
+		uncle = make_person("_Test Pickup", "Uncle", church=self.branch_a).name
+		family = make_household_of(parent, primary_contact=parent)
+		household = frappe.get_doc("Family", family)
+		household.append("authorized_pickups", {"person": aunt, "notes": "_Test gate code"})
+		household.save(ignore_permissions=True)
+		readers = {
+			name: self.user(f"_test_pickup_{name}@example.com", role, church)
+			for name, role, church in (
+				("staff_a", "Church Staff", self.branch_a),
+				("staff_b", "Church Staff", self.branch_b),
+				("manager_a", "Church Manager", self.branch_a),
+				("manager_b", "Church Manager", self.branch_b),
+			)
+		}
+
+		for name in ("staff_a", "staff_b", "manager_b"):
+			frappe.set_user(readers[name])
+			self.assertFalse(read_doc("Family", family).get("authorized_pickups"), name)
+			if name.startswith("staff"):
+				rows = frappe.get_list(
+					"Authorized Pickup",
+					parent_doctype="Family",
+					filters={"parent": family},
+					fields=["person", "notes"],
+				)
+				self.assertFalse([row for row in rows if row.get("person") or row.get("notes")], name)
+
+		frappe.set_user(readers["manager_a"])
+		self.assertEqual([row.person for row in read_doc("Family", family).authorized_pickups], [aunt])
+		mine = frappe.get_doc("Family", family)
+		mine.append("authorized_pickups", {"person": uncle})
+		mine.save()
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			[row.person for row in frappe.get_doc("Family", family).authorized_pickups], [aunt, uncle]
+		)
+
+	def test_pickups_stay_out_of_the_form_timeline(self):
+		parent = make_person("_Test Pickup", "Parent", church=self.branch_a).name
+		aunt = make_person("_Test Pickup", "Aunt", church=self.branch_a).name
+		family = frappe.get_doc("Family", make_household_of(parent, primary_contact=parent))
+		# Saves write no Version in tests unless in_test is off.
+		with patch.object(frappe, "in_test", False):
+			family.append("authorized_pickups", {"person": aunt, "notes": "_Test gate code"})
+			family.family_name = "_Test Timeline Household"
+			family.save(ignore_permissions=True)
+			family.authorized_pickups[0].notes = "_Test new gate code"
+			family.save(ignore_permissions=True)
+			family.authorized_pickups = []
+			family.save(ignore_permissions=True)
+
+		frappe.set_user(self.user("_test_pickup_staff_a@example.com", "Church Staff", self.branch_a))
+		try:
+			getdoc("Family", family.name)
+			versions = [version.data for version in frappe.response.docinfo.versions]
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(len(versions), 1)
+		self.assertIn("_Test Timeline Household", versions[0])
+		self.assertNotIn("authorized_pickups", versions[0])
+
+	def user(self, email, role, church):
+		ensure_user(email, email.split("@")[0], roles=(role,))
+		set_user_church(email, church)
+		return email
 
 
 def make_household_of(*people, **values):

@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import frappe
 from frappe.utils import add_days, get_system_timezone, getdate
 
+from churchit.church_foundations.church_access import set_user_church
 from churchit.church_ministries.member_ministry_team import (
 	add_own_block,
 	answer_by_key,
@@ -26,6 +27,7 @@ from churchit.tests.helpers import (
 	make_person,
 	make_team_assignment,
 	make_team_position,
+	make_two_churches,
 )
 from churchit.www import ministry_team, ministry_team_response
 
@@ -199,3 +201,33 @@ class TestMinistryTeamPages(RollbackEachTest):
 		frappe.set_user(self.email)
 		with self.assertRaises(frappe.PermissionError):
 			remove_own_block(theirs.name)
+
+
+class TestCalendarKeyPermission(RollbackEachTest):
+	"""Only the member and System Manager reach a calendar key; staff of any church do not."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, branch_a, branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+		cls.person = make_person("_Test Calendar Key", "Holder", church=branch_a).name
+		frappe.db.set_value("Person", cls.person, "team_calendar_key", "_test_calendar_key")
+		cls.managers = []
+		for email, church in (
+			("_test_key_manager_a@example.com", branch_a),
+			("_test_key_manager_b@example.com", branch_b),
+		):
+			cls.managers.append(ensure_user(email, "Key Manager", roles=("Church Manager",)))
+			set_user_church(email, church)
+
+	def test_staff_cannot_read_a_calendar_key(self):
+		for manager in self.managers:
+			frappe.set_user(manager)
+			person = frappe.get_doc("Person", self.person)
+			person.apply_fieldlevel_read_permissions()
+			self.assertIsNone(person.get("team_calendar_key"), manager)
+			rows = frappe.get_list(
+				"Person", filters={"name": self.person}, fields=["name", "team_calendar_key"]
+			)
+			self.assertEqual([row.get("team_calendar_key") for row in rows], [None], manager)

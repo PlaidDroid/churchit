@@ -21,6 +21,7 @@ from churchit.church_people.membership import VISITOR, living_people_filter
 from churchit.church_scope import (
 	church_query_filters,
 	default_church,
+	has_church_access,
 	is_people_directory_private,
 	scoped,
 )
@@ -330,11 +331,14 @@ def add_visitor(
 
 	Checking people in is the right that counts: a check-in volunteer holds no
 	Person create, which would otherwise ask them to read every Person lookup too.
+	A volunteer adds a visitor only to a Family of a church they can see.
 	The visitor never saw the directory's share choices, so they share nothing.
 	"""
 	frappe.has_permission("Function Check-In", "create", throw=True)
 	if not (first_name or "").strip():
 		frappe.throw(_("First name is required."))
+	if family and not has_church_access(frappe.session.user, frappe.db.get_value("Family", family, "church")):
+		frappe.throw(_("{0} belongs to another church.").format(family), frappe.PermissionError)
 	person = frappe.get_doc(
 		{
 			"doctype": "Person",

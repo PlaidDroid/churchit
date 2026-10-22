@@ -10,6 +10,7 @@ from frappe.utils import cstr, get_link_to_form, today
 
 from churchit.church_communications import newsletter
 from churchit.church_foundations import church_access
+from churchit.church_ministries.attendance import COUNTED_TYPES
 from churchit.church_people import events, followup, matching, membership, summaries
 from churchit.church_people.derived import BIRTH, DEATH, sync_derived, years_since
 from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
@@ -272,6 +273,9 @@ class Person(Document):
 		self.take_details_from(removed)
 		remove_repeated_roster_rows(self.name, self.family)
 		self.save(ignore_permissions=True)
+		if removed.team_calendar_key and not self.team_calendar_key:
+			# Through the database, so no Version shows the key to every reader of the person.
+			frappe.db.set_value("Person", self.name, "team_calendar_key", removed.team_calendar_key)
 		matching.resolve_merged(self.name)
 		followup.close_repeated_cards(self.name)
 		summaries.refresh([self.name])
@@ -282,7 +286,7 @@ class Person(Document):
 			self.spouse, self.marital_status = removed.spouse, removed.marital_status
 		if self.gender == UNKNOWN_GENDER:
 			self.gender = removed.gender
-		fill_blanks(self, removed, [*typed_fields(self), "team_calendar_key"])
+		fill_blanks(self, removed, typed_fields(self))
 		take_import_id(self, removed)
 
 	def validate(self):
@@ -292,8 +296,41 @@ class Person(Document):
 		# reads a primary value off them.
 		validate_contact_tables(self)
 
+		self.refuse_another_churches_spouse()
 		self.sync_spouse()
 		self.share_family_with_spouse()
+		self.refuse_another_churches_family()
+
+	def refuse_another_churches_spouse(self):
+		"""Only a user who can see a new spouse's church links them: the spouse record changes and may join this family.
+
+		Runs before `sync_spouse`, which writes to the spouse. The app's own links save with ignore_permissions.
+		"""
+		if self.flags.ignore_permissions or not self.has_new_spouse:
+			return
+		if not has_church_access(frappe.session.user, frappe.db.get_value("Person", self.spouse, "church")):
+			frappe.throw(
+				_("{0} belongs to another church, so only that church can link them as a spouse.").format(
+					frappe.bold(self.spouse)
+				),
+				frappe.PermissionError,
+			)
+
+	def refuse_another_churches_family(self):
+		"""Only a user who can see a family's church puts someone in it, as for its primary contact.
+
+		A household Adult may collect its children at Verify Pickup. The app's own links save with
+		ignore_permissions and are not refused.
+		"""
+		if self.flags.ignore_permissions or not self.family or not self.has_value_changed("family"):
+			return
+		if not has_church_access(frappe.session.user, frappe.db.get_value("Family", self.family, "church")):
+			frappe.throw(
+				_("{0} belongs to another church, so only that church can add people to it.").format(
+					frappe.bold(self.family)
+				),
+				frappe.PermissionError,
+			)
 
 	def refuse_linking_another_login(self):
 		"""A login linked by hand must belong to no other person, and hold only churches the user can see.
@@ -509,15 +546,13 @@ def get_timeline_data(doctype: str, name: str) -> dict:
 	Attendance rather than Function Check-In: every check-in adds an attendance row, and staff who
 	cannot open check-ins still read functions. `get_list` keeps it to the functions the reader may see.
 	"""
-	from churchit.church_people.summaries.attendance import ATTENDED
-
 	if not frappe.has_permission("Function", "read"):
 		return {}
 	functions = frappe.get_list(
 		"Function",
 		filters=[
 			["Function Attendance", "person", "=", name],
-			["Function Attendance", "attendance_type", "in", ATTENDED],
+			["Function Attendance", "attendance_type", "in", COUNTED_TYPES],
 			["start_date", "between", [frappe.utils.add_years(today(), -1), today()]],
 		],
 		fields=["name", "start_date"],

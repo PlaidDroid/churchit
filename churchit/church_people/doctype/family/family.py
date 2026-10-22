@@ -27,6 +27,9 @@ from churchit.church_people.merge import (
 from churchit.church_scope import has_church_access, is_multi_church
 from churchit.contacts import validate_contact_tables
 
+# The permlevel of the Authorized Pickups table and its fields.
+PICKUP_PERMLEVEL = 1
+
 
 class Family(Document):
 	def validate(self):
@@ -37,6 +40,7 @@ class Family(Document):
 			frappe.throw(_("The Primary Contact must be one of the Family Members."))
 		self.follow_primary_contacts_church()
 		self.refuse_another_churches_primary_contact()
+		self.refuse_another_churches_members()
 		previous = self.replaced_primary_contact
 		if previous:
 			self.relabel_members(previous)
@@ -48,6 +52,28 @@ class Family(Document):
 			old_family_name = self.family_name
 			self.rename_after_primary_contact()
 			self.warn_about_new_primary_contact(old_family_name)
+
+	def get_permlevel_access(self, permission_type="write"):
+		"""The user's permlevels, less the authorized pickups when they cannot see this family's church.
+
+		Permlevels follow roles, not churches, and every church reads the shared directory, so another
+		church's staff would otherwise read who may collect this family's children.
+		"""
+		levels = super().get_permlevel_access(permission_type)
+		if has_church_access(frappe.session.user, self.get("church")):
+			return levels
+		return [level for level in levels if level != PICKUP_PERMLEVEL]
+
+	def save_version(self):
+		"""Save the Version without the pickups: the form timeline shows it to every reader of the family."""
+		before = self.get_doc_before_save()
+		if not before:
+			return super().save_version()
+		stored, before.authorized_pickups = before.authorized_pickups, self.authorized_pickups
+		try:
+			super().save_version()
+		finally:
+			before.authorized_pickups = stored
 
 	@property
 	def member_names(self):
@@ -194,6 +220,27 @@ class Family(Document):
 				_(
 					"{0} belongs to another church, so only that church can make them the primary contact."
 				).format(frappe.bold(escape_html(name))),
+				frappe.PermissionError,
+			)
+
+	def refuse_another_churches_members(self):
+		"""Only a user who can see a person's church adds them to a family, as for its primary contact.
+
+		A household Adult may collect its children at Verify Pickup, so a household spans churches only
+		when a user of both links it. Writes with ignore_permissions are the app's own and are not refused.
+		"""
+		if self.flags.ignore_permissions:
+			return
+		before = self.get_doc_before_save()
+		known = set(before.member_names) if before else set()
+		churches = self.get_member_values("church")
+		for member in self.members:
+			if member.member in known or has_church_access(frappe.session.user, churches.get(member.member)):
+				continue
+			frappe.throw(
+				_(
+					"Row {0}: {1} belongs to another church, so only that church can add them to a family."
+				).format(member.idx, frappe.bold(escape_html(member.member))),
 				frappe.PermissionError,
 			)
 

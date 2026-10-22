@@ -312,6 +312,7 @@
    "hidden": 1,
    "label": "Team Calendar Key",
    "no_copy": 1,
+   "permlevel": 4,
    "print_hide": 1,
    "read_only": 1,
    "unique": 1
@@ -440,7 +441,7 @@
    "search_index": 1
   },
   {
-   "description": "Only Church Manager, Church Office and Church Check-In Volunteer logins can see these notes. Members cannot see them on their Personal Details page.",
+   "description": "Only Church Manager, Church People Editor and Church Check-In users can see these notes. Members cannot see them on their Personal Details page.",
    "fieldname": "medical_notes",
    "fieldtype": "Small Text",
    "label": "Medical Notes",
@@ -758,7 +759,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-21 21:30:00.000000",
+ "modified": "2026-10-22 16:25:52.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
@@ -875,6 +876,11 @@
    "permlevel": 3,
    "read": 1,
    "role": "Church Pastoral Care"
+  },
+  {
+   "permlevel": 4,
+   "read": 1,
+   "role": "System Manager"
   }
  ],
  "route": "church-personz",

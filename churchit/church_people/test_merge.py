@@ -188,6 +188,7 @@ class TestMergePeople(RollbackEachTest):
 		checked_in = ensure("Function Attendance Type", {"type": "Checked-In"})
 		function = make_function(
 			"_Test Merge Service",
+			start_date=frappe.utils.today(),
 			attendance=[
 				{"person": removed.name, "attendance_type": checked_in},
 				{"person": kept.name, "attendance_type": checked_in},
@@ -254,6 +255,21 @@ class TestMergePeople(RollbackEachTest):
 		merge_people(kept.name, removed.name)
 
 		self.assertEqual(frappe.db.get_value("Person", kept.name, "user"), user)
+
+	def test_the_calendar_key_moves_without_a_version(self):
+		kept = make_person("_Test Kept", "Calendar")
+		removed = make_person("_Test Removed", "Calendar")
+		frappe.db.set_value("Person", removed.name, "team_calendar_key", "_test_merged_key")
+
+		# Saves write no Version in tests unless in_test is off.
+		with patch.object(frappe, "in_test", False):
+			merge_people(kept.name, removed.name)
+
+		self.assertEqual(frappe.db.get_value("Person", kept.name, "team_calendar_key"), "_test_merged_key")
+		versions = frappe.get_all(
+			"Version", filters={"ref_doctype": "Person", "docname": kept.name}, pluck="data"
+		)
+		self.assertFalse([data for data in versions if "_test_merged_key" in data])
 
 	def test_two_people_with_portal_users_are_not_merged(self):
 		kept = make_person("_Test Kept", "Logins", user=ensure_user("_test_merge_one@example.com", "One"))
