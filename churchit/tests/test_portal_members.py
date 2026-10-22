@@ -179,5 +179,20 @@ class TestPortalMembers(FrappeTestCase):
 		]
 		self.assertEqual(linking, [])
 
+	def test_no_guest_form_links_to_a_church_or_person(self):
+		"""A guest form renders every record of a linked doctype, unpublished churches included."""
+		forms = frappe.get_all(
+			"Web Form", filters={"login_required": 0, "module": ("like", "Church%")}, pluck="name"
+		)
+		linking = [
+			name
+			for name in forms
+			if any(
+				has_link_option(frappe.get_doc("Web Form", name).web_form_fields, doctype)
+				for doctype in ("Church", "Person")
+			)
+		]
+		self.assertEqual(linking, [])
+
 	def test_staff_are_untouched(self):
 		self.assertIn(self.neighbour, frappe.get_list("Person", pluck="name"))
