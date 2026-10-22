@@ -24,7 +24,7 @@ def blank_for(match):
 	)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def make_handout(sermon: str):
 	"""Create a handout from the sermon's notes, link it from the sermon, and return its name."""
 	sermon = frappe.get_doc("Sermon", sermon)

@@ -1,7 +1,10 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from unittest.mock import patch
+
 import frappe
+from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_study.doctype.sermon_handout.sermon_handout import make_handout
@@ -34,3 +37,18 @@ class TestSermonHandout(FrappeTestCase):
 		self.assertEqual(handout.title, "_Test Handout Sermon")
 		self.assertEqual(handout.content, "<p>Point one: [love]</p>")
 		self.assertEqual(frappe.db.get_value("Sermon", sermon.name, "handout"), name)
+
+	def test_making_a_handout_takes_a_post(self):
+		"""Frappe checks the CSRF token only on a POST, and a GET from another site carries the session."""
+		sermon = frappe.get_doc(
+			{"doctype": "Sermon", "title": "_Test Get Sermon", "notes": "<p>[grace]</p>"}
+		).insert(ignore_permissions=True)
+
+		with (
+			patch.object(frappe.local, "request", frappe._dict(method="GET"), create=True),
+			patch.object(frappe.local, "form_dict", frappe._dict(sermon=sermon.name)),
+			self.assertRaises(frappe.PermissionError),
+		):
+			execute_cmd("churchit.church_study.doctype.sermon_handout.sermon_handout.make_handout")
+
+		self.assertFalse(frappe.db.get_value("Sermon", sermon.name, "handout"))

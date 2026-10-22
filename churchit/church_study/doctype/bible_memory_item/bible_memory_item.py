@@ -41,7 +41,7 @@ class BibleMemoryItem(Document):
 	def on_trash(self):
 		frappe.db.delete("Memory Session", {"bible_memory_item": self.name})
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def record_mistake(self, word_index: int):
 		self._require_self()
 		mistakes = self._load_word_mistakes()
@@ -52,7 +52,7 @@ class BibleMemoryItem(Document):
 		self.save(ignore_permissions=False)
 		return {"progress": self.progress, "word_mistakes": mistakes}
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def complete_session(
 		self, mode: str, mistakes: int = 0, correct_word_indices: str | list[int] | None = None
 	):
@@ -144,7 +144,7 @@ class BibleMemoryItem(Document):
 		return out
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def assign_memory(
 	reference: str, translation: str, users: str | list[str] | None = None, group: str | None = None
 ):
@@ -214,14 +214,14 @@ def as_list(value):
 	return list(value or [])
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def record_mistake(name: str, word_index: int):
 	"""Module-level wrapper for BibleMemoryItem.record_mistake"""
 	doc = frappe.get_doc("Bible Memory Item", name)
 	return doc.record_mistake(word_index)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def complete_session(
 	name: str, mode: str, mistakes: int = 0, correct_word_indices: str | list[int] | None = None
 ):

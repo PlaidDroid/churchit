@@ -332,7 +332,7 @@ def get_printable_passage(
 	)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def get_reference_preview(text: str, church: str | None = None, translation: str | None = None) -> dict:
 	"""A reference and the start of its text, for showing when a reference field is hovered.
 

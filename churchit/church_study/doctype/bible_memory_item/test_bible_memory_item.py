@@ -2,9 +2,11 @@
 # and is licensed under MIT No Attribution (MIT-0).
 
 import json
+from unittest.mock import patch
 
 import frappe
 from frappe.exceptions import PermissionError, ValidationError
+from frappe.handler import execute_cmd, run_doc_method
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_study.doctype.bible_memory_item.bible_memory_item import (
@@ -16,6 +18,12 @@ from churchit.church_study.doctype.bible_memory_item.bible_memory_item import (
 from churchit.tests.helpers import ensure_user, make_person, make_translation
 
 REFERENCE = "John 1:1"
+MODULE = "churchit.church_study.doctype.bible_memory_item.bible_memory_item"
+
+
+def as_get():
+	"""A GET, which another site can start with the session cookie and Frappe checks for no CSRF token."""
+	return patch.object(frappe.local, "request", frappe._dict(method="GET"), create=True)
 
 
 class TestBibleMemoryItem(FrappeTestCase):
@@ -130,6 +138,22 @@ class TestBibleMemoryItem(FrappeTestCase):
 		with self.assertRaises(PermissionError):
 			complete_session(item.name, "blur")
 
+	def test_practice_takes_a_post(self):
+		item = self._item(progress=10)
+		attempts = {"record_mistake": {"word_index": 0}, "complete_session": {"mode": "blur"}}
+
+		with as_get():
+			for method, args in attempts.items():
+				with (
+					patch.object(frappe.local, "form_dict", frappe._dict(name=item.name, **args)),
+					self.assertRaises(PermissionError, msg=method),
+				):
+					execute_cmd(f"{MODULE}.{method}")
+				with self.assertRaises(PermissionError, msg=f"BibleMemoryItem.{method}"):
+					run_doc_method(method, dt=item.doctype, dn=item.name, args=frappe.as_json(args))
+
+		self.assertEqual(frappe.db.get_value("Bible Memory Item", item.name, "progress"), 10)
+
 	def test_parse_indices_tolerates_bad_input(self):
 		parse = BibleMemoryItem._parse_indices
 		self.assertEqual(parse(None), [])
@@ -202,6 +226,17 @@ class TestAssignMemory(FrappeTestCase):
 		frappe.set_user(self.learner)
 		with self.assertRaises(PermissionError):
 			assign_memory("Psalms 23:1", self.translation, users=[self.learner])
+
+	def test_assigning_takes_a_post(self):
+		form = frappe._dict(reference="Psalms 23:1", translation=self.translation, users=self.learner)
+		with (
+			as_get(),
+			patch.object(frappe.local, "form_dict", form),
+			self.assertRaises(PermissionError),
+		):
+			execute_cmd(f"{MODULE}.assign_memory")
+
+		self.assertEqual(self._items(), [])
 
 	def test_non_manager_cannot_list_a_groups_members(self):
 		group = self._group("_Test Private Memory Group", self.unlinked)
