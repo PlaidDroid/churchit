@@ -7,7 +7,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, getdate, today
+from frappe.utils import add_days, cint, getdate, now_datetime, today
 
 from churchit.church_ministries.doctype.function_check_in.function_check_in import (
 	check_in_persons,
@@ -203,13 +203,21 @@ def get_pickup_families(code: str) -> list[dict]:
 	"""The families of the people checked in today with pickup tag *code*, with who may collect them.
 
 	The check-ins the caller may read are the gate. The people they name are read whatever their church,
-	as at a shared function the station checks in people of every church. It records nothing.
+	as at a shared function the station checks in people of every church. Each child carries its check-in
+	and, once someone took them, who and when.
 	"""
 	frappe.has_permission("Function Check-In", throw=True)
 	check_ins = frappe.get_list(
 		"Function Check-In",
 		filters={"security_code": code.strip().upper(), "creation": [">=", today()]},
-		fields=["person", "function.function_name as function_name"],
+		fields=[
+			"name as check_in",
+			"person",
+			"function.function_name as function_name",
+			"collected_by",
+			"collected_by_name",
+			"collected_at",
+		],
 		order_by="creation asc",
 	)
 	people = get_living_people([row.person for row in check_ins], ["family"])
@@ -242,6 +250,48 @@ def get_pickup_family(family: str | None, children: list[dict]) -> dict:
 		pickups=[{**row, **people[row.person]} for row in pickups if row.person in people],
 	)
 	return result
+
+
+@frappe.whitelist(methods=["POST"])
+def release_children(code: str, check_ins: str | list[str], collector: str) -> list[dict]:
+	"""Record that *collector* took the children of *check_ins*, checked in today with pickup tag *code*.
+
+	The families the code finds are read again here, so only someone they let collect, and only a child
+	of this code, is ever released. Returns the families as they stand after.
+	"""
+	frappe.has_permission("Function Check-In", "write", throw=True)
+	waiting = set(frappe.parse_json(check_ins) if isinstance(check_ins, str) else check_ins)
+	for family in get_pickup_families(code):
+		collectors = {person["name"]: person["full_name"] for person in family["adults"] + family["pickups"]}
+		for child in family["children"]:
+			if child.check_in in waiting:
+				release(child.check_in, collector, collectors)
+				waiting.discard(child.check_in)
+	if waiting:
+		frappe.throw(
+			_("Only a child checked in today with this code can be released."), frappe.PermissionError
+		)
+	return get_pickup_families(code)
+
+
+def release(check_in: str, collector: str, collectors: dict[str, str]) -> None:
+	"""Store who took one child, once: the row is locked, so two volunteers cannot both release them."""
+	if collector not in collectors:
+		frappe.throw(
+			_("This person may not collect these children. Ask a member of staff."), frappe.PermissionError
+		)
+	if frappe.db.get_value("Function Check-In", check_in, "collected_by", for_update=True):
+		frappe.throw(_("This child has already been collected."))
+	doc = frappe.get_doc("Function Check-In", check_in)
+	doc.update(
+		{
+			"collected_by": collector,
+			"collected_by_name": collectors[collector],
+			"collected_at": now_datetime(),
+			"released_by": frappe.session.user,
+		}
+	)
+	doc.save()
 
 
 def get_living_people(names: list[str], fields: list[str] | None = None) -> dict:

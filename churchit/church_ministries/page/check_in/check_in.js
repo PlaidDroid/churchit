@@ -46,6 +46,7 @@ const STATION_HTML = `
 	.pickup-families .pickup-people { display: flex; flex-wrap: wrap; gap: var(--margin-md); margin-top: var(--margin-xs); }
 	.pickup-families .pickup-person { display: flex; align-items: center; gap: 10px; font-size: var(--text-lg); line-height: 1.2; }
 	.pickup-families .pickup-person small { display: block; color: var(--text-muted); font-size: var(--text-sm); white-space: pre-line; }
+	.pickup-families .pickup-child { display: flex; align-items: center; gap: 10px; margin: 0; }
 	.pickup-families .empty { color: var(--text-muted); padding: var(--padding-lg) 0; text-align: center; font-size: var(--text-lg); }
 </style>
 <div class="check-in-station">
@@ -420,7 +421,7 @@ class CheckInStation {
 		});
 	}
 
-	// Nothing is recorded: the volunteer compares the person at the desk with who may collect.
+	// The volunteer compares the person at the desk with who may collect, then records who took each child.
 	verify_pickup() {
 		const dialog = new frappe.ui.Dialog({
 			title: __("Verify Pickup"),
@@ -447,32 +448,52 @@ class CheckInStation {
 
 	show_pickup(dialog, code) {
 		return frappe.call({ method: `${API}.get_pickup_families`, args: { code } }).then((r) => {
-			const families = r.message || [];
-			dialog.fields_dict.families.$wrapper.html(
-				`<div class="pickup-families">${
-					families.length
-						? families.map((family) => this.pickup_family(family)).join("")
-						: `<div class="empty">${__(
-								"No child is checked in with this code today."
-						  )}</div>`
-				}</div>`
-			);
+			this.render_pickup(dialog, code, r.message || []);
 			dialog.fields_dict.code.$input.trigger("select");
 		});
 	}
 
-	pickup_family(family) {
-		const children = family.children.map((child) =>
-			this.pickup_person(child.full_name, child.photo, child.function_name)
+	render_pickup(dialog, code, families) {
+		const $wrapper = dialog.fields_dict.families.$wrapper;
+		$wrapper.html(
+			`<div class="pickup-families">${
+				families.length
+					? families.map((family) => this.pickup_family(family)).join("")
+					: `<div class="empty">${__(
+							"No child is checked in with this code today."
+					  )}</div>`
+			}</div>`
 		);
+		$wrapper.find(".pickup-release").on("click", (event) => {
+			const $family = $(event.currentTarget).closest(".pickup-family");
+			const check_ins = $family
+				.find(".pickup-child input:checked")
+				.map((index, input) => input.value)
+				.get();
+			if (!check_ins.length) {
+				frappe.msgprint(__("Tick the children this person is collecting."));
+				return;
+			}
+			frappe
+				.call({
+					method: `${API}.release_children`,
+					args: { code, check_ins, collector: event.currentTarget.dataset.collector },
+					freeze: true,
+				})
+				.then((r) => this.render_pickup(dialog, code, r.message || []));
+		});
+	}
+
+	pickup_family(family) {
+		const children = family.children.map((child) => this.pickup_child(child));
+		const release = family.children.some((child) => !child.collected_by);
+		const collector = (person, detail) =>
+			this.pickup_person(person.full_name, person.photo, detail, release && person.name);
 		const collectors = [
-			...family.adults.map((adult) =>
-				this.pickup_person(adult.full_name, adult.photo, __("Adult of the household"))
-			),
+			...family.adults.map((adult) => collector(adult, __("Adult of the household"))),
 			...family.pickups.map((pickup) =>
-				this.pickup_person(
-					pickup.full_name,
-					pickup.photo,
+				collector(
+					pickup,
 					[pickup.relationship || __("Authorized pickup"), pickup.notes]
 						.filter(Boolean)
 						.join("\n")
@@ -491,13 +512,36 @@ class CheckInStation {
 		</div>`;
 	}
 
-	pickup_person(name, photo, detail) {
+	// A child not collected yet is ticked for release; a collected one says who took them and when.
+	pickup_child(child) {
+		if (child.collected_by) {
+			return this.pickup_person(
+				child.full_name,
+				child.photo,
+				__("Collected by {0} at {1}", [
+					child.collected_by_name,
+					frappe.datetime.str_to_user(child.collected_at),
+				])
+			);
+		}
+		return `<label class="pickup-child">
+			<input type="checkbox" value="${frappe.utils.escape_html(child.check_in)}" checked>
+			${this.pickup_person(child.full_name, child.photo, child.function_name)}
+		</label>`;
+	}
+
+	pickup_person(name, photo, detail, collector) {
+		const release = collector
+			? `<button type="button" class="btn btn-sm btn-default pickup-release"
+				data-collector="${frappe.utils.escape_html(collector)}">${__("Release")}</button>`
+			: "";
 		return `<div class="pickup-person">
 			${frappe.get_avatar("avatar-xl", name, photo)}
 			<span>
 				${frappe.utils.escape_html(name)}
 				<small>${frappe.utils.escape_html(detail || "")}</small>
 			</span>
+			${release}
 		</div>`;
 	}
 

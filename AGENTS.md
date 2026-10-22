@@ -460,7 +460,9 @@ reader may read (`frappe.get_list`), then reads the people those rows name with 
 their church. Do not fetch Person fields through the check-in's link (`person.full_name` in
 `get_list`): Frappe applies Person permission to that join, and a child at a shared function came
 back nameless. Who may collect a child is the living household Adults plus the family's Authorized
-Pickup rows; nothing is stored. The station opens people only through
+Pickup rows. `check_in.release_children` reads the families again before it stores who collected a
+child on its Function Check-In (`collected_by`, `collected_at`, `released_by`), and locks the row,
+so a child is released once. The station opens people only through
 `group_by_family(matched, get_people_scope(function))`, Scan Card included, so a new way to find
 people there must use it. Do not add Authorized Pickup to `person_data_map.ROSTERS`: a merge would
 strip the merged person from every other family's pickup list. The Member QR Card needs
