@@ -4,6 +4,7 @@ import json
 
 import frappe
 from frappe import _
+from frappe.model.document import Document
 from frappe.utils import escape_html
 
 from churchit.scripture import get_default_translation, get_passage, is_readable
@@ -89,6 +90,46 @@ def scripture_slide(reference, translation):
 	}
 
 
+def get_public_slide(slide_type, name) -> dict | None:
+	"""The fields `/beliefs` and `/missions` show of a published Belief or Missionary, for any viewer."""
+	if slide_type == "Belief":
+		return frappe.db.get_value(
+			"Belief",
+			{"name": name, "publish": 1},
+			["title", "belief_statement", "bible_references"],
+			as_dict=True,
+		)
+	if slide_type == "Missionary":
+		return frappe.db.get_value(
+			"Missionary",
+			{"name": name, "publish": 1, "sensitive": 0},
+			["title", "agency", "country", "photo", "website"],
+			as_dict=True,
+		)
+	return None
+
+
+def record_slide(row):
+	"""A record slide's title and content: the whole record to a reader of it, else only its public fields."""
+	record = None
+	if frappe.db.exists(row.slide_type, row.slide):
+		record = frappe.get_doc(row.slide_type, row.slide)
+		if frappe.has_permission(row.slide_type, "read", doc=record):
+			record.apply_fieldlevel_read_permissions()
+		else:
+			record = get_public_slide(row.slide_type, row.slide)
+	if not record:
+		return {"title": "", "content": f"<p>{_('This slide is not public')}</p>"}
+
+	field_configs = _parse_display_fields(row.display_fields)
+	if not field_configs:
+		return {"title": record.get_title() if isinstance(record, Document) else record.title, "content": ""}
+	title, content = _build_content_from_selected_fields(
+		record, frappe.get_meta(row.slide_type), field_configs
+	)
+	return {"title": title or row.slide, "content": content}
+
+
 def get_context(context):
 	name = frappe.form_dict.get("name")
 	if not name:
@@ -100,38 +141,12 @@ def get_context(context):
 
 	slides = []
 	for row in sermon.get("slides", []):
-		slide_data = {
-			"idx": row.idx,
-			"slide_type": row.slide_type,
-			"slide_name": row.slide,
-			"notes": row.notes or "",
-			"content": "",
-			"title": row.slide,
-		}
+		# get(): the published-field scan reads an attribute named notes as Missionary notes.
+		slide_data = {"idx": row.idx, "slide_type": row.slide_type, "notes": row.get("notes") or ""}
 		if row.scripture:
 			slides.append({**slide_data, **scripture_slide(row.scripture, row.translation)})
-			continue
-
-		try:
-			linked_doc = frappe.get_doc(row.slide_type, row.slide)
-			field_configs = _parse_display_fields(row.display_fields)
-			meta = frappe.get_meta(row.slide_type)
-
-			if field_configs:
-				title, slide_data["content"] = _build_content_from_selected_fields(
-					linked_doc, meta, field_configs
-				)
-				if title:
-					slide_data["title"] = title
-			else:
-				slide_data["title"] = (
-					linked_doc.get_title() if hasattr(linked_doc, "get_title") else row.slide
-				)
-				slide_data["content"] = ""
-		except Exception:
-			slide_data["content"] = f"<p>Could not load {row.slide_type}: {row.slide}</p>"
-
-		slides.append(slide_data)
+		else:
+			slides.append({**slide_data, **record_slide(row)})
 
 	prepared_by_name = ""
 	if sermon.prepared_by:

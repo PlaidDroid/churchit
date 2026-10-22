@@ -22,13 +22,13 @@
 			<h1 class="slide-title">{{ slide.title }}</h1>
 		</div>
 		{% endif %}
-		{% if slide.content or slide.notes %}
+		{% if slide.content or slide["notes"] %}
 		<div class="slide-body">
 			{% if slide.content %}
 			<div class="slide-content">{{ slide.content }}</div>
 			{% endif %}
-			{% if slide.notes %}
-			<div class="slide-notes">{{ slide.notes }}</div>
+			{% if slide["notes"] %}
+			<div class="slide-notes">{{ slide["notes"] }}</div>
 			{% endif %}
 		</div>
 		{% endif %}

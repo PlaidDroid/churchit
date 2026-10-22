@@ -9,13 +9,14 @@ from frappe.exceptions import PermissionError, ValidationError
 from frappe.handler import execute_cmd, run_doc_method
 from frappe.tests.utils import FrappeTestCase
 
+from churchit.church_foundations.church_access import set_user_church
 from churchit.church_study.doctype.bible_memory_item.bible_memory_item import (
 	BibleMemoryItem,
 	assign_memory,
 	complete_session,
 	record_mistake,
 )
-from churchit.tests.helpers import ensure_user, make_person, make_translation
+from churchit.tests.helpers import ensure_user, make_person, make_translation, make_two_churches
 
 REFERENCE = "John 1:1"
 MODULE = "churchit.church_study.doctype.bible_memory_item.bible_memory_item"
@@ -237,6 +238,55 @@ class TestAssignMemory(FrappeTestCase):
 			execute_cmd(f"{MODULE}.assign_memory")
 
 		self.assertEqual(self._items(), [])
+
+	def test_assign_refuses_a_user_of_another_church(self):
+		_root, branch_a, branch_b = make_two_churches()
+		self.addCleanup(frappe.clear_cache)
+		frappe.db.set_value("Person", self.linked, "church", branch_a)
+		manager_b = ensure_user("_test_memory_manager_b@example.com", "Manager B", roles=("Church Manager",))
+		set_user_church(manager_b, branch_b)
+		no_person = ensure_user("_test_memory_no_person@example.com", "No Person")
+
+		frappe.set_user(manager_b)
+		for user in (self.learner, no_person):
+			with self.assertRaises(PermissionError):
+				assign_memory("Psalms 23:1", self.translation, users=[user])
+		self.assertEqual(self._items(), [])
+
+		frappe.db.set_value("Person", self.linked, "church", branch_b)
+		self.assertEqual(assign_memory("Psalms 23:1", self.translation, users=[self.learner])["created"], 1)
+
+	def test_assign_refuses_an_unreadable_translation(self):
+		frappe.db.set_value("Bible Translation", self.translation, "status", "Downloading")
+		self.addCleanup(frappe.db.set_value, "Bible Translation", self.translation, "status", "Ready")
+		with self.assertRaises(PermissionError):
+			assign_memory("Psalms 23:1", self.translation, users=[self.learner])
+		self.assertEqual(self._items(), [])
+
+	def test_a_desk_save_gets_the_same_checks(self):
+		_root, branch_a, branch_b = make_two_churches()
+		self.addCleanup(frappe.clear_cache)
+		frappe.db.set_value("Person", self.linked, "church", branch_a)
+		manager_b = ensure_user("_test_memory_manager_b@example.com", "Manager B", roles=("Church Manager",))
+		set_user_church(manager_b, branch_b)
+		other = ensure_user("_test_other_learner@example.com", "_Test Other Learner")
+
+		def insert(session_user, **values):
+			frappe.set_user(session_user)
+			item = {"doctype": "Bible Memory Item", "bible_reference": "Psalms 23:1"}
+			return frappe.get_doc({**item, "translation": self.translation, **values}).insert()
+
+		for user, values in ((manager_b, {"user": self.learner}), (other, {"user": self.learner})):
+			with self.assertRaises(PermissionError):
+				insert(user, **values)
+		self.assertEqual(self._items(), [])
+
+		frappe.db.set_value("Bible Translation", self.translation, "status", "Downloading")
+		self.addCleanup(frappe.db.set_value, "Bible Translation", self.translation, "status", "Ready")
+		with self.assertRaises(PermissionError):
+			insert(self.learner)
+		frappe.db.set_value("Bible Translation", self.translation, "status", "Ready")
+		self.assertEqual(insert(self.learner).user, self.learner)
 
 	def test_non_manager_cannot_list_a_groups_members(self):
 		group = self._group("_Test Private Memory Group", self.unlinked)

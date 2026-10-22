@@ -15,6 +15,8 @@ from churchit.church_finances.doctype.budget.budget import (
 	get_current_budget,
 	get_window_scale,
 )
+from churchit.church_finances.report.budget_vs_actual.budget_vs_actual import execute as budget_vs_actual
+from churchit.tests.helpers import ensure_user
 
 
 def _ensure(doctype, filters, values):
@@ -176,6 +178,23 @@ class TestBudget(FrappeTestCase):
 			self._make_budget(add_years(nowdate(), -3), add_years(nowdate(), -2))
 			latest = self._make_budget(add_years(nowdate(), -2), add_years(nowdate(), -1))
 			self.assertEqual(get_current_budget(), latest.name)
+
+	def test_a_portal_member_cannot_get_the_current_budget(self):
+		member = ensure_user("_test_budget_member@example.com", "_Test Budget Member")
+		finance = ensure_user("_test_budget_finance@example.com", "_Test Finance", roles=("Church Finance",))
+		with self._other_budgets_hidden():
+			current = self._make_budget(add_days(nowdate(), -1), add_days(nowdate(), 1))
+			try:
+				frappe.set_user(member)
+				with self.assertRaises(frappe.PermissionError):
+					get_current_budget()
+
+				frappe.set_user(finance)
+				self.assertEqual(get_current_budget(), current.name)
+				message = budget_vs_actual(frappe._dict())[2]
+				self.assertNotIn("No budget found", message)
+			finally:
+				frappe.set_user("Administrator")
 
 	@contextmanager
 	def _other_budgets_hidden(self):

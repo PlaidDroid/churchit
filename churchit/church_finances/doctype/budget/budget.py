@@ -140,6 +140,7 @@ class Budget(Document):
 @frappe.whitelist()
 def get_current_budget(filters: str | list | dict | None = None):
 	"""The budget covering today, else the most recently started one, within the church scope."""
+	frappe.has_permission("Budget", "read", throw=True)
 	today = nowdate()
 	scope = church_query_filters(filters)
 	covering = frappe.get_all(
