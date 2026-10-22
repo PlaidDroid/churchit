@@ -9,6 +9,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import now
 
 from churchit.church_setup.doctype.church_features.church_features import (
+	ALWAYS_ON_MODULES,
 	MODULE_FIELDS,
 	apply_on_migrate,
 )
@@ -28,6 +29,13 @@ def dock_flags(user=""):
 	"""The hidden flag of each entry in the site's arrangement of the Churchit dock, or one user's."""
 	name = frappe.db.get_value("Dock", {"app": "churchit", "standard": 0, "user": user})
 	return {row.link_to: row.hidden for row in frappe.get_doc("Dock", name).items} if name else {}
+
+
+class TestModuleSwitches(FrappeTestCase):
+	def test_every_module_has_a_switch_or_a_reason_to_stay_on(self):
+		shipped = set(frappe.get_module_list("churchit"))
+		switched = {module for modules in MODULE_FIELDS.values() for module in modules}
+		self.assertEqual(shipped, switched | set(ALWAYS_ON_MODULES))
 
 
 class TestChurchFeatures(RollbackEachTest):

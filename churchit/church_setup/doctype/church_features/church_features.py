@@ -30,6 +30,11 @@ MODULE_FIELDS = {
 	"enable_website": ("Church Website",),
 	"enable_setup": ("Church Summary", "Church Help"),
 }
+# Modules that no switch turns off -> the reason.
+ALWAYS_ON_MODULES = {
+	"Church Setup": "Its Settings workspace holds Church Features, so turning it off would hide these switches.",
+	"Church Customizations": "It changes Frappe's own doctypes, which every module uses, and has no workspace.",
+}
 
 
 class ChurchFeatures(Document):

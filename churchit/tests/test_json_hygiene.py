@@ -12,6 +12,7 @@ the real time: `date '+%F %T'`.
 
 import json
 import os
+import re
 from datetime import datetime
 
 from frappe.tests.utils import FrappeTestCase
@@ -20,6 +21,8 @@ from frappe.utils import get_datetime
 APP_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # Templates and built assets that are served as they are, not imported as records.
 NOT_RECORDS = ("www", "public", "node_modules")
+# The repository was renamed from church to churchit.
+OLD_REPOSITORY = re.compile(r"github\.com/meichthys/church(?!it)")
 
 
 def record_files():
@@ -53,3 +56,13 @@ class TestRecordTimestamps(FrappeTestCase):
 			"These records carry a `modified` time later than now, so migrate will skip real edits "
 			"made before it. Set it to the current time: " + ", ".join(sorted(future))
 		)
+
+
+class TestRepositoryLinks(FrappeTestCase):
+	def test_no_record_links_to_the_old_repository(self):
+		stale = []
+		for path in record_files():
+			with open(path) as file:
+				if OLD_REPOSITORY.search(file.read()):
+					stale.append(os.path.relpath(path, APP_DIR))
+		assert not stale, "Change github.com/meichthys/church to .../churchit in: " + ", ".join(sorted(stale))
