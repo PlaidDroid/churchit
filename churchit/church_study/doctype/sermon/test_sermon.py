@@ -52,3 +52,18 @@ class TestSermon(FrappeTestCase):
 		sermon.publish = 0
 		sermon.save(ignore_permissions=True)
 		self.assertTrue(frappe.db.get_value("File", audio.name, "is_private"))
+
+	def test_the_outline_prints_the_newest_presentation(self):
+		sermon = self._sermon(
+			"_Test Outlined Sermon",
+			presentation_history=[
+				{"date": "2031-03-01", "location": "_Test Newer Hall"},
+				{"date": "2030-01-05", "location": "_Test Older Hall"},
+			],
+		)
+
+		html = frappe.get_print("Sermon", sermon.name, print_format="Sermon Outline")
+
+		self.assertIn(frappe.utils.formatdate("2031-03-01"), html)
+		self.assertIn("_Test Newer Hall", html)
+		self.assertNotIn("_Test Older Hall", html)
