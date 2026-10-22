@@ -43,17 +43,24 @@ If you would like to test out the current state of the application, you can try 
 The following features have been implemented in this app (see the [🗺️ Roadmap](#-feature-roadmap) below for future plans):
 
 ### People & Families
-- Comprehensive person profiles with contact info, photos, notes, etc.
+- Comprehensive person profiles with contact info, photos, life events, school grade and an engagement panel (attendance heatmap, groups, serving, giving)
 - Membership tracking: how each person is connected (Member, Regular Attender, Visitor, Contact), an Active or Inactive status with a reason, and baptism records
-- Family/household management with head-of-household relationship tracking
-- Spouse tracking with automatic bidirectional sync
+- Family/household management with household roles, spouse sync and authorized pickups
 - Church position tracking
-- Background check tracking: record checks from any screening provider with status, expiry, and the report; cleared checks expire automatically
+- Person Notes in categories that decide who reads them, with alert notes at the top of the form
+- Follow-up workflows on a Kanban board per workflow, started by a guest card, a first check-in, a membership change, a life event or a smart list
+- Smart lists: saved reports of people with email, Rolodex, group and Church Email actions
+- Pathways: ordered steps, each a smart list, with a progress report; an Assimilation Funnel report
+- Care requests with a caregiver and due date, and background checks a position can require
+- Duplicate warnings, merging, and imports from Planning Center, Rock RMS or a spreadsheet
+- Remove Personal Data on request or after a set number of inactive years
+- A Map of Addresses
 - Portal invitations: invite people to a self-service portal
 
 ### Portal & Website
 - Portal invitations "Invite to Portal" auto-creates a user account and sends a welcome email
-- Portal pages for personal details, prayer requests, alms requests, function sign-ups, attendance history, giving statements, and bulletin PDFs
+- Portal pages for personal details, my household, a member directory with per-person sharing, communication preferences, prayer requests, alms requests, function sign-ups, attendance history, giving statements, and bulletin PDFs
+- A guest Connection Card with a QR code, a one-time link for a person to update their details without a login, and new portal logins linked to their person
 - Anonymous prayer request submission (no login required)
 - Publishable beliefs/statement of faith
 - Publishable missionary profiles with sensitive-info redaction
@@ -61,7 +68,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 
 ### Functions (Events) & Attendance
 - Function (event) tracking with types, scheduling, person & item sign-ups, check-ins, and attendance tracking
-- Check-In Station: search by name or phone number, check whole families in with a tap, add first-time visitors on the spot, undo and reprint from the live list
+- Check-In Station: search by name or phone number or scan a Member QR Card, check whole families in with a tap, add first-time visitors on the spot, undo and reprint from the live list, and verify a pickup code and record who collected each child
 - Name tags: printed per check-in through the browser's print dialog (any printer), or silently in ZPL to Zebra label printers such as the ZD421 via Zebra Browser Print, QZ Tray, or straight over the network. Optional pickup codes for children's ministry print on each tag and on a parent pickup tag. Both label layouts are Print Formats a church can copy and customize
 - Recurring functions: Functions are automatically created based on a given frequency.
 - Calendar view (Private & Public)
@@ -91,10 +98,11 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Sections switched on per bulletin, with defaults in Bulletin Settings: contact information, church verse, order of worship, church leadership by configurable roles, upcoming functions, ministries, missionary of the week (rotated weekly, with override), picked prayer requests, birthdays and anniversaries, and a 2-up sermon handout insert
 - Published bulletins downloadable as PDFs from the member portal
 
-### Church Emails
-- One email to everyone whose Status is Active, to the active members only, or to a Group, each person getting their own copy
-- Recipients worked out when it is sent, leaving out people who have died and anyone who unsubscribed
-- A test email to yourself, a scheduled send time, and a link in every copy to unsubscribe
+### Church Emails & Consent
+- One email or text to active people, active members, a Group, a smart list or chosen people, each person getting their own copy on their timeline
+- Email templates, name placeholders, a preview, a test send and a scheduled send time
+- Consent per channel and purpose: texts need a yes, every email has an unsubscribe link for its purpose, and churches that ask first can send consent renewal reminders
+- Bounced addresses and refused texts are marked, and later emails skip them
 
 ### Finances
 - Collection and donation tracking with fund allocation
@@ -114,7 +122,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 ### Prayer
 - Prayer request management with status tracking and types
 - Authenticated and anonymous web-form submissions
-- Privacy options (private vs. shared with congregation)
+- Who can see each request: private, the prayer team, or the whole church
 - Prayer recording with topics referencing requests, people, and other records
 
 ### Bible & Study
@@ -253,8 +261,9 @@ The public pages (Home, Beliefs, Sermons, Missions, Ministries) are `Web Page` r
 
 Hopefully this roadmap will help avoid too much scope creep and provide a sense of where this project is headed. The items below are listed in order of current priority.
 
-- Additional portal pages
-  - Allow members to update their own attendance status(?)
+- AI features, such as building a smart list from a sentence
+- Reading STOP and START replies to text messages
+- Read-only access for AI assistants (MCP)
 
 # 🆘 Support
 If you need help setting up the app or configuring it, you can reach out in our [Discord server](https://discord.gg/YxpdU6qM5w) or [Matrix Chat](https://matrix.to/#/#the-church-app:matrix.org).
