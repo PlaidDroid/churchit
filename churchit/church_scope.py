@@ -421,6 +421,29 @@ def refuse_changing_another_churches_people(doc, ptype=None, user=None):
 	return not churches - set(allowed) - {None, SHARED}
 
 
+def refuse_changing_another_churches_record(doc, method=None):
+	"""Refuse a save, cancel or update of a record whose stored church the user cannot see.
+
+	Frappe measures User Permissions on the document as the caller sent it, so a caller
+	who names their own church passes that check on another church's record and moves it.
+	Saves with ``ignore_permissions`` are the app's own.
+	"""
+	if doc.flags.ignore_permissions or doc.is_new() or not is_multi_church() or not is_scoped(doc.meta):
+		return
+	if allowed_churches() is None:
+		return
+	stored = frappe.db.get_value(doc.doctype, doc.name, CHURCH_FIELD)
+	if has_church_access(frappe.session.user, stored):
+		return
+
+	frappe.throw(
+		_("{0} {1} belongs to another church, so only that church can change it.").format(
+			_(doc.doctype), doc.name
+		),
+		frappe.PermissionError,
+	)
+
+
 def ensure_church(doc, method=None):
 	"""doc_events validate hook: settle which church a record belongs to, or refuse to save it.
 
@@ -431,6 +454,8 @@ def ensure_church(doc, method=None):
 	"""
 	if not is_multi_church() or not is_scoped(doc.meta):
 		return
+
+	refuse_changing_another_churches_record(doc)
 
 	if is_shareable(doc):
 		refuse_unsharing_by_another_church(doc)

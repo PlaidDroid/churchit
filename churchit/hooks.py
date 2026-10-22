@@ -258,7 +258,8 @@ churchit_people_events = {
 	"life_event_added": ["churchit.church_people.followup.on_life_event_added"],
 }
 
-# Every doctype with a `church` Link gets it defaulted (or refused) on save, a
+# Every doctype with a `church` Link gets it defaulted (or refused) on save, and
+# only a user who can see a record's stored church saves, cancels or updates it, a
 # new login is scoped to the church it was created in rather than seeing them all,
 # a desk user opens Summary after login, publishing, un-publishing or deleting
 # a Web Page adds it to or removes it from the menu, a saved or deleted record
@@ -270,6 +271,8 @@ churchit_people_events = {
 doc_events = {
 	"*": {
 		"validate": "churchit.church_scope.ensure_church",
+		"before_cancel": "churchit.church_scope.refuse_changing_another_churches_record",
+		"before_update_after_submit": "churchit.church_scope.refuse_changing_another_churches_record",
 		"on_update": "churchit.church_people.summaries.on_change",
 		"on_cancel": "churchit.church_people.summaries.on_change",
 		"on_trash": [
