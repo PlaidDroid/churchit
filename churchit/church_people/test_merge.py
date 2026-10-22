@@ -4,8 +4,10 @@
 from unittest.mock import patch
 
 import frappe
+from frappe.handler import execute_cmd
 from frappe.model.rename_doc import update_document_title
 from frappe.tests.classes.context_managers import patch_hooks
+from frappe.utils import CallbackManager
 
 from churchit.church_people.doctype.follow_up_card.test_follow_up_card import make_workflow
 from churchit.church_people.followup import CARD, CLOSED, OPEN, add_card
@@ -46,6 +48,44 @@ def make_family(family_name, *people, **values):
 	return family
 
 
+def merge_in_rename_dialog(doctype):
+	"""Merge as the desk Rename dialog's "Merge with existing" does."""
+
+	def rename_dialog(keep, remove):
+		update_document_title(doctype=doctype, docname=remove, name=keep, merge=True)
+
+	return rename_dialog
+
+
+def merge_and_commit(merge, keep, remove):
+	"""Run *merge*, then the callbacks its commit would run, leaving the test's transaction open."""
+	pending, frappe.db.before_commit = frappe.db.before_commit, CallbackManager()
+	try:
+		merge(keep, remove)
+		frappe.db.before_commit.run()
+	finally:
+		frappe.db.before_commit = pending
+
+
+def make_older_deleted_copy(doctype, name):
+	"""A Deleted Document from an earlier record that had the name *name*, as a reverted series reuses names."""
+	copy = frappe.get_doc(
+		doctype="Deleted Document",
+		deleted_doctype=doctype,
+		deleted_name=name,
+		data="{}",
+		creation="2020-01-01",
+	)
+	copy.db_insert()
+	return copy.name
+
+
+def deleted_copies(doctype, name):
+	return frappe.get_all(
+		"Deleted Document", filters={"deleted_doctype": doctype, "deleted_name": name}, pluck="name"
+	)
+
+
 class TestMergePeople(RollbackEachTest):
 	def test_the_kept_values_win_and_blank_fields_are_filled(self):
 		kept = make_person("_Test Kept", "Merge", nickname="Kit", gender="Unknown")
@@ -59,9 +99,17 @@ class TestMergePeople(RollbackEachTest):
 		self.assertEqual((kept.first_name, kept.nickname), ("_Test Kept", "Kit"))
 		self.assertEqual((kept.middle_name, kept.gender, kept.alergies), ("Quinn", "Female", "Kiwi"))
 		self.assertFalse(frappe.db.exists("Person", removed.name))
-		self.assertTrue(
-			frappe.db.exists("Deleted Document", {"deleted_doctype": "Person", "deleted_name": removed.name})
-		)
+
+	def test_neither_way_of_merging_leaves_the_removed_person_in_deleted_documents(self):
+		"""The copy keeps their personal data, and restoring it brings back a record nothing links to."""
+		for way in (merge_people, merge_in_rename_dialog("Person")):
+			kept = make_person("_Test Kept", "Forgotten")
+			removed = make_person("_Test Removed", "Forgotten", medical_notes="_Test Asthma")
+			older_copy = make_older_deleted_copy("Person", removed.name)
+
+			merge_and_commit(way, kept.name, removed.name)
+
+			self.assertEqual(deleted_copies("Person", removed.name), [older_copy], way)
 
 	def test_contact_rows_and_life_events_are_combined_once_with_one_primary(self):
 		removed = make_person(
@@ -246,6 +294,22 @@ class TestMergePeople(RollbackEachTest):
 			name="_Test New ID",
 		)
 
+	def test_a_merge_refuses_a_get(self):
+		"""A GET carries no CSRF token, so another site could start a merge in the user's browser."""
+		people = make_person("_Test Kept", "Get").name, make_person("_Test Removed", "Get").name
+		families = make_family("_Test Kept Get Family").name, make_family("_Test Removed Get Family").name
+		frappe.local.request = frappe._dict(method="GET")
+		self.addCleanup(delattr, frappe.local, "request")
+		self.addCleanup(setattr, frappe.local, "form_dict", frappe._dict())
+
+		for method, (keep, remove) in (("merge_people", people), ("merge_families", families)):
+			frappe.local.form_dict = frappe._dict(keep=keep, remove=remove)
+			with self.assertRaises(frappe.PermissionError, msg=method):
+				execute_cmd(f"churchit.church_people.merge.{method}")
+
+		self.assertTrue(frappe.db.exists("Person", people[1]))
+		self.assertTrue(frappe.db.exists("Family", families[1]))
+
 	def test_a_person_is_never_just_renamed(self):
 		person = make_person("_Test Renamed", "Person")
 
@@ -378,6 +442,15 @@ class TestMergeFamilies(RollbackEachTest):
 		)
 		self.assertEqual(frappe.db.get_value("Person", child.name, "family"), kept.name)
 		self.assertFalse(frappe.db.exists("Family", removed.name))
+
+	def test_neither_way_of_merging_leaves_the_removed_family_in_deleted_documents(self):
+		for way in (merge_families, merge_in_rename_dialog("Family")):
+			kept = make_family("_Test Kept Family")
+			removed = make_family("_Test Forgotten Family")
+
+			merge_and_commit(way, kept.name, removed.name)
+
+			self.assertEqual(deleted_copies("Family", removed.name), [], way)
 
 	def test_a_family_without_a_primary_contact_takes_the_removed_ones(self):
 		head = make_person("_Test Head", "Contactless")

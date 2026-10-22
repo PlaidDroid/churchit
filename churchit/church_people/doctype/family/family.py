@@ -18,12 +18,13 @@ from churchit.church_people.member_access import refuse_member_edits_beyond_phot
 from churchit.church_people.merge import (
 	adopt_contact_rows,
 	adopt_rows,
+	drop_deleted_document,
 	fill_blanks,
 	refuse_all_but_a_merge,
 	take_import_id,
 	typed_fields,
 )
-from churchit.church_scope import is_multi_church
+from churchit.church_scope import has_church_access, is_multi_church
 from churchit.contacts import validate_contact_tables
 
 
@@ -34,6 +35,8 @@ class Family(Document):
 		validate_contact_tables(self)
 		if self.primary_contact and self.primary_contact not in self.member_names:
 			frappe.throw(_("The Primary Contact must be one of the Family Members."))
+		self.follow_primary_contacts_church()
+		self.refuse_another_churches_primary_contact()
 		previous = self.replaced_primary_contact
 		if previous:
 			self.relabel_members(previous)
@@ -45,7 +48,6 @@ class Family(Document):
 			old_family_name = self.family_name
 			self.rename_after_primary_contact()
 			self.warn_about_new_primary_contact(old_family_name)
-		self.follow_primary_contacts_church()
 
 	@property
 	def member_names(self):
@@ -177,6 +179,24 @@ class Family(Document):
 		if church:
 			self.church = church
 
+	def refuse_another_churches_primary_contact(self):
+		"""Only the primary contact's own church makes them one, because the family moves to their church.
+
+		Frappe checks the right to the family before `follow_primary_contacts_church` sets its church, so it
+		never sees where the family goes. Writes with ignore_permissions, such as a person joining their
+		family's roster, are the app's own and are not refused.
+		"""
+		if self.flags.ignore_permissions or not self.has_value_changed("primary_contact"):
+			return
+		if not has_church_access(frappe.session.user, self.church):
+			name = frappe.db.get_value("Person", self.primary_contact, "full_name") or self.primary_contact
+			frappe.throw(
+				_(
+					"{0} belongs to another church, so only that church can make them the primary contact."
+				).format(frappe.bold(escape_html(name))),
+				frappe.PermissionError,
+			)
+
 	def before_rename(self, old, new, merge=False):
 		"""A family's ID changes only by a merge into another family."""
 		refuse_all_but_a_merge(self, frappe.get_doc("Family", new) if merge else None)
@@ -189,6 +209,7 @@ class Family(Document):
 		"""
 		if not merge:
 			return
+		drop_deleted_document(self.doctype, old)
 		removed = frappe.get_doc("Family", old)
 		same_contact = not self.primary_contact or self.primary_contact == removed.primary_contact
 		moved = adopt_rows(self, removed, "members", lambda row: row.member)

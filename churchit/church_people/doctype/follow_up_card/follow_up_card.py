@@ -7,7 +7,8 @@ from frappe.desk.form import assign_to
 from frappe.model.document import Document
 from frappe.utils import add_days, cint, escape_html, today
 
-from churchit.church_people.followup import CARD, CLOSED, OPEN, STEP, WORKFLOW, first_step
+from churchit.church_people.followup import CARD, CLOSED, OPEN, STEP, WORKFLOW, first_step, get_open_card
+from churchit.church_scope import CHURCH_FIELD, has_church_access
 from churchit.contacts import get_primary_email, get_primary_phone
 
 
@@ -34,6 +35,8 @@ class FollowupCard(Document):
 		)
 
 	def validate(self):
+		self.refuse_another_churches_person()
+		self.refuse_another_churches_workflow()
 		self.step = self.step or first_step(self.workflow)
 		if self.status == OPEN or self.has_value_changed("step"):
 			self.validate_step()
@@ -67,12 +70,44 @@ class FollowupCard(Document):
 				_("{0} is not a step of {1}.").format(frappe.bold(self.step), frappe.bold(self.workflow))
 			)
 
+	def refuse_another_churches_person(self):
+		"""Only the person's own church puts them on a card.
+
+		Frappe checks the create right before `church` is fetched, so it never sees
+		whose person this is, and the card's form shows the person's phone and email.
+		Writes with ignore_permissions, such as add_card from a job, are the app's own
+		and are not refused.
+		"""
+		if self.flags.ignore_permissions or not self.has_value_changed("person"):
+			return
+		church = frappe.db.get_value("Person", self.person, CHURCH_FIELD)
+		if not has_church_access(frappe.session.user, church):
+			frappe.throw(
+				_("{0} belongs to another church, so only that church can open a card for them.").format(
+					self.person_name or self.person
+				),
+				frappe.PermissionError,
+			)
+
+	def refuse_another_churches_workflow(self):
+		"""Only the workflow's own church opens cards on it.
+
+		The card takes its church from the workflow after Frappe checked the create right, and the
+		workflow's step users then read the person's phone and email on the card. Jobs open cards with
+		ignore_permissions, so a workflow may still follow up a person who visited from another church.
+		"""
+		if self.flags.ignore_permissions or not self.has_value_changed("workflow"):
+			return
+		if not has_church_access(frappe.session.user, self.church):
+			frappe.throw(
+				_("{0} belongs to another church, so only that church can open cards on it.").format(
+					self.workflow
+				),
+				frappe.PermissionError,
+			)
+
 	def refuse_second_open_card(self):
-		# church-scope: one person's cards on one workflow, which belongs to one church
-		other = frappe.db.exists(
-			CARD,
-			{"person": self.person, "workflow": self.workflow, "status": OPEN, "name": ("!=", self.name)},
-		)
+		other = get_open_card(self.person, self.workflow, exclude=self.name)
 		if other:
 			frappe.throw(
 				_("{0} already has an open card on {1}: {2}.").format(

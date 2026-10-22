@@ -14,24 +14,30 @@ from churchit.church_people import events, followup, matching, membership, summa
 from churchit.church_people.derived import BIRTH, DEATH, sync_derived, years_since
 from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED, WIDOWED, WITH_SPOUSE
-from churchit.church_people.member_access import refuse_member_edits_beyond_personal_details
+from churchit.church_people.member_access import (
+	is_portal_member,
+	refuse_member_edits_beyond_personal_details,
+)
 from churchit.church_people.membership import INACTIVE, MEMBER
 from churchit.church_people.merge import (
 	adopt_contact_rows,
 	adopt_rows,
+	drop_deleted_document,
 	fill_blanks,
 	refuse_all_but_a_merge,
 	remove_repeated_roster_rows,
 	take_import_id,
 	typed_fields,
 )
-from churchit.church_scope import is_multi_church
+from churchit.church_scope import has_church_access, is_multi_church
 from churchit.contacts import primary_email, validate_contact_tables
 
 # How a Person was first created; Desk is the field's default.
 SOURCE_IMPORT = "Import"
 SOURCE_CHECK_IN = "Check-In"
 UNKNOWN_GENDER = "Unknown"
+# The giving (2) and care (3) summaries, which count one church's records.
+CHURCH_ONLY_PERMLEVELS = (2, 3)
 
 
 def life_event_key(row) -> tuple:
@@ -97,6 +103,17 @@ class Person(Document):
 			family.primary_contact = None
 		family.save(ignore_permissions=True)
 
+	def get_permlevel_access(self, permission_type="write"):
+		"""The user's permlevels, less giving and care when they cannot see this person's church.
+
+		Permlevels follow roles, not churches, and every church reads the shared directory, so another
+		church's finance or care role would otherwise read this church's figures.
+		"""
+		levels = super().get_permlevel_access(permission_type)
+		if has_church_access(frappe.session.user, self.get("church")):
+			return levels
+		return [level for level in levels if level not in CHURCH_ONLY_PERMLEVELS]
+
 	@property
 	def is_primary_contact(self):
 		return (
@@ -107,12 +124,18 @@ class Person(Document):
 		"""Keep the linked user's Church permission pointed at this person's church.
 
 		Only a change of user or church re-points it, so an administrator's
-		edits to the permission survive unrelated saves.
+		edits to the permission survive unrelated saves. A staff login that a
+		user links by hand keeps its churches, which an administrator sets: the
+		link would otherwise change them silently. A change of church still
+		moves them, and so do the app's own links (`ignore_permissions`).
 		"""
 		if not is_multi_church() or not self.user or not self.church:
 			return
 		before = self.get_doc_before_save()
 		if before and before.user == self.user and before.church == self.church:
+			return
+		is_new_link = not before or before.user != self.user
+		if is_new_link and not self.flags.ignore_permissions and not is_portal_member(self.user):
 			return
 		church_access.set_user_church(self.user, self.church)
 
@@ -128,6 +151,7 @@ class Person(Document):
 			self.source = SOURCE_IMPORT
 
 	def before_save(self):
+		summaries.keep_stored_values(self)
 		# We set this here since virtual fields do not work with
 		#   View Settings -> Title Field as of 2025-08-26
 		self.full_name = f"{self.first_name}" + ((" " + self.last_name) if self.last_name else "")
@@ -230,6 +254,7 @@ class Person(Document):
 		"""
 		if not merge:
 			return
+		drop_deleted_document(self.doctype, old)
 		removed = frappe.get_doc("Person", old)
 		# One login and one calendar link name one person, and the calendar link is unique.
 		frappe.db.set_value("Person", old, {"user": None, "team_calendar_key": None}, update_modified=False)
@@ -262,12 +287,36 @@ class Person(Document):
 
 	def validate(self):
 		refuse_member_edits_beyond_personal_details(self)
+		self.refuse_linking_another_login()
 		# Normalise the emails / phones / addresses tables before anything else
 		# reads a primary value off them.
 		validate_contact_tables(self)
 
 		self.sync_spouse()
 		self.share_family_with_spouse()
+
+	def refuse_linking_another_login(self):
+		"""A login linked by hand must belong to no other person, and hold only churches the user can see.
+
+		Linking points a portal login's church at this person's, so another church's login would move here
+		and its owner would read this person. The app's own links (a sign-in, a merge, a login Invite to
+		Portal has just made) save with ignore_permissions and are not refused.
+		"""
+		if self.flags.ignore_permissions or not self.user or not self.has_value_changed("user"):
+			return
+		if frappe.db.exists("Person", {"user": self.user, "name": ("!=", self.name)}):
+			frappe.throw(
+				_("{0} is already the Portal User of another person.").format(frappe.bold(self.user)),
+				title=_("Not Linked"),
+			)
+		held = [permission.for_value for permission in church_access.user_church_permissions(self.user)]
+		if not all(has_church_access(frappe.session.user, church) for church in held):
+			frappe.throw(
+				_(
+					"{0} belongs to a church you cannot see, so only that church can link it to a person."
+				).format(frappe.bold(self.user)),
+				frappe.PermissionError,
+			)
 
 	def sync_spouse(self):
 		"""Mirror a marriage onto the spouse, and end it on both people when this person is no longer married.
@@ -361,8 +410,10 @@ class Person(Document):
 		if not frappe.flags.in_import:
 			frappe.msgprint(f"Spouses have been unlinked:<br>{self.full_name} 💔 {spouse.full_name}")
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def new_family_from_person(self):
+		# The saved record, not the copy the browser sent, which the save below checks.
+		frappe.get_doc(self.doctype, self.name).check_permission("write")
 		# Check if a family with this person's name already exists in the person's own church
 		filters = {"family_name": self.household_name}
 		if is_multi_church():
@@ -397,8 +448,10 @@ class Person(Document):
 		person.check_permission("write")
 		newsletter.resubscribe(person)
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def invite_to_portal(self):
+		self.reload()  # the saved record, not the copy the browser sent
+		self.check_permission("write")
 		# Block invitation if outgoing email is not configured
 		if not frappe.db.exists("Email Account", {"enable_outgoing": 1, "default_outgoing": 1}):
 			frappe.throw(
@@ -442,9 +495,9 @@ class Person(Document):
 				indicator="green",
 			)
 		else:
-			# User already exists, just update the user field
+			# Linking an existing login is the user's own edit, checked as on the Portal User field.
 			self.user = user
-			self.save(ignore_permissions=True)
+			self.save()
 			frappe.msgprint(
 				f"⚠️ Portal user <a href='/app/user/{user}'>{user}</a> already exists. User is now linked to this person."
 			)

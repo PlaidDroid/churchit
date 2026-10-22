@@ -11,6 +11,7 @@ from frappe.utils import sbool
 from churchit.church_scope import (
 	CHURCH_FIELD,
 	EXPAND_FILTER_DEFAULT,
+	allowed_churches,
 	has_church_access,
 	is_multi_church,
 	is_scoped,
@@ -25,6 +26,18 @@ def user_church_permissions(user):
 		filters={"user": user, "allow": "Church"},
 		fields=["name", "for_value", "hide_descendants"],
 	)
+
+
+def has_every_church(user: str) -> bool:
+	"""True when *user* reaches every church: unrestricted, or holding each church that has no parent.
+
+	Holding the main church reaches its branches even while they are hidden, because the
+	user may include them at will.
+	"""
+	if allowed_churches(user) is None:
+		return True
+	held = {permission.for_value for permission in user_church_permissions(user)}
+	return set(frappe.get_all("Church", filters={"parent_church": ("is", "not set")}, pluck="name")) <= held
 
 
 def set_user_church(user, church):
@@ -126,14 +139,14 @@ def has_branches(church):
 	return (right or 0) - (left or 0) > 1
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_church_filter_expansion(expand: bool):
 	"""Remember whether a church picked in a report filter should bring its branches along."""
 	frappe.defaults.set_user_default(EXPAND_FILTER_DEFAULT, "1" if sbool(expand) else "0")
 	return bool(sbool(expand))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_include_branches(include: bool):
 	"""Flip branch visibility on the caller's own Church permission."""
 	user = frappe.session.user

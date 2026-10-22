@@ -141,7 +141,7 @@ def refuse_readers_without_the_report():
 		frappe.throw(_("You cannot open the Church Directory."), frappe.PermissionError)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def get_directory_html(
 	members_only: bool = 0,
 	hide_non_active: bool = 0,

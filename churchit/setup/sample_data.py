@@ -113,7 +113,7 @@ def setup_wizard_complete(args):
 		create_sample_data()
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create():
 	"""Whitelisted method to create sample data from the browser console.
 
@@ -124,7 +124,7 @@ def create():
 	frappe.msgprint(_("Sample data has been created."), indicator="green", alert=True)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def delete():
 	"""Whitelisted method to remove sample data.
 

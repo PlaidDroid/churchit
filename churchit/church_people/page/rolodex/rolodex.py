@@ -73,7 +73,7 @@ def get_directory():
 	}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def save_settings(saved: str | list[str], view: str, filters_open: bool | str):
 	"""Keep the reader's saved cards and layout, on every device they sign in from."""
 	settings = {"saved": list(frappe.parse_json(saved)), "view": view, "filters_open": sbool(filters_open)}

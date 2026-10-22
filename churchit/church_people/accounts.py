@@ -44,8 +44,12 @@ def link_portal_user(login_manager=None):
 	frappe.db.savepoint("link_portal_user")
 	try:
 		find_or_add_person(user)
-	except (frappe.ValidationError, frappe.PermissionError):
-		frappe.db.rollback(save_point="link_portal_user")
+	except Exception as error:
+		if isinstance(error, frappe.QueryDeadlockError):
+			# The database has rolled back the whole transaction, and the savepoint with it.
+			frappe.db.rollback()
+		else:
+			frappe.db.rollback(save_point="link_portal_user")
 		frappe.log_error(_("Could not link the portal login {0} to a Person").format(user))
 
 

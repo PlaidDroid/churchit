@@ -2,9 +2,10 @@
 # and is licensed under MIT No Attribution (MIT-0).
 
 import frappe
+from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 
-from churchit.church_people.page.rolodex.rolodex import get_directory, save_settings
+from churchit.church_people.page.rolodex.rolodex import get_directory, get_settings, save_settings
 from churchit.tests.helpers import (
 	ensure,
 	ensure_root_church,
@@ -111,6 +112,22 @@ class TestRolodexSettings(FrappeTestCase):
 			get_directory()["settings"],
 			{"saved": ["_Test Saved Person"], "view": "households", "filters_open": False},
 		)
+
+	def test_a_get_request_saves_nothing(self):
+		"""Frappe checks the CSRF token only on POST, and the session cookie rides on a GET another site starts."""
+		before = get_settings()
+		frappe.local.request = frappe._dict(method="GET")
+		frappe.local.form_dict = frappe._dict(
+			saved=frappe.as_json(["_Test Get Person"]), view="households", filters_open="false"
+		)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				execute_cmd("churchit.church_people.page.rolodex.rolodex.save_settings")
+		finally:
+			del frappe.local.request
+			frappe.local.form_dict = frappe._dict()
+
+		self.assertEqual(get_settings(), before)
 
 
 class TestRolodexSingleChurch(FrappeTestCase):

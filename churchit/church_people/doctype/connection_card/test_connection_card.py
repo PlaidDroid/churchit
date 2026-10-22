@@ -323,6 +323,35 @@ class TestConnectionCardConsent(ConnectionCardTestCase):
 		)
 		self.assertFalse(frappe.db.exists("Communication Consent", {"person": card.person}))
 
+	def test_a_match_on_email_records_a_tick_only_for_what_the_person_holds(self):
+		known = make_person(
+			"_Test Card",
+			"Known Number",
+			emails=[{"email_address": "_test_card_known_number@example.com"}],
+			phones=[{"phone_number": "(555) 010-4483"}],
+		)
+
+		card = self.processed(
+			self.make_card(
+				last_name="Known Number",
+				email="_TEST_CARD_KNOWN_NUMBER@example.com",
+				phone="+1 555 010 9999",
+				email_consent=1,
+				sms_consent=1,
+			)
+		)
+
+		self.assertEqual(card.person, known.name)
+		self.assertEqual([row.channel for row in self.consents(known.name)], [EMAIL])
+
+	def test_a_number_on_the_persons_record_is_found_however_it_was_typed(self):
+		known = make_person("_Test Card", "Same Number", phones=[{"phone_number": "(555) 010-4484"}])
+
+		card = self.processed(self.make_card(last_name="Same Number", phone="555.010.4484", sms_consent=1))
+
+		self.assertEqual(card.person, known.name)
+		self.assertEqual([row.channel for row in self.consents(known.name)], [SMS])
+
 	def test_a_tick_never_overrides_a_withdrawal(self):
 		known = make_person("_Test Card", "Stopped", phones=[{"phone_number": "+1 555 010 4482"}])
 		record([known.name], SMS, WITHDRAWN)

@@ -412,11 +412,11 @@ override_doctype_dashboards = {"User": "churchit.church_people.doctype.person.pe
 # User Data Protection
 # --------------------
 
-# A member's data download includes their Person and the email rows holding their address. Their other
-# rows carry only the Person's ID, so a deletion request anonymizes the whole Person through doc_events.
+# A member's data download includes their Person. Their email rows are left out: Frappe matches a row by the
+# address alone, so it would download, and a deletion would redact, a spouse's or a family's row of a shared
+# address. A deletion request anonymizes the whole Person through doc_events instead.
 user_data_fields = [
 	{"doctype": "Person", "filter_by": "user"},
-	{"doctype": "Email Address", "filter_by": "email_address"},
 ]
 
 # Authentication and authorization

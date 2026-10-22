@@ -2,6 +2,7 @@
 # and is licensed under MIT No Attribution (MIT-0).
 
 import frappe
+from frappe.handler import execute_cmd
 
 from churchit.church_people.doctype.group.group import add_people
 from churchit.tests.helpers import RollbackEachTest, ensure_user, make_person
@@ -48,6 +49,20 @@ class TestGroup(RollbackEachTest):
 		self.assertEqual(
 			sorted(row.person for row in group.members), sorted([self.member.name, self.outsider.name])
 		)
+
+	def test_add_people_refuses_a_get_request(self):
+		"""Frappe checks the CSRF token only on POST, and the session cookie rides on a GET another site starts."""
+		group = self._make_group("_Test Get Group")
+		frappe.local.request = frappe._dict(method="GET")
+		frappe.local.form_dict = frappe._dict(group=group.name, people=frappe.as_json([self.outsider.name]))
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				execute_cmd("churchit.church_people.doctype.group.group.add_people")
+		finally:
+			del frappe.local.request
+			frappe.local.form_dict = frappe._dict()
+
+		self.assertEqual(frappe.get_doc("Group", group.name).members, [])
 
 	def test_add_people_needs_the_right_to_edit_the_group(self):
 		group = self._make_group("_Test Locked Group")

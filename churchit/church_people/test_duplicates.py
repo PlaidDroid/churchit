@@ -67,7 +67,15 @@ class TestDuplicateScan(RollbackEachTest):
 		other_jesse = make_matchable("Jesse", birth_date="1963-04-05")
 		duplicates.scan()
 
+		(pair,) = get_pairs(jesse)
+
 		with dropping_pairs_on_delete():
 			frappe.delete_doc("Person", other_jesse)
 
 		self.assertEqual(get_pairs(jesse), [])
+		# A pair in Deleted Documents would keep both names after the people are deleted or anonymized.
+		self.assertFalse(
+			frappe.db.exists(
+				"Deleted Document", {"deleted_doctype": "Possible Duplicate", "deleted_name": pair.name}
+			)
+		)

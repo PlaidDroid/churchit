@@ -166,3 +166,29 @@ class TestPortalAccounts(RollbackEachTest):
 			self.sign_in()
 		self.assertIsNone(self.person_of())
 		self.assertTrue(frappe.db.exists("Error Log", {"method": ("like", f"%{MEMBER}%")}))
+
+	def test_any_failure_undoes_the_half_made_link_and_leaves_the_sign_in_alone(self):
+		holder = self.holder("Half Linked", self.branch_a).name
+
+		def link_then_clash(user):
+			frappe.db.set_value("Person", holder, "user", user)
+			raise frappe.DuplicateEntryError
+
+		with mock.patch("churchit.church_people.accounts.find_or_add_person", side_effect=link_then_clash):
+			self.sign_in()
+
+		self.assertIsNone(self.person_of())
+		self.assertTrue(frappe.db.exists("Error Log", {"method": ("like", f"%{MEMBER}%")}))
+
+	def test_a_deadlock_rolls_back_the_transaction_the_database_already_undid(self):
+		"""A deadlock takes the savepoint with it, so rolling back to it would fail the sign-in."""
+		with (
+			mock.patch(
+				"churchit.church_people.accounts.find_or_add_person", side_effect=frappe.QueryDeadlockError
+			),
+			mock.patch.object(frappe.db, "rollback") as rollback,
+		):
+			self.sign_in()
+
+		rollback.assert_called_once_with()
+		self.assertTrue(frappe.db.exists("Error Log", {"method": ("like", f"%{MEMBER}%")}))

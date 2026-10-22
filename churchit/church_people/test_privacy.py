@@ -10,6 +10,10 @@ from frappe.website.doctype.personal_data_download_request.personal_data_downloa
 	get_user_data,
 )
 
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
+	create_communication_purposes,
+)
+from churchit.church_communications.sending import Delivery, Recipient, get_people_sent
 from churchit.church_foundations.church_access import set_user_church
 from churchit.church_people.privacy import ANONYMIZED, anonymize_person, remove_due_personal_data
 from churchit.church_people.test_merge import email, life_event, make_family, phone
@@ -99,6 +103,97 @@ class TestAnonymizePerson(RollbackEachTest):
 			"Anonymized asked for a visit; write to .",
 		)
 
+	def test_the_login_is_disabled_so_signing_in_adds_no_one(self):
+		user = ensure_user("_test_hidden@example.com", "Hidden")
+		person = self.make_member(user=user)
+		frappe.set_user(ensure_user("_test_privacy_manager@example.com", "Manager", ["Church Manager"]))
+
+		anonymize_person(person.name)
+
+		self.assertEqual(frappe.db.get_value("User", user, "enabled"), 0)
+
+	def test_messages_to_the_person_lose_their_address_number_and_text_and_still_count(self):
+		person = self.make_member()
+		create_communication_purposes()
+		email = frappe.get_doc(
+			{"doctype": "Church Email", "subject": "_Test Privacy", "message": "Dear {{ first_name }}"}
+		).insert()
+		text = frappe.get_doc(
+			{"doctype": "Church Email", "channel": "Text Message", "text_message": "Hi {{ first_name }}"}
+		).insert()
+		Delivery(email).record(
+			Recipient(person.name, "_test.hidden@example.com"),
+			frappe._dict(subject="_Test Privacy", message="Dear _Test Hidden"),
+		)
+		Delivery(text).record(Recipient(person.name, "555-010-0099"), frappe._dict(text="Hi _Test Hidden"))
+
+		anonymize_person(person.name)
+
+		self.assertEqual(
+			frappe.get_all(
+				"Communication",
+				filters={"reference_doctype": "Person", "reference_name": person.name},
+				fields=["recipients", "phone_no", "content"],
+			),
+			[{"recipients": None, "phone_no": None, "content": ""}] * 2,
+		)
+		self.assertEqual(
+			(get_people_sent(email.name), get_people_sent(text.name)), ({person.name}, {person.name})
+		)
+
+	def test_no_copy_of_a_comment_or_message_is_left_for_the_list_view(self):
+		person = self.make_member()
+		person.add_comment("Comment", "_Test Hidden asked us to pray about the peanuts.")
+		frappe.get_doc(
+			{
+				"doctype": "Communication",
+				"subject": "_Test Privacy",
+				"content": "Dear _Test Hidden, how are the peanuts?",
+				"reference_doctype": "Person",
+				"reference_name": person.name,
+			}
+		).insert(ignore_permissions=True)
+		self.assertIn("peanuts", frappe.db.get_value("Person", person.name, "_comments"))
+
+		anonymize_person(person.name)
+
+		self.assertEqual(json.loads(frappe.db.get_value("Person", person.name, "_comments")), [])
+
+	def test_attachments_of_the_person_and_of_records_about_them_are_deleted(self):
+		person = self.make_member()
+		other = make_person("_Test Cared For", "Member")
+		check = frappe.get_doc(
+			{
+				"doctype": "Background Check",
+				"person": person.name,
+				"check_type": ensure("Background Check Type", {"type": "_Test Check"}),
+				"status": "Requested",
+				"requested_on": "2026-01-01",
+			}
+		).insert(ignore_permissions=True)
+		# The person is only the caregiver here; the request and its files are about someone else.
+		care = frappe.get_doc(
+			{
+				"doctype": "Care Request",
+				"person": other.name,
+				"caregiver": person.name,
+				"category": ensure("Care Request Type", {"type": "_Test Care"}),
+				"description": "Meals for a week.",
+			}
+		).insert(ignore_permissions=True)
+		files = {
+			"person": attach("Person", person.name, "letter"),
+			"report": attach("Background Check", check.name, "report", field="report"),
+			"care": attach("Care Request", care.name, "meal_plan"),
+		}
+
+		anonymize_person(person.name)
+
+		self.assertEqual(
+			{key: bool(frappe.db.exists("File", file)) for key, file in files.items()},
+			{"person": False, "report": False, "care": True},
+		)
+
 	def test_the_person_leaves_their_family_and_spouse(self):
 		person = self.make_member()
 		wife = make_person(
@@ -128,6 +223,14 @@ class TestAnonymizePerson(RollbackEachTest):
 		family.reload()
 		self.assertEqual((family.family_name, family.emails, family.members), (ANONYMIZED, [], []))
 
+	def test_a_family_that_keeps_members_loses_the_persons_first_name(self):
+		person = self.make_member()
+		family = make_family("Member - _Test Hidden", person, make_person("_Test Wife", "Member"))
+
+		anonymize_person(person.name)
+
+		self.assertEqual(frappe.db.get_value("Family", family.name, "family_name"), "Member")
+
 	def test_only_a_manager_may_anonymize(self):
 		person = self.make_member()
 		frappe.set_user(ensure_user("_test_privacy_editor@example.com", "Editor", ["Church People Editor"]))
@@ -151,25 +254,91 @@ class TestPersonalDataRequests(RollbackEachTest):
 		self.user = ensure_user("_test_gdpr@example.com", "_Test Gdpr Member")
 		self.person = make_person("_Test Gdpr", "Member", user=self.user, emails=[email(self.user)])
 
-	def test_a_data_download_holds_the_person_and_their_email_rows(self):
-		data = json.loads(get_user_data(self.user))
-
-		self.assertEqual([row["name"] for row in data["Person"]], [self.person.name])
-		self.assertEqual([row["parent"] for row in data["Email Address"]], [self.person.name])
-
 	@patch("frappe.sendmail")
-	def test_a_deletion_request_anonymizes_the_person(self, _sendmail):
+	def delete_account(self, _sendmail):
 		request = frappe.get_doc({"doctype": "Personal Data Deletion Request", "email": self.user})
 		request.insert(ignore_permissions=True)
 		request.status = "Pending Approval"
 		request.save(ignore_permissions=True)
-
 		request.trigger_data_deletion()
+
+	def make_spouse_and_family_sharing_the_address(self):
+		"""A spouse holding the member's address as Shared From, and a family holding it too."""
+		spouse = make_person(
+			"_Test Gdpr Spouse",
+			"Member",
+			emails=[email(self.user, shared_from_type="Person", shared_from=self.person.name)],
+		)
+		return spouse, make_family("_Test Gdpr Household", spouse, emails=[email(self.user)])
+
+	def test_a_data_download_holds_the_person_and_no_one_elses_rows(self):
+		spouse, family = self.make_spouse_and_family_sharing_the_address()
+
+		data = json.loads(get_user_data(self.user))
+
+		self.assertEqual([row["name"] for row in data["Person"]], [self.person.name])
+		self.assertEqual(
+			{row["parent"] for row in data.get("Email Address", [])} & {spouse.name, family.name}, set()
+		)
+
+	def test_a_deletion_request_anonymizes_the_person(self):
+		self.delete_account()
 
 		self.person.reload()
 		self.assertEqual(
 			(self.person.first_name, self.person.user, self.person.emails), (ANONYMIZED, None, [])
 		)
+
+	def test_a_deletion_request_leaves_other_peoples_rows_of_the_address(self):
+		spouse, family = self.make_spouse_and_family_sharing_the_address()
+
+		self.delete_account()
+
+		for doctype, name in (("Person", spouse.name), ("Family", family.name)):
+			self.assertEqual(
+				[row.email_address for row in frappe.get_doc(doctype, name).emails], [self.user], doctype
+			)
+
+	def test_a_deletion_request_clears_the_address_from_giving_records(self):
+		fund = ensure("Fund", {"fund": "_Test Privacy Fund"})
+		collection = frappe.get_doc(
+			{
+				"doctype": "Collection",
+				"date": today(),
+				"expected_total": 10,
+				"donations": [
+					{
+						"person": self.person.name,
+						"fund": fund,
+						"payment_type": ensure("Payment Type", {"type": "_Test Privacy Cash"}),
+						"amount": 10,
+					}
+				],
+			}
+		).insert(ignore_permissions=True)
+		statement = frappe.get_doc(
+			{
+				"doctype": "Giving Statement",
+				"person": self.person.name,
+				"from_date": "2029-01-01",
+				"to_date": "2029-12-31",
+			}
+		).insert(ignore_permissions=True)
+		gift = frappe.get_doc(
+			{"doctype": "Online Donation", "amount": 25, "fund": fund, "person": self.person.name}
+		).insert(ignore_permissions=True)
+		copies = (
+			("Donation", collection.donations[0].name, "person_email"),
+			("Giving Statement", statement.name, "email"),
+			("Online Donation", gift.name, "email"),
+		)
+		for doctype, name, fieldname in copies:
+			frappe.db.set_value(doctype, name, fieldname, self.user)
+
+		self.delete_account()
+
+		for doctype, name, fieldname in copies:
+			self.assertFalse(frappe.db.get_value(doctype, name, fieldname), doctype)
 
 
 class TestRemoveDuePersonalData(RollbackEachTest):
@@ -226,6 +395,23 @@ class TestRemoveDuePersonalData(RollbackEachTest):
 		self.assertEqual(rows.get(self.due), getdate(today()))
 		self.assertEqual(rows.get(self.not_yet), getdate(add_days(today(), 1)))
 		self.assertNotIn(self.deceased, rows)
+
+
+def attach(doctype, name, title, field=None):
+	"""A File attached to the record, kept at a web address so nothing is written to disk."""
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_url": f"https://example.com/_test_{title}.pdf",
+				"attached_to_doctype": doctype,
+				"attached_to_name": name,
+				"attached_to_field": field,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def due_rows(filters):

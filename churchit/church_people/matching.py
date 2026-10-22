@@ -451,7 +451,9 @@ def resolve_merged(person: str) -> None:
 			continue
 		key = tuple(sorted((pair.person, pair.other_person)))
 		if key in seen:
-			frappe.delete_doc(POSSIBLE_DUPLICATE, pair.name, ignore_permissions=True, force=True)
+			frappe.delete_doc(
+				POSSIBLE_DUPLICATE, pair.name, ignore_permissions=True, force=True, delete_permanently=True
+			)
 		seen.add(key)
 
 

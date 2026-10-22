@@ -159,6 +159,35 @@ class TestDirectoryPage(RollbackEachTest):
 		for kept in (MARY_EMAIL, ROBERT_PHONE, "_Test Hidden", "_Test Late", "_Test Stranger"):
 			self.assertNotIn(kept, html)
 
+	def view_as(self, key, **values):
+		"""Sign in as a new user whose Person in the member's church has *values*."""
+		frappe.set_user("Administrator")
+		user = ensure_user(f"_test_directory_{key}@example.com", "_Test Viewer")
+		church = frappe.db.get_value("Person", {"user": self.user}, "church")
+		make_sharer("_Test Viewer", key.title(), church=church, user=user, **values)
+		frappe.set_user(user)
+
+	def test_a_visitor_a_contact_or_someone_inactive_sees_no_one(self):
+		"""Every Website User gets a Visitor Person on first sign-in, so signing up alone must not open the directory."""
+		ensure("Membership Type", {"type": "Contact"})
+		for key, values in (
+			("visitor", {"membership": "Visitor"}),
+			("contact", {"membership": "Contact"}),
+			("inactive", {"membership_status": "Inactive"}),
+		):
+			self.view_as(key, **values)
+
+			self.assertEqual(page_context().entries, [], key)
+			html = self.serve()
+			self.assertIn("Only members of the church can see the member directory", html, key)
+			for listed in ("_Test Johnson", "_Test Thompson", ROBERT_EMAIL):
+				self.assertNotIn(listed, html, key)
+
+	def test_a_member_who_hides_from_the_directory_still_sees_it(self):
+		self.view_as("hider", hide_from_directory=1)
+
+		self.assertIn(JOHNSONS, self.entries())
+
 	def test_an_account_with_no_person_sees_a_note(self):
 		frappe.set_user(ensure_user("_test_directory_nobody@example.com", "Nobody"))
 

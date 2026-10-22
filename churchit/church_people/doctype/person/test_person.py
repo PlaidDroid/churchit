@@ -2,12 +2,16 @@
 # and is licensed under MIT No Attribution (MIT-0).
 
 import frappe
+from frappe.api.v1 import read_doc
+from frappe.client import get as client_get
 from frappe.desk.form.load import getdoc
 from frappe.desk.search import search_link
+from frappe.handler import run_doc_method
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_years, getdate, nowdate
 
 from churchit.church_communications.newsletter import email_church, has_unsubscribed, set_subscribed
+from churchit.church_foundations.church_access import set_user_church, user_church_permissions
 from churchit.church_people.derived import refresh_daily
 from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
 from churchit.church_people.doctype.person.person import SOURCE_IMPORT
@@ -18,6 +22,7 @@ from churchit.tests.helpers import (
 	make_person,
 	make_primary_contact,
 	make_two_churches,
+	set_private_people,
 )
 
 
@@ -26,6 +31,27 @@ def _ensure(doctype, filters, values):
 	if name:
 		return name
 	return frappe.get_doc({"doctype": doctype, **values}).insert(ignore_permissions=True).name
+
+
+def without_church(user):
+	"""*user* with no Church permission, which reaches every church."""
+	frappe.db.delete("User Permission", {"user": user, "allow": "Church"})
+	return user
+
+
+def ensure_outgoing_email_account():
+	return _ensure(
+		"Email Account",
+		{"enable_outgoing": 1, "default_outgoing": 1},
+		{
+			"email_account_name": "_Test Outgoing",
+			"email_id": "_test_outgoing@example.com",
+			"service": "GMail",
+			"enable_outgoing": 1,
+			"default_outgoing": 1,
+			"no_smtp_authentication": 1,
+		},
+	)
 
 
 class TestPerson(FrappeTestCase):
@@ -328,18 +354,7 @@ class TestPerson(FrappeTestCase):
 
 	def test_invite_to_portal_requires_an_email_address(self):
 		person = self._make_person(first_name="Unreachable")
-		_ensure(
-			"Email Account",
-			{"enable_outgoing": 1, "default_outgoing": 1},
-			{
-				"email_account_name": "_Test Outgoing",
-				"email_id": "_test_outgoing@example.com",
-				"service": "GMail",
-				"enable_outgoing": 1,
-				"default_outgoing": 1,
-				"no_smtp_authentication": 1,
-			},
-		)
+		ensure_outgoing_email_account()
 		with self.assertRaises(frappe.ValidationError):
 			person.invite_to_portal()
 
@@ -710,6 +725,162 @@ class TestPersonDerivedFields(FrappeTestCase):
 		person.save()
 
 		self.assertEqual(person.life_stage, "Child")
+
+
+class TestPersonAcrossChurches(RollbackEachTest):
+	"""Every church reads the shared directory; only a person's own church acts on them or reads their figures."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		set_private_people(False)
+		cls.addClassCleanup(frappe.clear_cache)
+		ensure_outgoing_email_account()
+		cls.staff = {}
+		for church, key in ((cls.branch_a, "a"), (cls.branch_b, "b")):
+			cls.staff[key] = ensure_user(
+				f"_test_across_staff_{key}@example.com",
+				f"Staff {key}",
+				roles=("Church Staff", "Church People Editor", "Church Finance", "Church Pastoral Care"),
+			)
+			set_user_church(cls.staff[key], church)
+
+	def setUp(self):
+		super().setUp()
+		frappe.local.request = frappe._dict(method="POST")
+		self.addCleanup(delattr, frappe.local, "request")
+
+	def person_in_a(self, email):
+		return make_person(
+			"_Test Across",
+			"Churches",
+			church=self.branch_a,
+			emails=[{"email_address": email, "is_primary": 1}],
+		).name
+
+	def invite_as(self, user, person):
+		frappe.set_user(user)
+		try:
+			run_doc_method("invite_to_portal", dt="Person", dn=person)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_another_churchs_staff_cannot_invite_a_person_to_the_portal(self):
+		email = "_test_across_invitee@example.com"
+		person = self.person_in_a(email)
+
+		with self.assertRaises(frappe.PermissionError):
+			self.invite_as(self.staff["b"], person)
+
+		self.assertFalse(frappe.db.exists("User", {"email": email}))
+		self.assertIsNone(frappe.db.get_value("Person", person, "user"))
+
+	def link_as(self, user, person, login):
+		"""Set *login* as *person*'s Portal User as *user*, the way the form saves it."""
+		frappe.set_user(user)
+		try:
+			doc = frappe.get_doc("Person", person)
+			doc.user = login
+			doc.save()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_another_churchs_staff_cannot_link_an_existing_login(self):
+		user = ensure_user("_test_across_existing@example.com", "Existing")
+		set_user_church(user, self.branch_a)  # a login of branch A that no person has yet
+		person = self.person_in_a(user)
+
+		with self.assertRaises(frappe.PermissionError):
+			self.invite_as(self.staff["b"], person)
+		self.assertIsNone(frappe.db.get_value("Person", person, "user"))
+
+		self.invite_as(self.staff["a"], person)
+		self.assertEqual(frappe.db.get_value("Person", person, "user"), user)
+
+	def test_another_churchs_login_is_not_linked(self):
+		"""It would move the login to this church, and its owner would read this person."""
+		login = ensure_user("_test_across_member_b@example.com", "Member B")
+		set_user_church(login, self.branch_b)
+		person = self.person_in_a(login)
+
+		with self.assertRaises(frappe.PermissionError):
+			self.link_as(self.staff["a"], person, login)
+		with self.assertRaises(frappe.PermissionError):
+			self.invite_as(self.staff["a"], person)
+
+		self.assertIsNone(frappe.db.get_value("Person", person, "user"))
+		self.assertEqual([p.for_value for p in user_church_permissions(login)], [self.branch_b])
+
+	def test_a_login_another_person_has_is_not_linked_again(self):
+		login = ensure_user("_test_across_taken@example.com", "Taken")
+		set_user_church(login, self.branch_a)
+		make_person("_Test Across", "Owner", church=self.branch_a, user=login)
+		person = self.person_in_a("_test_across_second@example.com")
+
+		with self.assertRaises(frappe.ValidationError):
+			self.link_as(self.staff["a"], person, login)
+		self.assertIsNone(frappe.db.get_value("Person", person, "user"))
+
+	def test_linking_a_login_by_hand_scopes_a_member_but_never_staff(self):
+		"""A staff login's churches are an administrator's to set; a link would change them silently."""
+		overseer = without_church(
+			ensure_user("_test_across_overseer@example.com", "Overseer", roles=("Church Manager",))
+		)
+		member = without_church(ensure_user("_test_across_newcomer@example.com", "Newcomer"))
+
+		for login in (overseer, member):
+			self.link_as(self.staff["a"], self.person_in_a(login), login)
+
+		self.assertEqual(user_church_permissions(overseer), [])
+		self.assertEqual([p.for_value for p in user_church_permissions(member)], [self.branch_a])
+
+	def test_the_methods_that_change_a_person_refuse_a_get(self):
+		"""A GET carries no CSRF token, so another site could start one in the user's browser."""
+		person = self.person_in_a("_test_across_get@example.com")
+		frappe.local.request.method = "GET"
+		frappe.set_user(self.staff["a"])
+		try:
+			for method in ("new_family_from_person", "resubscribe_to_church_emails", "invite_to_portal"):
+				with self.assertRaises(frappe.PermissionError, msg=method):
+					run_doc_method(method, dt="Person", dn=person)
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertEqual(frappe.db.get_value("Person", person, ["family", "user"]), (None, None))
+
+	def test_another_churchs_staff_cannot_start_a_family_for_a_person(self):
+		"""The method saves with the caller's rights, so the person's church refuses it like a form save."""
+		person = self.person_in_a("_test_across_family@example.com")
+		frappe.set_user(self.staff["b"])
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				run_doc_method("new_family_from_person", dt="Person", dn=person)
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertIsNone(frappe.db.get_value("Person", person, "family"))
+
+	def test_giving_and_care_figures_show_only_to_the_persons_own_church(self):
+		person = self.person_in_a("_test_across_giver@example.com")
+		figures = {"last_gift_on": getdate(nowdate()), "open_care_requests": 2}
+		frappe.db.set_value("Person", person, figures, update_modified=False)
+		frappe.local.form_dict = frappe._dict()
+
+		for key, expected in (("a", figures), ("b", {"last_gift_on": None, "open_care_requests": 0})):
+			frappe.set_user(self.staff[key])
+			getdoc("Person", person)
+			reads = {
+				"form": frappe.response.docs[-1].as_dict(),
+				"frappe.client.get": client_get("Person", person),
+				"/api/resource": read_doc("Person", person).as_dict(),
+			}
+			for path, doc in reads.items():
+				self.assertEqual({fieldname: doc[fieldname] for fieldname in figures}, expected, (key, path))
+				self.assertEqual(doc["first_name"], "_Test Across", (key, path))
+			self.assertEqual(
+				frappe.get_doc("Person", person).has_permlevel_access_to("last_gift_on"), key == "a"
+			)
 
 
 class TestNewFamilyAcrossChurches(RollbackEachTest):

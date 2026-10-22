@@ -8,7 +8,8 @@ existing". Frappe points every Link and Dynamic Link at the kept record, runs th
 `before_rename` and the kept record's `after_rename`, and then deletes the removed record into Deleted Documents.
 The controllers decide what else moves: the kept record's values win, and its blank fields and missing child
 rows come from the removed one. `merge_people` and `merge_families` go the same way as the Rename dialog, so both
-follow one set of rules, and either the whole merge happens or none of it.
+follow one set of rules, and either the whole merge happens or none of it. Both also lose the removed record's
+copy in Deleted Documents (`drop_deleted_document`).
 """
 
 from collections.abc import Callable
@@ -48,6 +49,22 @@ def merge(doctype: str, keep: str, remove: str) -> str:
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)
 		raise
+
+
+def drop_deleted_document(doctype: str, name: str) -> None:
+	"""after_rename of a merge: delete the copy of the removed record *name* that the merge leaves in Deleted Documents.
+
+	The copy still holds the record's personal data, and restoring it would bring back a record nothing links to.
+	Frappe deletes the removed record after every hook has run, so the copy goes when the merge commits. Only a
+	copy made since this call goes: a merge undone before the commit leaves none, and older copies of a reused
+	name stay.
+	"""
+	since = frappe.utils.now()
+	frappe.db.before_commit.add(
+		lambda: frappe.db.delete(
+			"Deleted Document", {"deleted_doctype": doctype, "deleted_name": name, "creation": (">=", since)}
+		)
+	)
 
 
 def refuse_all_but_a_merge(doc: Document, kept: Document | None) -> None:

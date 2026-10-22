@@ -22,6 +22,10 @@
 		<p class="text-muted">
 			{{ _("Your account is not linked to a member record yet. Please contact the church office.") }}
 		</p>
+	{% elif not is_directory_member %}
+		<p class="text-muted">
+			{{ _("Only members of the church can see the member directory. If you are a member, please contact the church office.") }}
+		</p>
 	{% elif not entries %}
 		<p class="text-muted">{{ _("No one is listed in the member directory yet.") }}</p>
 	{% else %}

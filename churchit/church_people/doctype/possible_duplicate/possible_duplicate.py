@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from churchit.church_scope import has_church_access
 from churchit.contacts import ADDRESS_DOCTYPE, EMAIL_DOCTYPE, PHONE_DOCTYPE
 
 COMPARED_FIELDS = (
@@ -28,6 +29,24 @@ class PossibleDuplicate(Document):
 		if self.other_person < self.person:
 			self.person, self.other_person = self.other_person, self.person
 			self.person_name, self.other_person_name = self.other_person_name, self.person_name
+		self.refuse_moving_to_another_church()
+
+	def refuse_moving_to_another_church(self):
+		"""A pair whose people change stays in the user's churches, as stored and as saved.
+
+		Only matching opens pairs, with ignore_permissions. The people are read-only in the form only, and
+		the pair takes its church from `person` after Frappe checked the write right on the pair as the
+		caller sent it.
+		"""
+		if self.flags.ignore_permissions or not (
+			self.has_value_changed("person") or self.has_value_changed("other_person")
+		):
+			return
+		before = self.get_doc_before_save()
+		if before and not has_church_access(frappe.session.user, before.church):
+			frappe.throw(_("This pair belongs to another church."), frappe.PermissionError)
+		if not has_church_access(frappe.session.user, self.church):
+			frappe.throw(_("This pair would belong to another church."), frappe.PermissionError)
 
 	def onload(self):
 		self.set_onload("people", get_comparison([self.person, self.other_person]))

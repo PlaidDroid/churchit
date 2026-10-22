@@ -70,6 +70,25 @@ class TestCreateInactiveReasons(FrappeTestCase):
 		person.save()
 		self.assertEqual(person.inactive_reason, "_Test Went Overseas")
 
+	def test_a_stored_reason_frappe_refuses_as_a_name_is_tidied_on_the_person_too(self):
+		tidied = {
+			"_Test <Moved> away": "_Test Moved away",
+			"_Test Age > 90": "_Test Age 90",
+			"_Test Left\ntown\tquietly": "_Test Left town quietly",
+			"<>": None,
+			"   ": None,
+		}
+		people = {
+			text: self.store_reason(f"_Test Legacy Odd {i}", text).name for i, text in enumerate(tidied)
+		}
+
+		add_inactive_reasons.execute()
+
+		for text, reason in tidied.items():
+			self.assertEqual(frappe.db.get_value("Person", people[text], "inactive_reason"), reason, text)
+			# A save checks the link.
+			frappe.get_doc("Person", people[text]).save()
+
 	def test_running_again_and_differing_case_add_nothing(self):
 		self.store_reason("_Test Legacy Four", "_Test Left Town")
 		self.store_reason("_Test Legacy Five", "_test left town")

@@ -19,7 +19,7 @@ class Group(Document):
 		return bool(frappe.db.exists("Group Member", {"parent": self.name, "person": person}))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_people(group: str, people: str | list[str], group_role: str | None = None):
 	"""Add *people* to a Group, skipping anyone already in it."""
 	doc = frappe.get_doc("Group", group)

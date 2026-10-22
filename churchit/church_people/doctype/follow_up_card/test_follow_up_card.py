@@ -1,18 +1,24 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+import json
+
 import frappe
+from frappe.api.v1 import create_doc, update_doc
 from frappe.desk.doctype.kanban_board.kanban_board import update_order_for_single_card
 from frappe.desk.form.load import getdoc
 from frappe.desk.form.save import savedocs
 from frappe.email.doctype.notification.notification import get_context
+from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, getdate, today
 
 from churchit.church_people.followup import (
 	CARD,
 	CLOSED,
+	OPEN,
 	add_card,
 	close_repeated_cards,
+	get_open_card,
 	wake_snoozed_cards,
 )
 from churchit.tests.helpers import (
@@ -277,6 +283,15 @@ class TestFollowupCardChurches(RollbackEachTest):
 		make_person(key, "_Test Card", church=church, user=user)
 		return user
 
+	def tearDown(self):
+		frappe.local.form_dict = frappe._dict()
+		super().tearDown()
+
+	def rest(self, call, *args, **data):
+		"""Call a REST handler of `frappe.api.v1` with *data* as the request body."""
+		frappe.local.form_dict = frappe._dict(data=json.dumps(data))
+		return call(*args)
+
 	def test_a_card_belongs_to_its_workflows_church(self):
 		person = make_person("_Test Card", "Anyone", church=self.branch_a).name
 		in_a = add_card(person, self.workflow_a)
@@ -284,3 +299,93 @@ class TestFollowupCardChurches(RollbackEachTest):
 
 		self.assertEqual(frappe.db.get_value(CARD, in_b, "church"), self.branch_b)
 		assert_scoped(self, CARD, self.manager_a, in_a, in_b)
+
+	def test_a_card_for_another_churches_person_is_refused(self):
+		person_a = make_person("_Test Card", "Mine", church=self.branch_a).name
+		person_b = make_person("_Test Card", "Theirs", church=self.branch_b).name
+		frappe.set_user(self.manager_a)
+
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc({"doctype": CARD, "person": person_b, "workflow": self.workflow_a}).insert()
+		mine = (
+			frappe.get_doc({"doctype": CARD, "person": person_a, "workflow": self.workflow_a}).insert().name
+		)
+
+		with self.assertRaises(frappe.PermissionError):
+			self.rest(update_doc, CARD, mine, person=person_b)
+		self.assertEqual(frappe.db.get_value(CARD, mine, "person"), person_a)
+
+	def test_a_job_still_opens_a_card_for_another_churches_person(self):
+		person_b = make_person("_Test Card", "Visiting", church=self.branch_b).name
+		frappe.set_user(self.manager_a)
+
+		card = add_card(person_b, self.workflow_a)
+
+		self.assertEqual(frappe.db.get_value(CARD, card, "person"), person_b)
+
+	def test_a_card_on_another_churches_workflow_is_refused(self):
+		"""The card takes the workflow's church after Frappe checked the create right on the card as sent."""
+		person = make_person("_Test Card", "Own", church=self.branch_a).name
+		frappe.set_user(self.manager_a)
+
+		with self.assertRaises(frappe.PermissionError):
+			self.rest(create_doc, CARD, person=person, workflow=self.workflow_b)
+		mine = self.rest(create_doc, CARD, person=person, workflow=self.workflow_a).name
+		with self.assertRaises(frappe.PermissionError):
+			self.rest(update_doc, CARD, mine, workflow=self.workflow_b)
+
+		self.assertEqual(
+			frappe.get_all(CARD, filters={"person": person}, pluck="workflow"), [self.workflow_a]
+		)
+
+	def test_a_job_still_opens_a_card_on_another_churches_workflow(self):
+		person = make_person("_Test Card", "Checked In", church=self.branch_a).name
+		frappe.set_user(self.manager_a)
+
+		card = add_card(person, self.workflow_b)
+
+		self.assertEqual(frappe.db.get_value(CARD, card, "church"), self.branch_b)
+
+
+class TestOpenCardLookup(FrappeTestCase):
+	"""Two jobs opening a card for one person, each on its own connection."""
+
+	PERSON = "_Test Card Race"
+	CARD_NAME = "_Test Card Race Card"
+	WORKFLOW = "_Test Card Race Workflow"
+
+	def setUp(self):
+		# Plain rows, committed so the other connection sees them, and no hooks to queue jobs.
+		frappe.get_doc(
+			{"doctype": "Person", "name": self.PERSON, "first_name": "_Test Card", "last_name": "Race"}
+		).db_insert()
+		frappe.db.commit()
+		self.addCleanup(self.delete_rows)
+
+	def delete_rows(self):
+		frappe.db.delete(CARD, {"name": self.CARD_NAME})
+		frappe.db.delete("Person", {"name": self.PERSON})
+		frappe.db.commit()
+
+	def test_a_job_finds_the_card_another_job_committed_after_its_first_read(self):
+		"""The interleaving that made duplicates: one job reads, the other commits a card, then the first
+		locks the Person and looks for an open card."""
+		with self.secondary_connection():
+			frappe.db.get_value("Person", self.PERSON)
+
+		with self.primary_connection():
+			frappe.get_doc(
+				{
+					"doctype": CARD,
+					"name": self.CARD_NAME,
+					"person": self.PERSON,
+					"workflow": self.WORKFLOW,
+					"status": OPEN,
+				}
+			).db_insert()
+			frappe.db.commit()
+
+		with self.secondary_connection():
+			# A plain read still answers from the snapshot of the first read, as add_card's lookup did.
+			self.assertIsNone(frappe.db.get_value(CARD, self.CARD_NAME))
+			self.assertEqual(get_open_card(self.PERSON, self.WORKFLOW), self.CARD_NAME)

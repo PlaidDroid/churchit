@@ -34,7 +34,7 @@ def joinable_public_groups():
 	return [r for r in rows if r.name not in mine]
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def join_group(group: str | None):
 	"""Add the current session user's linked Person to a public group.
 	The group must have ``public = 1`` and ``show_in_portal = 1``; the

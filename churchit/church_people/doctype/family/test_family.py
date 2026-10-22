@@ -4,10 +4,17 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from churchit.church_foundations.church_access import set_user_church
 from churchit.church_people.household import ADULT, CHILD, OTHER_ADULT
 from churchit.church_people.merge import merge_families
 from churchit.church_people.test_household import born, label, make_household, set_adult_age
-from churchit.tests.helpers import RollbackEachTest, make_person, make_primary_contact
+from churchit.tests.helpers import (
+	RollbackEachTest,
+	ensure_user,
+	make_person,
+	make_primary_contact,
+	make_two_churches,
+)
 
 
 class TestFamily(FrappeTestCase):
@@ -283,3 +290,62 @@ class TestAuthorizedPickups(RollbackEachTest):
 
 		pickups = frappe.get_doc("Family", self.family).authorized_pickups
 		self.assertEqual([row.person for row in pickups], [self.neighbour, aunt])
+
+
+class TestFamilyAcrossChurches(RollbackEachTest):
+	"""A family takes its primary contact's church, so only that church makes someone the primary contact."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+		cls.editor_a = ensure_user(
+			"_test_family_editor_a@example.com", "Editor A", roles=("Church Staff", "Church People Editor")
+		)
+		set_user_church(cls.editor_a, cls.branch_a)
+
+	def test_another_churchs_person_is_not_made_the_primary_contact(self):
+		"""Frappe checks the family before it takes the contact's church, so the family moved to theirs."""
+		mine = make_person("_Test Across", "Mine", church=self.branch_a).name
+		theirs = make_person("_Test Across", "Theirs", church=self.branch_b).name
+		household = make_household_of(mine, theirs, primary_contact=mine)
+		new = frappe.get_doc(
+			{
+				"doctype": "Family",
+				"family_name": "_Test Across New",
+				"members": [{"member": theirs}],
+				"primary_contact": theirs,
+			}
+		)
+
+		frappe.set_user(self.editor_a)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				new.insert()
+			family = frappe.get_doc("Family", household)
+			family.primary_contact = theirs
+			with self.assertRaises(frappe.PermissionError):
+				family.save()
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertFalse(frappe.db.exists("Family", {"family_name": "_Test Across New"}))
+		self.assertEqual(
+			frappe.db.get_value("Family", household, ["primary_contact", "church"]), (mine, self.branch_a)
+		)
+
+
+def make_household_of(*people, **values):
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Family",
+				"family_name": "_Test Across Household",
+				"members": [{"member": person} for person in people],
+				**values,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)

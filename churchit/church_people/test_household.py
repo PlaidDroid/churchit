@@ -185,6 +185,22 @@ class TestHousehold(RollbackEachTest):
 		frappe.db.set_value("Person", daughter, "is_deceased", 1)
 		self.assertEqual(get_editable_children(father), [self.son])
 
+	def test_a_child_at_the_adult_age_is_no_longer_the_adults_to_edit(self):
+		"""A Child stays one on the roster until someone changes the role, so the age decides."""
+		ageless = make_person("Sam", "Smith", family=self.family).name
+		frappe.db.set_value(
+			"Family Members", {"parent": self.family, "member": ageless}, "household_role", CHILD
+		)
+		father = link_user(self.father, "_test_household_father@example.com")
+
+		frappe.db.set_single_value("People Settings", "adult_age", 11)
+		self.assertEqual(get_editable_children(father), [self.son, ageless])
+
+		frappe.db.set_single_value("People Settings", "adult_age", 10)
+		self.assertEqual(get_editable_children(father), [ageless])
+		self.assertFalse(can_edit(father, self.son))
+		self.assertTrue(can_edit(father, ageless))
+
 	def test_no_one_else_has_editable_children(self):
 		grandmother = link_user(self.grandmother, "_test_household_gran@example.com")
 		single = ensure_user("_test_household_single@example.com", "Single")

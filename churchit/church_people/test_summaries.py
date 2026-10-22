@@ -4,6 +4,7 @@
 from unittest import mock
 
 import frappe
+from frappe.desk.form.save import savedocs
 from frappe.utils import add_days, today
 
 from churchit.church_people import summaries
@@ -74,6 +75,25 @@ class TestSummaryEngine(RollbackEachTest):
 		function.delete(ignore_permissions=True)
 		summaries.refresh([self.person])
 		self.assertIsNone(frappe.db.get_value("Person", self.person, "last_attended_on"))
+
+	def test_a_form_opened_before_a_refresh_saves_without_undoing_it(self):
+		"""A refresh leaves `modified` alone, so Frappe takes the older form for the latest copy."""
+		opened = frappe.get_doc("Person", self.person).as_dict()
+		function = make_function("_Test Stale", start_date=add_days(today(), -1))
+		function.append("attendance", {"person": self.person, "attendance_type": "Checked-In"})
+		function.save(ignore_permissions=True)
+		group = frappe.get_doc(
+			{"doctype": "Group", "group_name": "_Test Stale Group", "members": [{"person": self.person}]}
+		).insert(ignore_permissions=True)
+		summaries.refresh([self.person])
+
+		opened.nickname = "_Test Stale Form"
+		savedocs(frappe.as_json(opened), "Save")
+
+		person = frappe.get_doc("Person", self.person)
+		self.assertEqual(person.nickname, "_Test Stale Form")
+		self.assertEqual((person.times_attended_90d, person.group_count), (1, 1))
+		self.assertEqual([row.group for row in person.groups], [group.name])
 
 
 class TestSummariesStayInTheirChurch(RollbackEachTest):

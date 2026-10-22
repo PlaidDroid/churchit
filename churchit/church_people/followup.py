@@ -59,9 +59,7 @@ def add_card(
 	document that started it. A person has at most one open card per workflow, so calling
 	this twice for the same reason opens one card.
 	"""
-	# Two jobs for the same person (a connection card and a check-in) wait here instead of both inserting.
-	frappe.db.get_value("Person", person, "name", for_update=True)
-	existing = frappe.db.get_value(CARD, {"person": person, "workflow": workflow, "status": OPEN})
+	existing = get_open_card(person, workflow)
 	if existing:
 		return existing
 
@@ -78,6 +76,22 @@ def add_card(
 	card.flags.assignee = assignee
 	card.insert(ignore_permissions=True)
 	return card.name
+
+
+def get_open_card(person: str, workflow: str, exclude: str = "") -> str | None:
+	"""The open card of *person* on *workflow* other than *exclude*, read after locking the Person row.
+
+	Two jobs for one person (a connection card and a check-in) wait on that lock instead of both
+	inserting. The card is read with a lock too: a plain read returns the snapshot the job took at its
+	first read, which is older than the lock and misses the card the other job has just committed.
+	"""
+	frappe.db.get_value("Person", person, "name", for_update=True)
+	# church-scope: one person's cards on one workflow, which belongs to one church
+	return frappe.db.get_value(
+		CARD,
+		{"person": person, "workflow": workflow, "status": OPEN, "name": ("!=", exclude)},
+		for_update=True,
+	)
 
 
 def start_cards(

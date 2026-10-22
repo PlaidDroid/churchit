@@ -29,24 +29,35 @@ def get_context(context):
 	context.show_sidebar = 1
 	context.title = _("Member Directory")
 	context.person = session_person()
-	context.entries = get_entries(session_church()) if context.person else []
+	context.is_directory_member = bool(context.person) and is_directory_member(context.person)
+	context.entries = get_entries(session_church()) if context.is_directory_member else []
+
+
+def directory_filters(**filters) -> dict:
+	"""Filters for the people the directory is for: active people who belong to the church.
+
+	A visitor who filled in a card, or a contact, never chose to be shown to every member, so they
+	are neither listed nor shown the list.
+	"""
+	return {"membership_status": ACTIVE, "membership": ("not in", (VISITOR, CONTACT)), **filters}
+
+
+def is_directory_member(person: str) -> bool:
+	"""True when the living *person* is one the directory is for, whether or not they hide from it."""
+	# church-scope: one person, the viewer's own, by name
+	return bool(
+		frappe.get_all(
+			"Person", filters=[directory_filters(name=person), living_people_filter()], limit=1, pluck="name"
+		)
+	)
 
 
 def get_entries(church: str | None) -> list[frappe._dict]:
-	"""The member directory of *church*: an entry for each family and for each person without one, by name.
-
-	Only active people who belong to the church are listed: a visitor who filled in a card, or a
-	contact, never chose to be shown to every member.
-	"""
+	"""The member directory of *church*: an entry for each family and for each person without one, by name."""
 	people = frappe.get_all(
 		"Person",
 		filters=[
-			church_filters(
-				church,
-				hide_from_directory=0,
-				membership_status=ACTIVE,
-				membership=("not in", (VISITOR, CONTACT)),
-			),
+			church_filters(church, **directory_filters(hide_from_directory=0)),
 			living_people_filter(),
 		],
 		fields=[

@@ -149,6 +149,26 @@ def store_table(person: str, df, names: list[str]) -> None:
 		row.db_insert()
 
 
+def keep_stored_values(person) -> None:
+	"""Person before_save: give a saved Person its stored summary fields back, and keep the save off their tables.
+
+	This module is their only writer. A refresh leaves `modified` alone, so a form opened before it passes
+	Frappe's check for a stale copy and would write the old figures and rows back.
+	"""
+	before = person.get_doc_before_save()
+	if not before:
+		return
+	meta = frappe.get_meta("Person")
+	tables = []
+	for df in (meta.get_field(fieldname) for area in areas() for fieldname in area.FIELDS):
+		if is_table(df):
+			person.set(df.fieldname, [row.as_dict() for row in before.get(df.fieldname)])
+			tables.append(df.options)
+		else:
+			person.set(df.fieldname, before.get(df.fieldname))
+	person.flags.ignore_children_type = tables
+
+
 def table_link_field(df) -> str:
 	"""The Link field of a Table MultiSelect's child doctype."""
 	return next(field.fieldname for field in frappe.get_meta(df.options).fields if field.fieldtype == "Link")

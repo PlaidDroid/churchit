@@ -96,11 +96,18 @@ def can_edit(user: str, person: str) -> bool:
 
 
 def get_editable_children(user: str) -> list[str]:
-	"""The living Children of the family *user*'s Person is an Adult of; none when they are not an Adult."""
+	"""The living Children of the family *user*'s Person is an Adult of; none when they are not an Adult.
+
+	A Child stays one on the roster until someone changes the role, so a Child known to be at or over People
+	Settings' adult age is left out. A Child of unknown age stays in.
+	"""
 	own = user and frappe.db.get_value("Person", {"user": user}, ["name", "family"], as_dict=True)
 	if not own or not own.family or role_of(own.name) != ADULT:
 		return []
-	return members(own.family, [CHILD])
+	children = members(own.family, [CHILD])
+	ages = get_ages(children)
+	adult_age = frappe.db.get_single_value("People Settings", "adult_age")
+	return [child for child in children if child not in ages or ages[child] < adult_age]
 
 
 def salutation(family: str) -> str:

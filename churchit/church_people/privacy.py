@@ -4,26 +4,30 @@
 """Remove a person's personal data and keep their record, so their giving and attendance still count.
 
 `anonymize` names the person Anonymized and clears what says who they are: names, contact details, letters,
-photo, medical notes, anniversary, the login and the IDs of an import. The person leaves their family and
-their spouse, because named relatives would say who they are. A family left with no one in it is anonymized too,
-since its name and contact details were the person's.
+photo, medical notes, anniversary, the login and the IDs of an import. The login is disabled too, so signing
+in cannot add the person again. The person leaves their family and their spouse, because named relatives would
+say who they are. A family left with no one in it is anonymized too, since its name and contact details were
+the person's; a family that keeps members loses the person's first name from its name.
 
 A Birth life event goes, because a birth date identifies a person. The other life events keep their type and
 date, so the number of baptisms or new members in a year stays right, and lose their location and notes.
 
 The records that name the person keep the link and lose the copies of the person's name and email addresses in
 their text (titles, fetched names, donor emails). Their notes and connection cards are deleted outright, since
-everything in them is about the person and nothing in them is counted. The person's change history, comments and attachments are
-deleted, because they hold the old values.
+everything in them is about the person and nothing in them is counted. The change history, comments and
+attachments of the person and of the records about them (`RECORDS_ABOUT_THE_PERSON`) are deleted, because they
+hold the old values, and the messages kept on them lose their addresses and text.
 
 A member's Personal Data Deletion Request anonymizes their Person once Frappe has deleted their login
 (`anonymize_on_data_deletion`).
 """
 
 import re
+from collections.abc import Iterable
 
 import frappe
 from frappe import _
+from frappe.core.doctype.comment.comment import update_comments_in_parent
 from frappe.model.delete_doc import get_linked_docs
 from frappe.model.document import Document
 
@@ -60,6 +64,24 @@ PERSONAL_FIELDS = (
 PERSONAL_TABLES = ("emails", "phones", "addresses", "letters")
 # Records wholly about the person, by the field naming them, deleted rather than kept.
 PERSONAL_DOCTYPES = (("Person Note", "person"), ("Connection Card", "person"))
+# Records about the person that a church keeps, by the field naming them. Their history, comments, attachments
+# and messages are about the person, so those go. A field naming someone in a role, such as caregiver, is not.
+RECORDS_ABOUT_THE_PERSON = (
+	("Alms Request", "requestor"),
+	("Background Check", "person"),
+	("Care Assignment", "person"),
+	("Care Request", "person"),
+	("Communication Consent", "person"),
+	("Counseling Case", "person"),
+	("Follow-up Card", "person"),
+	("Giving Statement", "person"),
+	("Member Transfer", "person"),
+	("Online Donation", "person"),
+	("Prayer Request", "requestor"),
+	("Visitation Log", "person"),
+)
+# What a message kept on a forgotten record keeps of its address, number and text.
+BLANK_MESSAGE = {"recipients": None, "cc": None, "bcc": None, "phone_no": None, "content": ""}
 # Field types where a record that names the person can hold a copy of their name or email address.
 TEXT_FIELDTYPES = ("Data", "Small Text", "Text", "Long Text", "Text Editor")
 MANAGERS = ("Church Manager", "System Manager")
@@ -73,20 +95,25 @@ def anonymize_person(person: str) -> None:
 	anonymize(person)
 
 
-def anonymize(person: str) -> None:
-	"""Remove *person*'s personal data, and the copies of it on the records that name them; keep the record."""
+def anonymize(person: str, emails: Iterable[str] = ()) -> None:
+	"""Remove *person*'s personal data, and the copies of it on the records that name them; keep the record.
+
+	*emails* adds addresses of the person's that their record may no longer show, such as a deletion request's.
+	"""
 	doc = frappe.get_doc("Person", person)
-	names, emails = get_identity(doc)
-	family = doc.family
+	names, own_emails = get_identity(doc)
+	emails = own_emails | {email.lower() for email in emails}
+	first_name, family = doc.first_name, doc.family
 	addresses = [row.address for row in doc.addresses]
+	disable_login(doc.user)
 	if doc.spouse:
 		# The spouse keeps their own marital status and anniversary; only the link to this record goes.
 		frappe.db.set_value("Person", {"name": doc.spouse, "spouse": doc.name}, "spouse", None)
 	strip_person(doc)
 	doc.save(ignore_permissions=True)
-	forget(doc, addresses)
-	if family and not frappe.db.exists("Family Members", {"parenttype": "Family", "parent": family}):
-		anonymize_family(family)
+	forget(doc.doctype, doc.name, addresses)
+	if family:
+		leave_family(family, first_name)
 	for child_doctype in UNIQUE_VALUE_FIELDS:
 		# Someone who shared this person's email or phone holds it alone from now on.
 		frappe.db.set_value(
@@ -96,17 +123,31 @@ def anonymize(person: str) -> None:
 			None,
 			update_modified=False,
 		)
-	delete_personal_records(person)
+	forget_records_about(person)
 	remove_copies(linked_records(person), names, emails)
 	doc.add_comment("Info", _("Personal data removed."))
 
 
-def delete_personal_records(person: str) -> None:
-	"""Delete the notes and connection cards about *person*, leaving no copy in Deleted Documents."""
+def disable_login(user: str | None) -> None:
+	"""Disable *user*, so that signing in cannot add the person again from the login's name and email."""
+	if user and frappe.db.get_value("User", user, "enabled"):
+		login = frappe.get_doc("User", user)
+		login.enabled = 0
+		login.save(ignore_permissions=True)
+
+
+def forget_records_about(person: str) -> None:
+	"""Delete the notes and connection cards about *person*, and forget the history of the others a church keeps.
+
+	Nothing is left in Deleted Documents.
+	"""
+	# church-scope: every record about the one person being anonymized, whichever church holds it
 	for doctype, fieldname in PERSONAL_DOCTYPES:
-		# church-scope: every record about the one person being anonymized, whichever church holds it
 		for name in frappe.get_all(doctype, filters={fieldname: person}, pluck="name"):
 			frappe.delete_doc(doctype, name, ignore_permissions=True, delete_permanently=True)
+	for doctype, fieldname in RECORDS_ABOUT_THE_PERSON:
+		for name in frappe.get_all(doctype, filters={fieldname: person}, pluck="name"):
+			forget(doctype, name)
 
 
 def get_identity(doc: Document) -> tuple[set[str], set[str]]:
@@ -138,6 +179,19 @@ def strip_person(doc: Document) -> None:
 		row.notes = None
 
 
+def leave_family(family: str, first_name: str) -> None:
+	"""Anonymize the person's *family* when no one is left in it, else take their *first_name* off its name.
+
+	A household is named after its primary contact, "Doe - John", so the name becomes "Doe".
+	"""
+	if not frappe.db.exists("Family Members", {"parenttype": "Family", "parent": family}):
+		anonymize_family(family)
+		return
+	surname, dash, named = frappe.db.get_value("Family", family, "family_name").rpartition("-")
+	if dash and surname.strip() and named.strip().casefold() == first_name.casefold():
+		frappe.db.set_value("Family", family, "family_name", surname.strip())
+
+
 def anonymize_family(family: str) -> None:
 	"""Strip a family left with no one in it, whose name and contact details were its last member's."""
 	doc = frappe.get_doc("Family", family)
@@ -146,18 +200,30 @@ def anonymize_family(family: str) -> None:
 	for fieldname, *_rest in CONTACT_TABLES:
 		doc.set(fieldname, [])
 	doc.save(ignore_permissions=True)
-	forget(doc, addresses)
+	forget(doc.doctype, doc.name, addresses)
 
 
-def forget(doc: Document, addresses: list[str]) -> None:
-	"""Delete *doc*'s change history, comments and attachments, and each of *addresses* nothing links to now."""
+def forget(doctype: str, name: str, addresses: Iterable[str] = ()) -> None:
+	"""Delete a record's change history, comments and attachments, and each of *addresses* nothing links to now.
+
+	The messages kept on the record lose their addresses and text but stay, so a Church Email still counts its
+	copy and never sends it again.
+	"""
 	attachments = frappe.get_all(
-		"File", filters={"attached_to_doctype": doc.doctype, "attached_to_name": doc.name}, pluck="name"
+		"File", filters={"attached_to_doctype": doctype, "attached_to_name": name}, pluck="name"
 	)
 	for file in attachments:
 		frappe.delete_doc("File", file, ignore_permissions=True, delete_permanently=True)
-	frappe.db.delete("Version", {"ref_doctype": doc.doctype, "docname": doc.name})
-	frappe.db.delete("Comment", {"reference_doctype": doc.doctype, "reference_name": doc.name})
+	frappe.db.delete("Version", {"ref_doctype": doctype, "docname": name})
+	frappe.db.delete("Comment", {"reference_doctype": doctype, "reference_name": name})
+	frappe.db.set_value(
+		"Communication",
+		{"reference_doctype": doctype, "reference_name": name},
+		BLANK_MESSAGE,
+		update_modified=False,
+	)
+	# Frappe keeps the start of each comment and message on the record itself, for its list view.
+	update_comments_in_parent(doctype, name, [])
 	for address in set(addresses):
 		if not get_linked_docs(frappe.get_doc("Address", address)):
 			frappe.delete_doc("Address", address, ignore_permissions=True, delete_permanently=True)
@@ -193,13 +259,14 @@ def scrub_record(record: LinkedRecord, replacements: list[tuple[re.Pattern, str]
 def anonymize_on_data_deletion(doc: Document, method=None) -> None:
 	"""doc_events on_change of Personal Data Deletion Request: anonymize the Person of a deleted login.
 
-	Frappe gives the login the request's name before it marks the request Deleted.
+	Frappe gives the login the request's name before it marks the request Deleted, and may have redacted the
+	address on the person's record by then, so the request's own address is passed on.
 	"""
 	if doc.status != "Deleted":
 		return
 	# church-scope: the people of one deleted login, whichever church they belong to
 	for person in frappe.get_all("Person", filters={"user": doc.name}, pluck="name"):
-		anonymize(person)
+		anonymize(person, emails=[doc.email])
 
 
 # People the daily job anonymizes in one run; the rest wait for the next day.

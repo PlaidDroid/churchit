@@ -24,7 +24,14 @@ from churchit.church_people.followup import start_cards
 from churchit.church_people.matching import Match, find_matches, record_possible_duplicates
 from churchit.church_people.membership import VISITOR
 from churchit.church_scope import is_multi_church
-from churchit.contacts import EMAIL_DOCTYPE, EMAIL_FIELD, PHONE_DOCTYPE, PHONE_FIELD, get_other_holder
+from churchit.contacts import (
+	EMAIL_DOCTYPE,
+	EMAIL_FIELD,
+	PHONE_DOCTYPE,
+	PHONE_FIELD,
+	get_holders,
+	get_other_holder,
+)
 
 NEW = "New"
 PROCESSED = "Processed"
@@ -96,15 +103,17 @@ class ConnectionCard(Document):
 	def record_consent(self, person: str):
 		"""Record Church News by email, or by text, for each box ticked beside an address or number.
 
-		A tick never overrides a withdrawal on record, because anyone can type a name and a number.
+		Anyone can type a member's name and email, so a tick counts only for an address or number already
+		on the person's record, as a new Visitor's are, and never overrides a withdrawal on record.
 		"""
-		for channel, is_ticked, contact in (
-			(EMAIL, self.email_consent, self.email),
-			(SMS, self.sms_consent, self.phone),
+		for channel, is_ticked, contact, child_doctype, value_field in (
+			(EMAIL, self.email_consent, self.email, EMAIL_DOCTYPE, "email_address"),
+			(SMS, self.sms_consent, self.phone, PHONE_DOCTYPE, "phone_number"),
 		):
 			if (
 				is_ticked
 				and contact
+				and get_holders("Person", child_doctype, value_field, contact, parent=person)
 				and latest_statuses([person], channel, CHURCH_NEWS).get(person) != WITHDRAWN
 			):
 				record([person], channel, GIVEN, CHURCH_NEWS, WEB_FORM)

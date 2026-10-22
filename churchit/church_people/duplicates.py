@@ -41,6 +41,11 @@ def scan_church(church: str | None) -> list[str]:
 
 
 def drop_pairs(person, method=None) -> None:
-	"""On Person on_trash: a deleted person's pairs go with them, so the pairs do not block the delete."""
+	"""On Person on_trash: a deleted person's pairs go with them, so the pairs do not block the delete.
+
+	Nothing is left in Deleted Documents, where a pair would keep both people's names.
+	"""
 	for pair in get_pairs(person.name):
-		frappe.delete_doc(POSSIBLE_DUPLICATE, pair.name, ignore_permissions=True, force=True)
+		frappe.delete_doc(
+			POSSIBLE_DUPLICATE, pair.name, ignore_permissions=True, force=True, delete_permanently=True
+		)
