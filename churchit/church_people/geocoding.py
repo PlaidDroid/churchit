@@ -60,6 +60,21 @@ def geocode(address: str) -> None:
 	doc.db_set({"latitude": latitude, "longitude": longitude}, update_modified=False)
 
 
+@frappe.whitelist(methods=["POST"])
+def get_address_coordinates(address: str) -> tuple[float, float] | None:
+	"""(latitude, longitude) of *address* for a form's map pin, looked up first when it has none.
+
+	None when it has none and address lookups are off, so the form can tell that from a failed lookup.
+	A form asks here rather than asking Nominatim itself, so the setting, the lock and the User-Agent hold.
+	"""
+	frappe.has_permission("Address", doc=address, throw=True)
+	if not frappe.db.get_value("Address", address, "latitude"):
+		if not is_address_lookup_on():
+			return None
+		geocode(address)
+	return frappe.db.get_value("Address", address, ["latitude", "longitude"])
+
+
 def get_coordinates(search: str) -> tuple[float, float]:
 	"""(latitude, longitude) of the first place Nominatim finds for *search*, or (0, 0).
 

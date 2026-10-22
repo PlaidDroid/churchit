@@ -6,8 +6,9 @@ from unittest import mock
 import frappe
 import requests
 
+from churchit.church_missions.doctype.missionary import missionary
 from churchit.church_people import geocoding
-from churchit.tests.helpers import RollbackEachTest, make_address
+from churchit.tests.helpers import RollbackEachTest, ensure_user, make_address
 
 
 def nominatim_answer(places):
@@ -108,6 +109,42 @@ class TestGeocoding(RollbackEachTest):
 		enqueue.assert_not_called()
 		get.assert_not_called()
 		self.assertEqual(self.coordinates(), (39.8, -89.6))
+
+	def test_a_form_pin_takes_the_stored_coordinates_or_looks_them_up_once(self):
+		answer = nominatim_answer([{"lat": "39.78", "lon": "-89.65"}])
+		with mock.patch("requests.get", return_value=answer) as get:
+			first = geocoding.get_address_coordinates(self.address.name)
+			second = geocoding.get_address_coordinates(self.address.name)
+
+		self.assertEqual((first, second), ((39.78, -89.65), (39.78, -89.65)))
+		get.assert_called_once()
+
+	def test_a_form_pin_sends_nothing_with_the_lookup_off(self):
+		frappe.db.set_single_value("People Settings", "look_up_addresses", 0)
+		with mock.patch("requests.get") as get:
+			self.assertIsNone(geocoding.get_address_coordinates(self.address.name))
+
+		get.assert_not_called()
+
+	def test_a_form_pin_for_a_place_nominatim_cannot_find_is_zero(self):
+		with mock.patch("requests.get", return_value=nominatim_answer([])):
+			self.assertEqual(geocoding.get_address_coordinates(self.address.name), (0, 0))
+
+	def test_a_form_pin_needs_read_on_the_address(self):
+		frappe.set_user(ensure_user("_test_geocoding_member@example.com", "GeocodingMember"))
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				geocoding.get_address_coordinates(self.address.name)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_the_missionary_country_pin_obeys_the_lookup_setting(self):
+		with mock.patch.object(missionary, "get_coordinates", return_value=(39.8, -98.6)) as get_coordinates:
+			self.assertEqual(missionary.get_country_coordinates("United States"), (39.8, -98.6))
+			frappe.db.set_single_value("People Settings", "look_up_addresses", 0)
+			self.assertEqual(missionary.get_country_coordinates("United States"), (0, 0))
+
+		get_coordinates.assert_called_once_with("United States")
 
 	def test_turning_the_lookup_on_queues_the_addresses_that_missed_out(self):
 		settings = frappe.get_single("People Settings")
