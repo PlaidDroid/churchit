@@ -1,7 +1,10 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from unittest.mock import patch
+
 import frappe
+from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_finances.doctype.giving_statement.giving_statement import (
@@ -9,25 +12,32 @@ from churchit.church_finances.doctype.giving_statement.giving_statement import (
 	get_statement_recipients,
 	statement_header,
 )
+from churchit.church_foundations.church_access import set_user_church
 from churchit.tests.helpers import (
+	RollbackEachTest,
 	ensure,
 	ensure_root_church,
+	ensure_user,
 	make_branch,
 	make_person,
 	make_primary_contact,
+	make_two_churches,
 	set_multi_church,
 )
 
 PERIOD = ("2029-01-01", "2029-12-31")
 
 
-def make_collection(date, donations, submit=True):
+def make_collection(date, donations, submit=True, church=None):
 	"""A Collection carrying one Donation row per (person, amount) pair."""
-	fund = ensure("Fund", {"fund": "_Test Statement Fund"})
+	fund_name = f"_Test Statement Fund {church}" if church else "_Test Statement Fund"
+	fund = ensure("Fund", {"fund": fund_name}, {"fund": fund_name, "church": church} if church else None)
 	payment_type = ensure("Payment Type", {"type": "_Test Statement Cash"}, {"type": "_Test Statement Cash"})
 	collection = frappe.get_doc(
 		{"doctype": "Collection", "date": date, "expected_total": sum(a for _p, a in donations)}
 	)
+	if church:
+		collection.church = church
 	for person, amount in donations:
 		collection.append(
 			"donations",
@@ -158,6 +168,82 @@ class TestStatementGeneration(FrappeTestCase):
 		quiet = make_person("_Test Quiet", "Person")
 		generate_statements(*PERIOD)
 		self.assertFalse(frappe.db.exists("Giving Statement", {"person": quiet.name}))
+
+	def test_generating_statements_takes_a_post(self):
+		"""Frappe checks the CSRF token only on a POST, and a GET from another site carries the session."""
+		giver = make_person("_Test Get", "Giver")
+		make_collection("2029-08-08", [(giver.name, 5)])
+
+		with (
+			patch.object(frappe.local, "request", frappe._dict(method="GET"), create=True),
+			patch.object(frappe.local, "form_dict", frappe._dict(from_date=PERIOD[0], to_date=PERIOD[1])),
+			self.assertRaises(frappe.PermissionError),
+		):
+			execute_cmd(
+				"churchit.church_finances.doctype.giving_statement.giving_statement.generate_statements"
+			)
+
+		self.assertFalse(frappe.db.exists("Giving Statement", {"person": giver.name}))
+
+
+class TestStatementChurch(RollbackEachTest):
+	"""A statement stays in one of the issuer's churches, whoever the giver is."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+		cls.finance_a = ensure_user(
+			"_test_statement_finance_a@example.com", "Finance A", roles=("Church Finance",)
+		)
+		set_user_church(cls.finance_a, cls.branch_a)
+		cls.giver_b = make_person("_Test Statement", "Giver B", church=cls.branch_b).name
+
+	def statement(self, **values):
+		return frappe.get_doc(
+			{
+				"doctype": "Giving Statement",
+				"person": self.giver_b,
+				"from_date": PERIOD[0],
+				"to_date": PERIOD[1],
+				**values,
+			}
+		)
+
+	def test_a_statement_for_another_churchs_giver_is_issued_in_the_issuers_church(self):
+		frappe.set_user(self.finance_a)
+		self.assertEqual(self.statement().insert().church, self.branch_a)
+
+	def test_an_empty_church_does_not_file_a_statement_in_the_givers_church(self):
+		"""Frappe fills an empty church from the person after its create check has passed."""
+		frappe.set_user(self.finance_a)
+		with self.assertRaises(frappe.PermissionError):
+			self.statement(church="").insert()
+
+	def test_another_churchs_statement_for_the_period_does_not_stop_the_run(self):
+		"""A giver who gave at both churches gets a statement from each, whoever issued first."""
+		self.statement(church=self.branch_b).insert(ignore_permissions=True)
+		make_collection("2029-05-05", [(self.giver_b, 10)], church=self.branch_a)
+		frappe.set_user(self.finance_a)
+
+		self.assertEqual(generate_statements(*PERIOD), {"created": 1, "updated": 0})
+		self.assertEqual(
+			frappe.get_all(
+				"Giving Statement", filters={"person": self.giver_b}, pluck="church", order_by="church"
+			),
+			sorted([self.branch_a, self.branch_b]),
+		)
+
+	def test_another_church_cannot_take_a_statement(self):
+		"""Frappe checks write on the church the caller sends, as a REST update does."""
+		name = self.statement(church=self.branch_b).insert(ignore_permissions=True).name
+		frappe.set_user(self.finance_a)
+		statement = frappe.get_doc("Giving Statement", name)
+		statement.church = self.branch_a
+
+		with self.assertRaises(frappe.PermissionError):
+			statement.save()
 
 
 class TestStatementHeader(FrappeTestCase):

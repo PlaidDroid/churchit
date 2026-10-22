@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.exceptions import ValidationError
+from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.tests.helpers import RollbackEachTest, ensure, ensure_user, make_person, make_two_churches
@@ -123,6 +124,23 @@ class TestGivePage(FrappeTestCase):
 		self.assertEqual(kwargs["amount"], 25.5)
 		self.assertEqual(kwargs["payer_email"], "anon@example.com")
 		self.assertIn(f"success={gift.name}", kwargs["redirect_to"])
+
+	def test_start_donation_refuses_a_get(self):
+		"""A GET carries no CSRF token, so another site could open pending gifts from a visitor's browser."""
+		frappe.set_user("Guest")
+		frappe.local.request = frappe._dict(method="GET")
+		self.addCleanup(delattr, frappe.local, "request")
+		frappe.local.form_dict = frappe._dict(
+			amount=10, fund=self.fund.name, donor_name="Anon", email="anon@example.com"
+		)
+		gifts = frappe.db.count("Online Donation")
+
+		controller = MagicMock(spec=["get_payment_url"])
+		with patch("payments.utils.get_payment_gateway_controller", return_value=controller):
+			with self.assertRaises(frappe.PermissionError):
+				execute_cmd("churchit.www.give.start_donation")
+
+		self.assertEqual(frappe.db.count("Online Donation"), gifts)
 
 	def test_logged_in_gifts_link_the_session_person(self):
 		user = ensure_user("_test_linked_giver@example.com", "_Test Linked Giver")

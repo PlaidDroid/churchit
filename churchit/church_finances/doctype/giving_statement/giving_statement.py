@@ -7,7 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import getdate
 
 from churchit.church_foundations.doctype.church.church import inherited_value
-from churchit.church_scope import root_church, scoped
+from churchit.church_scope import CHURCH_FIELD, has_church_access, root_church, scoped
 from churchit.contacts import primary_email
 
 
@@ -19,12 +19,35 @@ class GivingStatement(Document):
 	"""
 
 	def validate(self):
+		self.refuse_another_churches_statement()
 		if getdate(self.to_date) < getdate(self.from_date):
 			frappe.throw(_("To Date cannot be before From Date."))
 
 		self.set_title()
 		self.set_email()
 		self.build_lines()
+
+	def refuse_another_churches_statement(self):
+		"""A statement is made in, or moved out of, only a church the user holds.
+
+		Frappe checks the create right before an empty `church` is fetched from the person, and checks
+		write on the church the caller sends, not the stored one. The person's church does not count:
+		generate_statements issues a statement in the issuer's church for a giver from another church on
+		purpose. Writes with ignore_permissions are the app's own and are not refused.
+		"""
+		if self.flags.ignore_permissions or not (
+			self.has_value_changed("person") or self.has_value_changed(CHURCH_FIELD)
+		):
+			return
+		stored = self.get_doc_before_save() or frappe._dict()
+		for church in (self.church, stored.church):
+			if not has_church_access(frappe.session.user, church):
+				frappe.throw(
+					_("{0} is not one of your churches, so you cannot issue or move its statements.").format(
+						frappe.db.get_value("Church", church, "church_name") or church
+					),
+					frappe.PermissionError,
+				)
 
 	def set_title(self):
 		full_name = frappe.db.get_value("Person", self.person, "full_name") or self.person
@@ -167,7 +190,7 @@ def household_recipient(family, fallback):
 	return frappe.db.get_value("Family", family, "primary_contact") or fallback
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def generate_statements(from_date: str, to_date: str):
 	"""Create a statement for every giver in the period. Returns how many were made.
 
@@ -178,12 +201,15 @@ def generate_statements(from_date: str, to_date: str):
 
 	created = updated = 0
 	for recipient in get_statement_recipients(from_date, to_date):
-		existing = frappe.db.exists(
+		# Only the issuer's statements count: another church may have issued its own for this giver.
+		existing = frappe.get_list(
 			"Giving Statement",
-			{"person": recipient["person"], "from_date": from_date, "to_date": to_date},
+			filters={"person": recipient["person"], "from_date": from_date, "to_date": to_date},
+			pluck="name",
+			limit=1,
 		)
 		if existing:
-			frappe.get_doc("Giving Statement", existing).save()
+			frappe.get_doc("Giving Statement", existing[0]).save()
 			updated += 1
 			continue
 

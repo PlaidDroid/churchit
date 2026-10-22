@@ -3,7 +3,13 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import get_link_to_form, nowdate
 
-from churchit.church_scope import default_church, is_multi_church, refuse_another_churches_record
+from churchit.church_scope import (
+	CHURCH_FIELD,
+	default_church,
+	has_church_access,
+	is_multi_church,
+	refuse_another_churches_record,
+)
 
 
 class FundTransfer(Document):
@@ -18,10 +24,34 @@ class FundTransfer(Document):
 		if self.amount <= 0:
 			frappe.throw(_("Transfer amount must be greater than zero."))
 		self.set_church_when_the_source_is_shared()
+		self.refuse_another_churches_fund()
 		# Money moves between funds, never between churches: both ends belong to
 		# this church or are shared with every church.
 		refuse_another_churches_record(self, "Fund", self.from_fund)
 		refuse_another_churches_record(self, "Fund", self.to_fund)
+
+	def refuse_another_churches_fund(self):
+		"""Only the church that owns the source fund moves its money.
+
+		Frappe checks the create and submit rights before `church` is fetched from the fund, so it
+		never sees whose fund this is, and a transfer between two funds of one other church passes
+		refuse_another_churches_record. Writes with ignore_permissions are the app's own and are not
+		refused.
+		"""
+		if self.flags.ignore_permissions or not self.has_value_changed("from_fund"):
+			return
+		stored = self.get_doc_before_save() or frappe._dict()
+		for fund, church in (
+			(self.from_fund, frappe.db.get_value("Fund", self.from_fund, CHURCH_FIELD)),
+			(stored.from_fund, stored.church),
+		):
+			if not has_church_access(frappe.session.user, church):
+				frappe.throw(
+					_("{0} belongs to another church, so only that church can move its money.").format(
+						frappe.db.get_value("Fund", fund, "fund") or fund
+					),
+					frappe.PermissionError,
+				)
 
 	def set_church_when_the_source_is_shared(self):
 		"""Keep a transfer out of a shared fund in the church that moves the money.

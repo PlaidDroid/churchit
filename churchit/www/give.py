@@ -60,7 +60,7 @@ def get_context(context):
 			context.donor_email = frappe.db.get_value("User", frappe.session.user, "email") or ""
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def start_donation(
 	amount: str | float,
 	fund: str,
