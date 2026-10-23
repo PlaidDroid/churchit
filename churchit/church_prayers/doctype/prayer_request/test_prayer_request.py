@@ -4,6 +4,7 @@
 import json
 
 import frappe
+from frappe.client import insert, set_value
 from frappe.tests.utils import FrappeTestCase
 from frappe.website.doctype.web_form.web_form import accept
 
@@ -86,3 +87,38 @@ class TestPrayerRequest(FrappeTestCase):
 			}
 		).insert()
 		self.assertEqual(request.approved_for_list, 1)
+
+	def test_a_member_cannot_set_the_status(self):
+		ensure("Prayer Request Status", {"status": "Answered"})
+		member = ensure_user("_test_prayer_status@example.com", "_Test Status")
+		if not frappe.db.exists("Person", {"user": member}):
+			make_person("_Test Prayer", "Status", user=member)
+		self.addCleanup(setattr, frappe.flags, "in_web_form", False)
+		values = {
+			"title": "_Test Status Request",
+			"type": self.request_type,
+			"request": "Please pray.",
+			"visibility": "Private",
+			"status": "Answered",
+		}
+
+		frappe.set_user(member)
+		saved = accept("prayer-request", json.dumps(values))
+		self.assertEqual(saved.status, "Requested")
+		self.assertEqual(
+			accept("prayer-request", json.dumps({**values, "name": saved.name})).status, "Requested"
+		)
+		frappe.flags.in_web_form = False
+		self.assertEqual(insert({"doctype": "Prayer Request", **values})["status"], "Requested")
+
+		frappe.set_user(
+			ensure_user("_test_prayer_status_manager@example.com", "_Test", roles=("Church Manager",))
+		)
+		set_value("Prayer Request", saved.name, "status", "Answered")
+
+		frappe.set_user(member)
+		set_value("Prayer Request", saved.name, "status", "Requested")
+		self.assertEqual(frappe.db.get_value("Prayer Request", saved.name, "status"), "Answered")
+		self.assertEqual(
+			frappe.get_list("Prayer Request", {"name": saved.name}, pluck="status"), ["Answered"]
+		)
