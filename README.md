@@ -68,8 +68,14 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 
 ### Functions (Events) & Attendance
 - Function (event) tracking with types, scheduling, person & item sign-ups, check-ins, and attendance tracking
-- Check-In Station: search by name or phone number or scan a Member QR Card, check whole families in with a tap, add first-time visitors on the spot, undo and reprint from the live list, and verify a pickup code and record who collected each child
-- Name tags: printed per check-in through the browser's print dialog (any printer), or silently in ZPL to Zebra label printers such as the ZD421 via Zebra Browser Print, QZ Tray, or straight over the network. Optional pickup codes for children's ministry print on each tag and on a parent pickup tag. Both label layouts are Print Formats a church can copy and customize
+- Check-In Station: search by name or phone number or scan a Member QR Card, check whole families in with a tap, and add first-time visitors on the spot after the station offers people already on file. Each person shows their grade and allergies, and check-in volunteers also see medical notes and an emergency contact
+- A live list at the station that shows the check-ins and checkouts of other stations within seconds, with photos, the booked rooms and a name or code filter. From it, undo, reprint, check out people who have no pickup tag, and page a child's parents by text or email
+- Pickup: verify a pickup code, typed or scanned from the QR code on the pickup tag, and record who collected each child. Authorized Pickups and Pickup Restrictions say who may and who may not collect a child, and only a Church Manager can override a restriction
+- Age and grade limits on a function, room capacity from its room bookings (warn or block), and a headcount for people in the room who are not checked in by name: the attendance total uses the larger count
+- Volunteer check-in from a Team tab that lists the function's accepted ministry team, with the position on the volunteer's name tag
+- Self check-in kiosk: a family types its phone number on a tablet at the door, picks who to check in, and takes its name tags. Only Function types that allow self check-in, and only from a set number of minutes before the start to the end
+- Pre check-in: a member picks who is coming to today's function on My Household and shows a QR code at the Check-In Station or the kiosk. The code works only until the function ends
+- Name tags: printed per check-in through the browser's print dialog (any printer), or silently in ZPL to Zebra label printers such as the ZD421 via Zebra Browser Print, QZ Tray, or straight over the network. Optional pickup codes for children's ministry print on each tag and on a parent pickup tag; a household keeps one code for the day. Each kind of check-in (Regular, Guest, Volunteer) can print its own tag. The label layouts are Print Formats a church can copy and customize
 - Recurring functions: every n days, weeks, months or years, on a day of the month or a weekday of the month (the second Sunday), created weeks ahead for the calendar, with skip dates and room bookings
 - Calendar view (Private & Public)
 - A public calendar feed that visitors subscribe to in their phone or computer calendar, for the whole church or one published ministry
@@ -147,7 +153,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Person letters, birthdays, current positions, and more
 
 ### Administration
-- Role-based access: a Church Manager, desk roles for staff (Staff, People Editor, Pastoral Care, Finance, Check-In) bundled into role profiles, and Church User for portal members
+- Role-based access: a Church Manager, desk roles for staff (Staff, People Editor, Pastoral Care, Finance, Check-In) bundled into role profiles, Church User for portal members, and Church Check-In Kiosk for a self check-in device
 - Optional multi-church mode: branch or satellite churches under one main church, with every record and user scoped to a church (parent-church users can include branches), per-church emails and notifications, and a Locations switcher on the public website
 - A people directory shared by every church: any church can look up a person or family, only their own church can change them, and a Church Features option keeps each church's people private instead
 - Songs, sermons, vendors, rooms, assets, funds and ministries can be shared with every church, so branches reuse the main church's library and give to joint funds, while each gift and expense keeps the church that gave or spent it
