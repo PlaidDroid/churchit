@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import get_datetime
 
 from churchit.church_scope import (
 	has_church_access,
@@ -21,8 +22,12 @@ class RoomBooking(Document):
 			self, "room", _("{0} belongs to another church, so only that church can book it.")
 		)
 		self.refuse_another_churches_requester()
-		if self.end_datetime and self.start_datetime and self.end_datetime <= self.start_datetime:
-			frappe.throw(_("End time must be after start time."))
+		if self.end_datetime and self.start_datetime:
+			# REST sends text, which compares as text.
+			self.start_datetime = get_datetime(self.start_datetime)
+			self.end_datetime = get_datetime(self.end_datetime)
+			if self.end_datetime <= self.start_datetime:
+				frappe.throw(_("End time must be after start time."))
 		# No room: the mandatory-field check reports it.
 		room = frappe.db.get_value(
 			"Room", self.room, ["is_bookable", "requires_approval"], as_dict=True

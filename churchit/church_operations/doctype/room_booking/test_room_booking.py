@@ -2,6 +2,7 @@
 # and is licensed under MIT No Attribution (MIT-0).
 
 import frappe
+from frappe.client import insert as insert_doc
 from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 
@@ -171,6 +172,28 @@ class TestRoomBooking(FrappeTestCase):
 			self._make_booking(
 				self.open_room, start_datetime="2031-03-04 12:00:00", end_datetime="2031-03-04 11:00:00"
 			)
+
+	def test_times_sent_as_text_are_compared_as_times(self):
+		"""REST sends text, and "9:30" sorts after "10:30" as text."""
+
+		def insert(start, end):
+			return insert_doc(
+				{
+					"doctype": "Room Booking",
+					"room": self.open_room,
+					"requester": self.requester,
+					"purpose": "_Test text times",
+					"start_datetime": start,
+					"end_datetime": end,
+				}
+			)
+
+		with self.assertRaisesRegex(ValidationError, "End time must be after start time"):
+			insert("2031-03-04 10:30:00", "2031-03-04 9:30:00")
+
+		insert("2031-03-04 9:00:00", "2031-03-04 10:00:00")
+		with self.assertRaisesRegex(ValidationError, "already booked"):
+			insert("2031-03-04 9:30:00", "2031-03-04 10:30:00")
 
 
 class TestRoomBookingAcrossChurches(RollbackEachTest):
