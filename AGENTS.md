@@ -311,6 +311,10 @@ Attendance counts only the types in `church_ministries/attendance.COUNTED_TYPES`
 Function whose start date is today or earlier. Take both from there, and a total from
 `attendance.get_total`; `test_reports_hygiene` fails on a second copy of the types.
 
+`Function.attendance_total` is written only through `attendance.get_attendance_total`
+(`Function.before_save`, the daily `refresh_started_totals`, `set_headcount`): the larger of the
+Function's `headcount` and the counted rows, and 0 until the Function starts.
+
 Write a person's attendance row only through `attendance.record(person, function, status)` and
 `attendance.remove(person, function, status)`. They load the Function with `for_update` and save it
 whole, so two check-ins at once lose no row and a stale desk save fails. `record` never lowers a type
@@ -345,6 +349,12 @@ into Role Profiles in `fixtures/role_profile.json`:
 
 Church Prayer Team has no desk access and is in no profile. Give it on its own to a member or staff
 user who prays for the requests: it reads Prayer Team and Whole Church requests.
+
+Church Check-In Kiosk has no desk access, no DocPerms and is in no profile. Give it alone to the
+User of a self check-in kiosk, with exactly one Church User Permission (the kiosk refuses otherwise)
+and Restrict IP. `church_ministries/kiosk.py` reads past permissions for it and sends only the
+names, photos and grades of one whole phone number's household, and the Functions it may check in
+to. `accounts.link_portal_user` adds no Person for a kiosk login.
 
 A new doctype gives its rights to Church Manager and to the role that owns its area, and read to
 Church Staff if staff look it up. Church Check-In and Church Follow-up do not hold Church Staff, so
@@ -731,9 +741,7 @@ another. Giving and care figures carry permlevels 2 and 3 for the same reason, a
 person's church. Lists, Report Builder and exports apply permlevels by role only. That gap is
 accepted for now: while the directory is shared, another church's finance or care role reads and
 filters these figures in lists, smart lists and exports, and Check-In, People Editor and Church
-Manager read `medical_notes` (permlevel 1) on every person. The same holds for Authorized Pickup
-rows in lists and exports. Family keeps pickup changes out of its Versions (`Family.save_version`),
-because the form timeline shows Versions to every reader of a record. Person Versions still record
+Manager read `medical_notes` (permlevel 1) on every person. Person Versions still record
 `medical_notes` and the other fields above permlevel 0, so every Person reader sees those changes in
 the timeline. Only a user who sees both churches can put a person into another church's Family. A
 church that must keep them apart ticks Keep People and Families Private to Each Church. A new figure
@@ -848,7 +856,7 @@ their household who are under People Settings' adult age or of unknown age
 lists only their own Family, only its Adults write it, and `refuse_member_edits_beyond_photo` (first
 in `Family.validate`) limits them to the photo. It steps aside for `ignore_permissions` saves, which
 is how a Person keeps the roster, so never save a Family with `ignore_permissions` on values a member
-sent.
+sent. `/household` offers pre check-in to the people the member may edit.
 
 `Person.birthday` is virtual: a value set on a save rewrites the first Birth life event
 (`sync_birthday`, before `sync_derived`). Read birthdays from `birth_month`, `birth_day` and
@@ -897,24 +905,87 @@ has the share right. So `CareRequest.assign` shares it first, with `ignore_share
 `before_save` has already refused a caregiver outside the request's church
 (`refuse_a_caregiver_outside_the_church`).
 
-At the Check-In Station, `check_in.get_pickup_families` gates on the Function Check-In rows the
-reader may read (`frappe.get_list`), then reads the people those rows name with `get_all`, whatever
-their church. Do not fetch Person fields through the check-in's link (`person.full_name` in
-`get_list`): Frappe applies Person permission to that join, and a child at a shared function loses
-their name. Who may collect a child is the living household Adults plus the family's Authorized
-Pickup rows. The Authorized Pickups table is at permlevel 1 (read and write for Church Manager and
-Church People Editor, read for Church Check-In), and `Family.get_permlevel_access` drops it on a
-single read when the reader cannot see the family's church. Lists, Report Builder and `get_list` on
-the child apply permlevels by role only, the same gap as `medical_notes`.
-`check_in.release_children` reads the families again before it stores who collected a child on its
-Function Check-In (`collected_by`, `collected_at`, `released_by`), and locks the row, so a child is
-released once. The station finds people only through
-`group_by_family(matched, get_people_scope(function))`, Scan Card included, so a new way to find
-people there must use it. The roster (`get_check_ins`) and the pickup lists name people of every
-church on purpose, because they are keyed to a function the reader may read. Do not add Authorized
-Pickup to `person_data_map.ROSTERS`: a merge would strip the merged person from every other family's
-pickup list. The Member QR Card needs `get_qr_code` in the `jinja` hook; never `frappe.call(...)`
-from print Jinja, which fails outside a request or a job.
+At the Check-In Station, `function_check_in.add_check_ins(function, persons, kind)` is the one way
+code checks people in: the station, the kiosk and pre check-in call it after their own permission
+checks. Every writer of a Function Check-In takes its locks in one order: the Function row
+(`frappe.db.get_value("Function", function, "name", for_update=True)`), then the Check-In Settings
+code lock (`get_single_value(..., for_update=True)`), then check-in rows. A path that locks several
+Functions takes them in name order. `checkout.lock_check_in` (release, check-out, undo),
+`check_in_limits.get_capacity(for_update=True)` and `kiosk.add_household_check_ins` follow this
+order. `add_check_ins` takes the code lock on every call, then finds the people's check-ins with a
+locking read. MariaDB runs REPEATABLE READ, so a plain read after a lock answers from the request's older
+snapshot: a read that decides a write after a lock is a locking read, and Function Check-In has an
+index on `function` so that read locks one Function's rows. `get_security_code` gives a household
+one code a day, unique on the site. A Volunteer check-in gets no code, does not count in a room, and
+starts no First Check-In card.
+
+`check_in_limits` owns who may check in. `get_bound_problem(function, person)` measures the
+Function's age and grade bounds on its start date, and an unknown age or grade fails a set bound:
+the station asks to confirm, and the kiosk and pre check-in do not offer the Function.
+`add_check_ins` calls `refuse_a_full_room` under the Function row lock. In Block mode it counts the
+check-ins that are not collected (Volunteers left out) with a locking read and raises
+`RoomFullError`. An insert without `ignore_permissions` (the form or REST) is checked one at a time
+in `FunctionCheckIn.before_insert`, and `check_in_kind` is `set_only_once`, so a later change cannot
+free a place. `get_capacity` sums the rooms of the Function's Approved Room Bookings, and 0 means
+no limit. Self check-in (kiosk and pre check-in) needs a Function Type with `allow_self_check_in`
+and `is_check_in_open`.
+
+`check_in.get_pickup_families` gates on the Function Check-In rows the reader may read
+(`frappe.get_list`), then reads the people those rows name with `get_all`, whatever their church. Do
+not fetch Person fields through the check-in's link (`person.full_name` in `get_list`): Frappe
+applies Person permission to that join, and a child at a shared function loses their name. Who may
+collect a child is the living household Adults plus the family's Authorized Pickup records.
+Authorized Pickup is a record of its own with the family's `church` (Church Manager and Church
+People Editor only), so lists, Report Builder and `/api/resource` scope it like any record. Its
+church follows the family's church (`set_pickups_church`, called from `Family.on_update` and
+`Person.sync_family_church`). A Pickup Restriction names someone who may not collect a child, a
+household Adult included. Only Church Manager and Church People Editor read it, because its reason
+and court order are private. The station reads both only in `check_in.get_pickup_family`
+(restrictions through `get_restrictions`), with `get_all`, and never sends a restriction's reason or
+file. `release` refuses a restricted collector unless a Church Manager gives an `override_reason`,
+stored with `overridden_by` on the Function Check-In. Never put custody details on Authorized
+Pickup. `check_in.release_children` reads the families again before it stores who collected a child
+(`collected_by`, `collected_at`, `released_by`). `collected_at` is the one checkout state:
+`checkout.check_out` sets it for a row with no security code. The controller refuses a delete of a
+row that has it, a change to `CHECKOUT_FIELDS` from anything but `check_out` and `release`
+(`flags.checkout`), and a new row that sets one of them unless `add_check_ins` inserts it
+(`ignore_permissions`), because Frappe does not enforce `read_only` on insert.
+
+The station finds people only through `group_by_family(matched, get_people_scope(function))`, Scan
+Card and the New Visitor matches (`page/check_in/visitors.find_visitor_matches`) included, so a new
+way to find people there must use it. `search_people` and `find_card_holder` need the Function
+Check-In create right. `group_by_family` sends allergies and grade to every station reader, and
+`CARE_FIELDS` (medical notes and the emergency contact) only when the reader's roles hold Person
+permlevel 1; do not send those rows to the kiosk as they are. The self check-in kiosk
+(`church_ministries/kiosk.py`, `/check-in-kiosk`) applies the station's rule to the kiosk's one
+church, checks in only the (person, Function) pairs that its phone lookup offered, and never prints
+a security code that an earlier check-in holds. A pre check-in code
+(`church_ministries/pre_check_in.py`) is `get_signed_params` of the Function, the people and an
+expiry, made on `/household` for people the member may write and an open self check-in Function of
+their church. `read_payload` accepts only the keys `f`, `p`, `u` in that order, because other signed
+links share the secret. The station (Scan Card) and the kiosk check the Function with their own gate
+and print only new check-ins, so a second scan prints nothing.
+
+The roster (`get_check_ins`) and the pickup lists name people of every church on purpose, because
+they are keyed to a function the reader may read. The roster polls `get_check_ins` every 10 s only
+while a Function is picked and the page is visible; do not add `publish_realtime` or `doc_subscribe`
+to it. A page to a child's parents (`page/check_in/paging.page_parents`) goes only to the household
+Adults of the child's Family that no active Pickup Restriction names, with the Child Safety purpose,
+so it honors consent. It texts only when `sending.can_send_texts()` and the user passes
+`check_sms_permission`, one `send` and one commit for each Adult, and emails everyone else, with a
+separate send key for each channel, because `send` dedupes a person on (source, key) whatever the
+channel. `page_parents` commits its claim before it sends, and the copies are about the child's
+Person: `send` locks its source until the commit, a gateway call has no timeout, and every code draw
+on the site locks the day's coded check-ins. Never hold a Function Check-In row lock across a
+network call. Do not add Authorized Pickup to `person_data_map.ROSTERS`: a merge would strip the merged
+person from every other family's pickup list. The Member QR Card and the pickup tag need
+`get_qr_code` in the `jinja` hook; never `frappe.call(...)` from print Jinja, which fails outside a
+request or a job. Check-In Settings picks each tag's Print Format through `get_template(kind)`: a
+Tag Formats by Kind row for the check-in's kind, else the Single's formats; pickup tags always use
+the Single's. `render_name_tags` passes a Volunteer check-in's `position` (`team.get_position`) into
+the template context, so print Jinja reads no team assignment. The Team tab's `team.get_team` reads
+assignments with `get_all`, because Church Check-In has no DocPerm on Ministry Team Assignment; it
+gates on Function read.
 
 `church_prayers/prayer_access.py` holds the Prayer Request Visibility rules. The Church Prayer Team
 DocPerm reads every request; the hooks take back other people's Private requests from a user whose
