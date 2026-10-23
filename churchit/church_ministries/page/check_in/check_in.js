@@ -12,6 +12,7 @@ frappe.pages["check-in"].on_page_show = function (wrapper) {
 
 const API = "churchit.church_ministries.page.check_in.check_in";
 const LAST_FUNCTION_KEY = "check_in_station_function";
+const ROSTER_REFRESH_SECONDS = 10;
 
 const STATION_HTML = `
 <style>
@@ -70,8 +71,13 @@ const STATION_HTML = `
 	<div class="station-roster">
 		<div class="roster-head">
 			<h5 class="m-0">${__("Checked In")} <span class="badge roster-count">0</span></h5>
-			<a class="roster-function text-muted"></a>
+			<div class="text-right">
+				<a class="roster-function text-muted"></a>
+				<div class="roster-rooms text-muted small"></div>
+			</div>
 		</div>
+		<input class="form-control input-xs roster-filter mb-2" type="search" autocomplete="off"
+			placeholder="${__("Filter by name or code")}">
 		<div class="roster-list"></div>
 	</div>
 </div>`;
@@ -88,6 +94,9 @@ class CheckInStation {
 		this.groups = [];
 		this.make();
 		this.load_context();
+		$(wrapper).on("show", () => this.start_polling());
+		$(wrapper).on("hide", () => this.stop_polling());
+		document.addEventListener("visibilitychange", () => this.start_polling());
 	}
 
 	make() {
@@ -116,6 +125,7 @@ class CheckInStation {
 		this.$results = this.$body.find(".station-results");
 		this.$check_in = this.$body.find(".btn-check-in");
 		this.$roster = this.$body.find(".roster-list");
+		this.$roster_filter = this.$body.find(".roster-filter");
 		this.bind();
 	}
 
@@ -177,6 +187,10 @@ class CheckInStation {
 		this.$roster.on("click", ".btn-undo", (event) =>
 			this.undo($(event.currentTarget).data("name"))
 		);
+		this.$roster.on("click", ".btn-check-out", (event) =>
+			this.check_out($(event.currentTarget).data("name"))
+		);
+		this.$roster_filter.on("input", () => this.render_roster());
 	}
 
 	load_context() {
@@ -207,7 +221,7 @@ class CheckInStation {
 
 	set_function(name) {
 		this.function = name;
-		if (!name) return;
+		if (!name) return this.stop_polling();
 		localStorage.setItem(LAST_FUNCTION_KEY, name);
 		frappe.db.get_value("Function", name, ["function_name", "start_date"]).then((r) => {
 			const doc = r.message || {};
@@ -224,7 +238,8 @@ class CheckInStation {
 				);
 		});
 		this.clear();
-		this.refresh_roster();
+		this.start_polling();
+		this.show_rooms();
 		this.show_headcount();
 	}
 
@@ -489,39 +504,115 @@ class CheckInStation {
 		this.focus_search();
 	}
 
-	refresh_roster() {
-		if (!this.function) return;
-		frappe
-			.call({ method: `${API}.get_check_ins`, args: { function: this.function } })
-			.then((r) => {
-				const rows = r.message || [];
-				this.checked_in = new Set(rows.map((row) => row.person));
-				this.$body.find(".roster-count").text(rows.length);
-				this.$roster.html(
-					rows.length
-						? rows.map((row) => this.roster_row(row)).join("")
-						: `<div class="empty">${__("No one is checked in yet.")}</div>`
-				);
-				this.render_results();
-			});
+	// Loads the roster now and every 10 s while a function is picked and this page is in view, so other
+	// stations' check-ins and checkouts show; a hidden tab or another page sends nothing.
+	start_polling() {
+		this.stop_polling();
+		if (!this.function || document.hidden || frappe.get_route()[0] !== "check-in") return;
+		this.poll_roster();
+		this.poll = setInterval(() => this.poll_roster(), ROSTER_REFRESH_SECONDS * 1000);
 	}
 
+	stop_polling() {
+		clearInterval(this.poll);
+		clearTimeout(this.poll_retry);
+	}
+
+	// A poll is quiet. After a failed poll the station waits 1, 2, 4, then 8 minutes before it asks again,
+	// so a station that lost the server does not add an error to the dialog every 10 s.
+	poll_roster() {
+		this.refresh_roster(true).then(
+			() => (this.poll_failures = 0),
+			() => {
+				this.stop_polling();
+				this.poll_failures = (this.poll_failures || 0) + 1;
+				const minutes = Math.min(2 ** (this.poll_failures - 1), 8);
+				this.poll_retry = setTimeout(() => this.start_polling(), minutes * 60 * 1000);
+			}
+		);
+	}
+
+	refresh_roster(silent = false) {
+		const name = this.function;
+		if (!name) return Promise.resolve();
+		const args = { function: name };
+		return frappe.call({ method: `${API}.get_check_ins`, args, silent }).then((r) => {
+			const rows = r.message || [];
+			// A poll that finds no change leaves the page alone, so a tap in progress is not lost.
+			if (
+				name !== this.function ||
+				JSON.stringify(rows) === JSON.stringify(this.roster_rows)
+			)
+				return;
+			this.roster_rows = rows;
+			this.checked_in = new Set(rows.map((row) => row.person));
+			this.$body.find(".roster-count").text(rows.length);
+			this.render_roster();
+			this.render_results();
+		});
+	}
+
+	render_roster() {
+		const rows = this.roster_rows || [];
+		const query = this.$roster_filter.val().trim().toLowerCase();
+		const shown = rows.filter((row) =>
+			`${row.full_name} ${row.security_code || ""}`.toLowerCase().includes(query)
+		);
+		const empty = rows.length ? __("No one matches.") : __("No one is checked in yet.");
+		this.$roster.html(
+			shown.length
+				? shown.map((row) => this.roster_row(row)).join("")
+				: `<div class="empty">${empty}</div>`
+		);
+	}
+
+	// A child with a pickup tag leaves through Verify Pickup; anyone else is checked out here.
 	roster_row(row) {
+		const button = (action, icon, title) =>
+			`<button class="btn btn-default btn-xs ${action}"
+				data-name="${row.name}" title="${title}">${frappe.utils.icon(icon, "sm")}</button>`;
+		const is_in = !row.collected_at;
+		const status = is_in
+			? `<span class="indicator-pill green">${__("In")}</span>`
+			: `<span class="indicator-pill gray">${
+					row.collected_by_name
+						? __("Collected by {0}", [frappe.utils.escape_html(row.collected_by_name)])
+						: __("Checked out")
+			  }</span>`;
 		return `<div class="roster-row">
+			${frappe.get_avatar("avatar-small", row.full_name, row.photo)}
 			<span class="name">${frappe.utils.escape_html(row.full_name)}</span>
 			${row.security_code ? `<span class="code">${row.security_code}</span>` : ""}
-			<span class="time">${frappe.datetime.comment_when(row.creation, true)}</span>
-			<button class="btn btn-default btn-xs btn-reprint" data-name="${row.name}" title="${__(
-			"Reprint name tag"
-		)}">
-				${frappe.utils.icon("printer", "sm")}
-			</button>
-			<button class="btn btn-default btn-xs btn-undo" data-name="${row.name}" title="${__(
-			"Undo check-in"
-		)}">
-				${frappe.utils.icon("close", "sm")}
-			</button>
+			${status}
+			<span class="time">${frappe.datetime.comment_when(row.collected_at || row.creation, true)}</span>
+			${is_in && !row.security_code ? button("btn-check-out", "log-out", __("Check out")) : ""}
+			${button("btn-reprint", "printer", __("Reprint name tag"))}
+			${is_in ? button("btn-undo", "close", __("Undo check-in")) : ""}
 		</div>`;
+	}
+
+	check_out(check_in) {
+		frappe.confirm(__("Check this person out?"), () => {
+			frappe
+				.call({
+					method: "churchit.church_ministries.page.check_in.checkout.check_out",
+					args: { check_in },
+				})
+				.then(() => this.refresh_roster());
+		});
+	}
+
+	show_rooms() {
+		const name = this.function;
+		frappe
+			.call({
+				method: "churchit.church_ministries.check_in_limits.get_rooms",
+				args: { function: name },
+			})
+			.then((r) => {
+				if (name !== this.function) return;
+				this.$body.find(".roster-rooms").text(r.message.join(", "));
+			});
 	}
 
 	undo(name) {

@@ -11,6 +11,7 @@ from churchit.church_ministries.check_in_limits import (
 	get_bound_problem,
 	get_bound_problems,
 	get_capacity,
+	get_rooms,
 )
 from churchit.church_ministries.doctype.function_check_in.function_check_in import add_check_ins
 from churchit.church_ministries.page.check_in.check_in import check_in
@@ -152,6 +153,13 @@ class TestBoundProblemsAtTheStation(FrappeTestCase):
 		self.assertRaises(frappe.PermissionError, get_bound_problems, self.function.name, [self.child_b])
 		self.assertEqual(list(get_bound_problems(joint, [self.child_b])), [self.child_b])
 
+	def test_only_a_reader_of_the_function_gets_its_rooms(self):
+		frappe.set_user(self.volunteer_b)
+		self.assertRaises(frappe.PermissionError, get_rooms, self.function.name)
+
+		frappe.set_user(self.volunteer_a)
+		self.assertEqual(get_rooms(self.function.name), [])
+
 
 class TestCapacity(RollbackEachTest):
 	def setUp(self):
@@ -189,6 +197,12 @@ class TestCapacity(RollbackEachTest):
 
 	def collect(self, check_in):
 		frappe.db.set_value("Function Check-In", check_in, "collected_at", now_datetime())
+
+	def test_the_station_names_the_approved_rooms(self):
+		self.book(self.room("_Test Capacity Annex", 3))
+		self.book(self.room("_Test Capacity Hall", 50, requires_approval=1), status="Requested")
+
+		self.assertEqual(get_rooms(self.function.name), ["_Test Capacity Annex", "_Test Capacity Room"])
 
 	def test_capacity_sums_the_approved_rooms_and_present_leaves_out_volunteers_and_collected(self):
 		self.book(self.room("_Test Capacity Annex", 3))

@@ -184,7 +184,7 @@ def group_by_family(matched, scope):
 
 @frappe.whitelist()
 def get_check_ins(function: str):
-	"""Who is checked in to *function*, newest first, whichever church they belong to."""
+	"""Who is checked in to *function*, and who has left, newest first, whichever church they belong to."""
 	frappe.has_permission("Function Check-In", throw=True)
 	frappe.has_permission("Function", doc=function, throw=True)
 	# church-scope: keyed to one function the caller may read; its roster spans churches on purpose
@@ -194,7 +194,16 @@ def get_check_ins(function: str):
 		frappe.qb.from_(check_in)
 		.join(person)
 		.on(check_in.person == person.name)
-		.select(check_in.name, check_in.person, check_in.security_code, check_in.creation, person.full_name)
+		.select(
+			check_in.name,
+			check_in.person,
+			check_in.security_code,
+			check_in.creation,
+			check_in.collected_at,
+			check_in.collected_by_name,
+			person.full_name,
+			person.photo,
+		)
 		.where(check_in.function == function)
 		.orderby(check_in.creation, order=frappe.qb.desc)
 	)

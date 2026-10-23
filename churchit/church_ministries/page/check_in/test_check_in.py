@@ -17,6 +17,7 @@ from churchit.church_ministries.page.check_in.check_in import (
 	search_people,
 	undo_check_in,
 )
+from churchit.church_ministries.page.check_in.checkout import check_out
 from churchit.church_people.doctype.family.test_pickup_scope import make_pickup
 from churchit.church_people.doctype.people_settings.people_settings import SHARE_DEFAULTS
 from churchit.church_people.test_household import make_household, set_adult_age
@@ -135,6 +136,30 @@ class TestCheckInStation(FrappeTestCase):
 	def test_check_in_without_printing_returns_no_job(self):
 		result = check_in(self.function.name, [self.loner.name])
 		self.assertNotIn("print", result)
+
+	def test_the_roster_carries_each_persons_photo(self):
+		rosa = make_person("Rosa", "_Test Roster Photo", photo="/files/rosa.jpg").name
+		check_in(self.function.name, [rosa])
+		(row,) = [row for row in get_check_ins(self.function.name) if row.person == rosa]
+		self.assertEqual(row.photo, "/files/rosa.jpg")
+
+	def test_the_roster_says_who_left_when_and_who_collected_them(self):
+		staying, leaving, collected = (
+			make_person(name, "_Test Roster Checkout").name for name in ("Stan", "Lena", "Cole")
+		)
+		names = check_in(self.function.name, [staying, leaving, collected])["check_ins"]
+		check_out(names[1])
+		frappe.db.set_value(
+			"Function Check-In",
+			names[2],
+			{"collected_at": now_datetime(), "collected_by": self.parent.name, "collected_by_name": "Zed"},
+		)
+
+		rows = {row.person: row for row in get_check_ins(self.function.name)}
+		self.assertIsNone(rows[staying].collected_at)
+		self.assertIsNotNone(rows[leaving].collected_at)
+		self.assertIsNone(rows[leaving].collected_by_name)
+		self.assertEqual(rows[collected].collected_by_name, "Zed")
 
 	def test_undo_removes_the_check_in_and_attendance(self):
 		name = check_in(self.function.name, [self.loner.name])["check_ins"][0]

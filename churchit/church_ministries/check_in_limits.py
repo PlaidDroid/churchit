@@ -138,3 +138,12 @@ def get_capacity_warning(function: str) -> str | None:
 	if capacity and present > capacity:
 		return _("The room is over capacity: {0} people for {1} places.").format(present, capacity)
 	return None
+
+
+@frappe.whitelist()
+def get_rooms(function: str) -> list[str]:
+	"""The rooms of *function*'s Approved Room Bookings, which the station shows above its roster."""
+	frappe.has_permission("Function", doc=function, throw=True)
+	# church-scope: Church Check-In has no Room Booking permission, and a Function's bookings follow it
+	rooms = frappe.get_all("Room Booking", filters={"function": function, "status": "Approved"}, pluck="room")
+	return sorted(set(rooms))
