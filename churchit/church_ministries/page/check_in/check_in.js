@@ -188,6 +188,9 @@ class CheckInStation {
 		this.$roster.on("click", ".btn-undo", (event) =>
 			this.undo($(event.currentTarget).data("name"))
 		);
+		this.$roster.on("click", ".btn-page", (event) =>
+			this.page_parents($(event.currentTarget).data("name"))
+		);
 		this.$roster.on("click", ".btn-check-out", (event) =>
 			this.check_out($(event.currentTarget).data("name"))
 		);
@@ -587,6 +590,7 @@ class CheckInStation {
 			${row.security_code ? `<span class="code">${row.security_code}</span>` : ""}
 			${status}
 			<span class="time">${frappe.datetime.comment_when(row.collected_at || row.creation, true)}</span>
+			${is_in ? button("btn-page", "bell-ring", __("Page parents")) : ""}
 			${is_in && !row.security_code ? button("btn-check-out", "log-out", __("Check out")) : ""}
 			${button("btn-reprint", "printer", __("Reprint name tag"))}
 			${is_in ? button("btn-undo", "close", __("Undo check-in")) : ""}
@@ -622,6 +626,33 @@ class CheckInStation {
 			frappe
 				.call({ method: `${API}.undo_check_in`, args: { name } })
 				.then(() => this.refresh_roster());
+		});
+	}
+
+	// The server sends a fixed message to the child's household Adults and names who it reached.
+	page_parents(check_in) {
+		frappe.confirm(__("Ask this child's parents to come?"), () => {
+			frappe
+				.call({
+					method: "churchit.church_ministries.page.check_in.paging.page_parents",
+					args: { check_in },
+					freeze: true,
+				})
+				.then((r) => {
+					const reached = (r.message || []).map(frappe.utils.escape_html);
+					if (reached.length) {
+						frappe.show_alert({
+							message: __("Paged {0}.", [reached.join(", ")]),
+							indicator: "green",
+						});
+						return;
+					}
+					frappe.msgprint({
+						title: __("No parent reached"),
+						message: __("No parent could get a text or an email. Send a runner."),
+						indicator: "orange",
+					});
+				});
 		});
 	}
 

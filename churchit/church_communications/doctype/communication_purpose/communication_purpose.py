@@ -8,11 +8,14 @@ from frappe.model.document import Document
 # What a Church Email asks consent for, and what its unsubscribe link withdraws.
 CHURCH_NEWS = "Church News"
 PASTORAL_CARE = "Pastoral Care"
-USED_BY_THE_APP = (CHURCH_NEWS,)
+# What a page from the Check-In Station asks consent for.
+CHILD_SAFETY = "Child Safety"
+USED_BY_THE_APP = (CHURCH_NEWS, CHILD_SAFETY)
 
 STARTER_PURPOSES = {
 	CHURCH_NEWS: "Church Emails: news, events and announcements sent to the congregation.",
 	PASTORAL_CARE: "Messages about a person's care, such as visits, prayer and support.",
+	CHILD_SAFETY: "Pages from the Check-In Station that ask a child's parents to come.",
 }
 
 
@@ -21,9 +24,7 @@ class CommunicationPurpose(Document):
 
 	def on_trash(self):
 		if self.name in USED_BY_THE_APP:
-			frappe.throw(
-				_("{0} is used by Church Emails, so it cannot be deleted.").format(frappe.bold(self.name))
-			)
+			frappe.throw(_("{0} is used by the app, so it cannot be deleted.").format(frappe.bold(self.name)))
 
 
 def create_communication_purposes():
