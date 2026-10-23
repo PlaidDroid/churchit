@@ -13,7 +13,8 @@ fails as stale instead of dropping it. The save refreshes the person's summaries
 """
 
 import frappe
-from frappe.utils import add_days, getdate, today
+from frappe import _
+from frappe.utils import add_days, cint, getdate, today
 
 # Function Attendance Type is named by its type, so these are also the record names.
 COUNTED_TYPES = ("Confirmed", "Assumed", "Checked-In")
@@ -28,6 +29,13 @@ def get_total(rows, start_date) -> int:
 	if getdate(start_date) > getdate():
 		return 0
 	return sum(1 for row in rows if row.attendance_type in COUNTED_TYPES)
+
+
+def get_attendance_total(rows, start_date, headcount) -> int:
+	"""A Function's `attendance_total`: the larger of its station headcount and its named count, 0 until it starts."""
+	if getdate(start_date) > getdate():
+		return 0
+	return max(get_total(rows, start_date), cint(headcount))
 
 
 def record(person: str, function: str, status: str) -> bool:
@@ -70,7 +78,30 @@ def refresh_started_totals():
 		pluck="name",
 	)
 	for name in functions:
-		function = frappe.get_doc("Function", name)
-		total = get_total(function.attendance, function.start_date)
+		# The lock record() and set_headcount() take, held for one Function at a time.
+		function = frappe.get_doc("Function", name, for_update=True)
+		total = get_attendance_total(function.attendance, function.start_date, function.headcount)
 		if total != function.attendance_total:
 			function.db_set("attendance_total", total, update_modified=False)
+		frappe.db.commit()
+
+
+@frappe.whitelist(methods=["POST"])
+def set_headcount(function: str, headcount: int) -> int:
+	"""Station: store the people counted in *function*'s room, named or not. Returns the new total."""
+	frappe.has_permission("Function Check-In", "create", throw=True)
+	frappe.has_permission("Function", "read", doc=function, throw=True)
+	headcount = cint(headcount)
+	if headcount < 0:
+		frappe.throw(_("A headcount cannot be negative."))
+
+	# The lock record() takes. Church Check-In cannot write Function, so the fields are set directly.
+	function_doc = frappe.get_doc("Function", function, for_update=True)
+	if getdate(function_doc.start_date) > getdate():
+		frappe.throw(_("A headcount can be set only once the function has started."))
+
+	total = get_attendance_total(function_doc.attendance, function_doc.start_date, headcount)
+	frappe.db.set_value(
+		"Function", function, {"headcount": headcount, "attendance_total": total}, update_modified=True
+	)
+	return total

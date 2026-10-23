@@ -20,6 +20,7 @@
   "publish",
   "allow_sign_ups",
   "attendance_total",
+  "headcount",
   "address",
   "description",
   "section_break_bkwy",
@@ -216,6 +217,14 @@
    "fieldtype": "Int",
    "label": "Attendance Total",
    "read_only": 1
+  },
+  {
+   "description": "People counted in the room, named or not. The attendance total is the larger of this and the named count.",
+   "fieldname": "headcount",
+   "fieldtype": "Int",
+   "label": "Headcount",
+   "no_copy": 1,
+   "non_negative": 1
   },
   {
    "collapsible": 1,

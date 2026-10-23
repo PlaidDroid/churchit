@@ -225,6 +225,47 @@ class CheckInStation {
 		});
 		this.clear();
 		this.refresh_roster();
+		this.show_headcount();
+	}
+
+	// People counted in the room, named or not. The attendance total takes the larger count.
+	show_headcount() {
+		if (!this.$headcount) {
+			this.$headcount = $(`<div class="headcount d-flex align-items-center mb-3">
+				<label class="m-0 mr-2 text-muted">${__("Headcount")}</label>
+				<input class="form-control input-xs mr-2" type="number" min="0" style="width: 6em">
+				<button class="btn btn-default btn-xs">${__("Save")}</button>
+			</div>`).insertAfter(this.$body.find(".roster-head"));
+			const save = () =>
+				frappe
+					.call({
+						method: "churchit.church_ministries.attendance.set_headcount",
+						args: {
+							function: this.function,
+							headcount: this.$headcount.find("input").val() || 0,
+						},
+					})
+					.then((r) =>
+						frappe.show_alert({
+							message: __("Attendance total: {0}", [r.message]),
+							indicator: "green",
+						})
+					);
+			this.$headcount.find("button").on("click", save);
+			this.$headcount
+				.find("input")
+				.on("keydown", (event) => event.key === "Enter" && save());
+		}
+		const name = this.function;
+		frappe.db.get_value("Function", name, ["start_date", "headcount"]).then((r) => {
+			const doc = r.message || {};
+			if (name !== this.function) return;
+			// The server refuses a headcount before the function starts.
+			this.$headcount.toggle(
+				Boolean(doc.start_date) && doc.start_date <= frappe.datetime.get_today()
+			);
+			this.$headcount.find("input").val(doc.headcount || "");
+		});
 	}
 
 	focus_search() {

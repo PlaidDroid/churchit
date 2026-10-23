@@ -8,7 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_days, date_diff, format_datetime, get_datetime, getdate
 
-from churchit.church_ministries.attendance import get_total
+from churchit.church_ministries.attendance import get_attendance_total
 from churchit.utils import link_title
 
 TIME_FORMAT = "h:mm a"
@@ -31,7 +31,7 @@ class Function(Document):
 		else:
 			self.title = name
 
-		self.attendance_total = get_total(self.attendance or [], self.start_date)
+		self.attendance_total = get_attendance_total(self.attendance or [], self.start_date, self.headcount)
 
 	def on_trash(self):
 		"""Keep a deleted occurrence deleted: its template skips the date from now on."""
