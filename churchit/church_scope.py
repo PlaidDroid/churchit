@@ -5,6 +5,7 @@
 
 import frappe
 from frappe import _
+from frappe.model.document import Document
 from frappe.utils import cint
 from frappe.utils.nestedset import get_descendants_of
 
@@ -396,6 +397,31 @@ def refuse_another_churches_record(doc, doctype, name):
 		),
 		frappe.PermissionError,
 	)
+
+
+def refuse_another_churches_parent(doc: Document, link_field: str, message: str) -> None:
+	"""Refuse a change of *link_field* to or from a record of a church the user cannot see.
+
+	For a doctype whose `church` comes from *link_field* through `fetch_from`: Frappe checks
+	the create right before `church` is fetched, and the write right on the record as sent,
+	so it sees neither whose record the link names nor whose record this was. *message* gets
+	the title of the record the caller linked as {0}. A stored record of another church is
+	refused without its title, so a guessed name tells the caller nothing. Writes with
+	ignore_permissions are the app's own.
+	"""
+	if doc.flags.ignore_permissions or not doc.has_value_changed(link_field):
+		return
+	before = doc.get_doc_before_save()
+	if before and not has_church_access(frappe.session.user, before.get(CHURCH_FIELD)):
+		frappe.throw(_("This {0} belongs to another church.").format(_(doc.doctype)), frappe.PermissionError)
+
+	doctype = doc.meta.get_field(link_field).options
+	link = doc.get(link_field)
+	if not link or has_church_access(frappe.session.user, frappe.db.get_value(doctype, link, CHURCH_FIELD)):
+		return
+	title_field = frappe.get_meta(doctype).title_field
+	title = (title_field and frappe.db.get_value(doctype, link, title_field)) or link
+	frappe.throw(message.format(title), frappe.PermissionError)
 
 
 def refuse_changing_another_churches_people(doc, ptype=None, user=None):
