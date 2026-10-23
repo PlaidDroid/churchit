@@ -83,3 +83,77 @@ class TestPickupRelease(RollbackEachTest):
 		(family,) = get_pickup_families("R4LS")
 		(son,) = [child for child in family["children"] if child.person == self.son]
 		self.assertEqual((son.collected_by_name, bool(son.collected_at)), ("John Releaseton", True))
+
+	def test_a_restricted_adult_may_not_collect_that_child(self):
+		make_restriction(self.son, self.father)
+
+		with self.assertRaisesRegex(frappe.PermissionError, "Pickup Restriction"):
+			release_children("R4LS", [self.son_check_in, self.daughter_check_in], self.father)
+		self.assertIsNone(frappe.db.get_value("Function Check-In", self.daughter_check_in, "collected_at"))
+
+		release_children("R4LS", [self.daughter_check_in], self.father)
+		self.assertEqual(
+			frappe.db.get_value("Function Check-In", self.daughter_check_in, "collected_by"), self.father
+		)
+
+	def test_a_restriction_ends_after_its_last_day(self):
+		make_restriction(self.son, self.father, valid_until=frappe.utils.add_days(frappe.utils.today(), -1))
+
+		release_children("R4LS", [self.son_check_in], self.father)
+		self.assertEqual(
+			frappe.db.get_value("Function Check-In", self.son_check_in, "collected_by"), self.father
+		)
+
+	def test_the_station_sees_what_to_do_but_not_why(self):
+		make_restriction(
+			self.son, self.father, description="_Test Call the office", reason="_Test Court order"
+		)
+
+		(family,) = get_pickup_families("R4LS")
+		(restriction,) = family["restrictions"]
+		self.assertEqual(
+			(restriction.child, restriction.restricted_person, restriction.description),
+			(self.son, self.father, "_Test Call the office"),
+		)
+		self.assertNotIn("reason", restriction)
+		self.assertNotIn("court_order", restriction)
+
+	def test_only_a_church_manager_overrides_a_restriction_and_it_is_recorded(self):
+		make_restriction(self.son, self.father)
+		with self.assertRaises(frappe.PermissionError):
+			release_children("R4LS", [self.son_check_in], self.father, override_reason="_Test Mother called")
+
+		manager = ensure_user(
+			"_test_release_manager@example.com", "ReleaseManager", roles=("Church Manager",)
+		)
+		frappe.set_user(manager)
+		release_children("R4LS", [self.son_check_in], self.father, override_reason="  _Test Mother called ")
+
+		collected = frappe.db.get_value(
+			"Function Check-In",
+			self.son_check_in,
+			["collected_by", "collected_at", "released_by", "override_reason", "overridden_by"],
+			as_dict=True,
+		)
+		self.assertTrue(collected.collected_at)
+		self.assertEqual(
+			(
+				collected.collected_by,
+				collected.released_by,
+				collected.override_reason,
+				collected.overridden_by,
+			),
+			(self.father, manager, "_Test Mother called", manager),
+		)
+
+
+def make_restriction(child, restricted_person, **values):
+	return frappe.get_doc(
+		{
+			"doctype": "Pickup Restriction",
+			"child": child,
+			"restricted_person": restricted_person,
+			"description": "_Test Ask the office",
+			**values,
+		}
+	).insert(ignore_permissions=True)

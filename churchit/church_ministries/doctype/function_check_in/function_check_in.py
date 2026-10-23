@@ -15,6 +15,16 @@ from churchit.church_scope import default_church, refuse_another_churches_parent
 CHECKED_IN = "Checked-In"
 REGULAR = "Regular"
 VOLUNTEER = "Volunteer"
+# Set only by add_check_ins (the code), checkout.check_out and check_in.release (who took a person).
+CHECKOUT_FIELDS = (
+	"collected_at",
+	"collected_by",
+	"collected_by_name",
+	"released_by",
+	"override_reason",
+	"overridden_by",
+	"security_code",
+)
 
 # Letters and digits that are hard to confuse on a printed tag.
 SECURITY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -32,6 +42,20 @@ class FunctionCheckIn(Document):
 			"Function Check-In", {"function": self.function, "person": self.person, "name": ("!=", self.name)}
 		):
 			frappe.throw(_("This person has already been checked in to this function."))
+		# Frappe does not enforce read_only on insert, so a form or REST insert could forge a code or release.
+		if self.is_new():
+			is_untrusted = not self.flags.ignore_permissions and any(
+				self.get(field) for field in CHECKOUT_FIELDS
+			)
+		else:
+			is_untrusted = not self.flags.checkout and any(
+				self.has_value_changed(field) for field in CHECKOUT_FIELDS
+			)
+		if is_untrusted:
+			frappe.throw(
+				_("The security code and the checkout are set only at the Check-In Station."),
+				frappe.PermissionError,
+			)
 
 	def before_save(self):
 		function_label = (
@@ -44,6 +68,9 @@ class FunctionCheckIn(Document):
 		record(self.person, self.function, CHECKED_IN)
 
 	def on_trash(self):
+		# A checked-out check-in records who took the person. Only system code deletes it.
+		if self.collected_at and not self.flags.ignore_permissions:
+			frappe.throw(_("This person has been checked out, so their check-in cannot be undone."))
 		if remove(self.person, self.function, CHECKED_IN):
 			frappe.msgprint(_("The associated attendance record has been removed."), alert=True)
 

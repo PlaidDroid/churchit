@@ -26,6 +26,8 @@
   "column_break_pickup",
   "collected_at",
   "released_by",
+  "override_reason",
+  "overridden_by",
   "hidden_fields_section",
   "title"
  ],
@@ -156,6 +158,20 @@
    "fieldname": "released_by",
    "fieldtype": "Link",
    "label": "Released By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "Why a Church Manager released the person to someone a Pickup Restriction names.",
+   "fieldname": "override_reason",
+   "fieldtype": "Small Text",
+   "label": "Override Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "overridden_by",
+   "fieldtype": "Link",
+   "label": "Overridden By",
    "options": "User",
    "read_only": 1
   },

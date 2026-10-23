@@ -246,6 +246,21 @@ class TestAnonymizePerson(RollbackEachTest):
 
 		self.assertRaises(frappe.PermissionError, anonymize_person, person.name)
 
+	def test_the_pickup_restrictions_on_the_person_as_a_child_are_deleted(self):
+		person = self.make_member()
+		restriction = frappe.get_doc(
+			{
+				"doctype": "Pickup Restriction",
+				"child": person.name,
+				"restricted_name": "_Test Someone",
+				"description": "_Test Call the office",
+			}
+		).insert(ignore_permissions=True)
+
+		anonymize_person(person.name)
+
+		self.assertFalse(frappe.db.exists("Pickup Restriction", restriction.name))
+
 
 class TestPersonalDataRequests(RollbackEachTest):
 	def setUp(self):

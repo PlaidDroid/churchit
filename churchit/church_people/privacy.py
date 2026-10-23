@@ -13,8 +13,9 @@ A Birth life event goes, because a birth date identifies a person. The other lif
 date, so the number of baptisms or new members in a year stays right, and lose their location and notes.
 
 The records that name the person keep the link and lose the copies of the person's name and email addresses in
-their text (titles, fetched names, donor emails). Their notes and connection cards are deleted outright, since
-everything in them is about the person and nothing in them is counted. The change history, comments and
+their text (titles, fetched names, donor emails). Their notes, connection cards and the pickup restrictions that
+protect them as a child are deleted outright, since everything in them is about the person and nothing in them
+is counted. The change history, comments and
 attachments of the person and of the records about them (`RECORDS_ABOUT_THE_PERSON`) are deleted, because they
 hold the old values, and the messages kept on them lose their addresses and text. A record that names the
 person in a field of its own also loses the answers kept on it to a Question Set, and its change history
@@ -66,7 +67,11 @@ PERSONAL_FIELDS = (
 # Person tables whose every row is personal.
 PERSONAL_TABLES = ("emails", "phones", "addresses", "letters")
 # Records wholly about the person, by the field naming them, deleted rather than kept.
-PERSONAL_DOCTYPES = (("Person Note", "person"), ("Connection Card", "person"))
+PERSONAL_DOCTYPES = (
+	("Person Note", "person"),
+	("Connection Card", "person"),
+	("Pickup Restriction", "child"),
+)
 # Records about the person that a church keeps, by the field naming them. Their history, comments, attachments
 # and messages are about the person, so those go. A field naming someone in a role, such as caregiver, is not.
 RECORDS_ABOUT_THE_PERSON = (

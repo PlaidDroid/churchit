@@ -14,6 +14,7 @@ from churchit.church_ministries.doctype.function_check_in.function_check_in impo
 	is_shared_function,
 	print_name_tags,
 )
+from churchit.church_ministries.page.check_in.checkout import lock_check_in
 from churchit.church_people import household
 from churchit.church_people.doctype.people_settings.people_settings import SHARE_DEFAULTS
 from churchit.church_people.doctype.person.person import SOURCE_CHECK_IN
@@ -231,8 +232,19 @@ def get_pickup_families(code: str) -> list[dict]:
 
 
 def get_pickup_family(family: str | None, children: list[dict]) -> dict:
-	"""*family*'s checked-in *children* with its living Adults and authorized pickups, who may collect them."""
-	result = {"family": family, "family_name": None, "children": children, "adults": [], "pickups": []}
+	"""*family*'s checked-in *children* with its living Adults and authorized pickups, who may collect them.
+
+	`restrictions` holds the Pickup Restrictions on the children that apply today, without their reason.
+	"""
+	restrictions = get_restrictions([child.person for child in children])
+	result = {
+		"family": family,
+		"family_name": None,
+		"children": children,
+		"adults": [],
+		"pickups": [],
+		"restrictions": restrictions,
+	}
 	if not family:
 		return result
 
@@ -253,20 +265,46 @@ def get_pickup_family(family: str | None, children: list[dict]) -> dict:
 	return result
 
 
+def get_restrictions(children: list[str]) -> list[dict]:
+	"""The Pickup Restrictions on *children* that apply today, without their reason or court order."""
+	# church-scope: the children of check-ins the caller may read; the station never sees the reason or the file
+	return frappe.get_all(
+		"Pickup Restriction",
+		filters=[["child", "in", children]],
+		or_filters=[["valid_until", "is", "not set"], ["valid_until", ">=", today()]],
+		fields=["child", "restricted_person", "restricted_name", "description", "valid_until"],
+		order_by="creation asc",
+	)
+
+
 @frappe.whitelist(methods=["POST"])
-def release_children(code: str, check_ins: str | list[str], collector: str) -> list[dict]:
+def release_children(
+	code: str, check_ins: str | list[str], collector: str, override_reason: str | None = None
+) -> list[dict]:
 	"""Record that *collector* took the children of *check_ins*, checked in today with pickup tag *code*.
 
 	The families the code finds are read again here, so only someone they let collect, and only a child
-	of this code, is ever released. Returns the families as they stand after.
+	of this code, is ever released. A Church Manager may release a child to someone a Pickup Restriction
+	names, with *override_reason*. Returns the families as they stand after.
 	"""
 	frappe.has_permission("Function Check-In", "write", throw=True)
+	override_reason = (override_reason or "").strip()
+	if override_reason:
+		frappe.only_for("Church Manager")
 	waiting = set(frappe.parse_json(check_ins) if isinstance(check_ins, str) else check_ins)
+	# Every Function row first, in one order, so two stations releasing at once cannot deadlock.
+	# church-scope: only locks; get_pickup_families below is the gate
+	functions = frappe.get_all(
+		"Function Check-In", filters={"name": ("in", list(waiting))}, pluck="function", distinct=True
+	)
+	for function in sorted(functions):
+		frappe.db.get_value("Function", function, "name", for_update=True)
 	for family in get_pickup_families(code):
 		collectors = {person["name"]: person["full_name"] for person in family["adults"] + family["pickups"]}
+		restricted = {row.child for row in family["restrictions"] if row.restricted_person == collector}
 		for child in family["children"]:
 			if child.check_in in waiting:
-				release(child.check_in, collector, collectors)
+				release(child.check_in, collector, collectors, child.person in restricted, override_reason)
 				waiting.discard(child.check_in)
 	if waiting:
 		frappe.throw(
@@ -275,23 +313,40 @@ def release_children(code: str, check_ins: str | list[str], collector: str) -> l
 	return get_pickup_families(code)
 
 
-def release(check_in: str, collector: str, collectors: dict[str, str]) -> None:
-	"""Store who took one child, once: the row is locked, so two volunteers cannot both release them."""
+def release(
+	check_in: str,
+	collector: str,
+	collectors: dict[str, str],
+	is_restricted: bool = False,
+	override_reason: str | None = None,
+) -> None:
+	"""Store who took one child, once: the row is locked, so two volunteers cannot both release them.
+
+	A collector a Pickup Restriction names for the child is refused, unless a Church Manager overrides it.
+	"""
 	if collector not in collectors:
 		frappe.throw(
 			_("This person may not collect these children. Ask a member of staff."), frappe.PermissionError
 		)
-	if frappe.db.get_value("Function Check-In", check_in, "collected_by", for_update=True):
+	if is_restricted and not override_reason:
+		frappe.throw(
+			_("A Pickup Restriction names this person for this child. Ask a Church Manager."),
+			frappe.PermissionError,
+		)
+	if lock_check_in(check_in).collected_at:
 		frappe.throw(_("This child has already been collected."))
+
+	values = {
+		"collected_by": collector,
+		"collected_by_name": collectors[collector],
+		"collected_at": now_datetime(),
+		"released_by": frappe.session.user,
+	}
+	if is_restricted:
+		values.update(override_reason=override_reason, overridden_by=frappe.session.user)
 	doc = frappe.get_doc("Function Check-In", check_in)
-	doc.update(
-		{
-			"collected_by": collector,
-			"collected_by_name": collectors[collector],
-			"collected_at": now_datetime(),
-			"released_by": frappe.session.user,
-		}
-	)
+	doc.update(values)
+	doc.flags.checkout = True
 	doc.save()
 
 
@@ -322,6 +377,10 @@ def check_in(function: str, persons: str | list[str], print_tags: bool = False, 
 
 @frappe.whitelist(methods=["POST"])
 def undo_check_in(name: str):
+	"""Delete a check-in made by mistake. A person who has left keeps theirs, as the record of who took them."""
+	frappe.has_permission("Function Check-In", "delete", doc=name, throw=True)
+	# Lock in the check-in order before the delete; FunctionCheckIn.on_trash refuses a checked-out row.
+	lock_check_in(name)
 	frappe.delete_doc("Function Check-In", name)
 
 

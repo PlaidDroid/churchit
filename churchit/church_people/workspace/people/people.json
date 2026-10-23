@@ -332,7 +332,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Person Documents",
-   "link_count": 31,
+   "link_count": 32,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -573,6 +573,16 @@
    "label": "Authorized Pickups",
    "link_count": 0,
    "link_to": "Authorized Pickup",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pickup Restrictions",
+   "link_count": 0,
+   "link_to": "Pickup Restriction",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"

@@ -59,6 +59,7 @@
    "options": "Person Relation Type"
   },
   {
+   "description": "Shown to the volunteer at Verify Pickup, such as \"Sundays only\". Do not write custody details here: add a Pickup Restriction instead.",
    "fieldname": "notes",
    "fieldtype": "Small Text",
    "label": "Notes"

@@ -475,21 +475,77 @@ class CheckInStation {
 				frappe.msgprint(__("Tick the children this person is collecting."));
 				return;
 			}
-			frappe
-				.call({
-					method: `${API}.release_children`,
-					args: { code, check_ins, collector: event.currentTarget.dataset.collector },
-					freeze: true,
-				})
-				.then((r) => this.render_pickup(dialog, code, r.message || []));
+			const collector = event.currentTarget.dataset.collector;
+			const release = (override_reason) =>
+				frappe
+					.call({
+						method: `${API}.release_children`,
+						args: { code, check_ins, collector, override_reason },
+						freeze: true,
+					})
+					.then((r) => this.render_pickup(dialog, code, r.message || []));
+			const family = families.find((row) =>
+				row.children.some((child) => check_ins.includes(child.check_in))
+			);
+			const ticked = family.children
+				.filter((child) => check_ins.includes(child.check_in))
+				.map((child) => child.person);
+			const is_restricted = family.restrictions.some(
+				(row) => row.restricted_person === collector && ticked.includes(row.child)
+			);
+			// The server refuses everyone else; only a Church Manager may override, with a reason.
+			if (!is_restricted || !frappe.user.has_role("Church Manager")) {
+				release();
+				return;
+			}
+			frappe.prompt(
+				{
+					fieldtype: "Small Text",
+					fieldname: "reason",
+					label: __("Override Reason"),
+					description: __(
+						"A Pickup Restriction names this person. Say why you release the child to them."
+					),
+					reqd: 1,
+				},
+				({ reason }) => release(reason),
+				__("Override Pickup Restriction"),
+				__("Release")
+			);
 		});
 	}
 
 	pickup_family(family) {
 		const children = family.children.map((child) => this.pickup_child(child));
 		const release = family.children.some((child) => !child.collected_by);
+		const names = Object.fromEntries(
+			family.children.map((child) => [child.person, child.full_name])
+		);
+		const restricted_from = (person) =>
+			family.restrictions
+				.filter((row) => row.restricted_person === person)
+				.map((row) => __("Restricted from collecting {0}", [names[row.child]]));
 		const collector = (person, detail) =>
-			this.pickup_person(person.full_name, person.photo, detail, release && person.name);
+			this.pickup_person(
+				person.full_name,
+				person.photo,
+				[detail, ...restricted_from(person.name)].join("\n"),
+				release && person.name
+			);
+		const restrictions = family.restrictions.map((row) =>
+			this.pickup_person(
+				row.restricted_name,
+				null,
+				[
+					__("May not collect {0}", [names[row.child]]),
+					row.description,
+					row.valid_until &&
+						__("Until {0}", [frappe.datetime.str_to_user(row.valid_until)]),
+				]
+					.filter(Boolean)
+					.join("\n")
+			)
+		);
 		const collectors = [
 			...family.adults.map((adult) => collector(adult, __("Adult of the household"))),
 			...family.pickups.map((pickup) =>
@@ -510,6 +566,12 @@ class CheckInStation {
 			<div class="pickup-people">${
 				collectors.join("") || __("No one is on file. Ask a member of staff.")
 			}</div>
+			${
+				restrictions.length
+					? `<div class="pickup-heading text-danger">${__("Pickup Restrictions")}</div>
+						<div class="pickup-people">${restrictions.join("")}</div>`
+					: ""
+			}
 		</div>`;
 	}
 
