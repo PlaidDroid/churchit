@@ -480,6 +480,24 @@ Only the gateways in `giving_settings.SUPPORTED_GATEWAY_SETTINGS` (Stripe and Pa
 `OnlineDonation.record_charge`, which compares the amount and currency of the newest Completed
 Integration Request with the gift, because the checkout takes the amount from the browser.
 
+## Integrations
+
+A connector to another system uses Frappe's doctypes, hooks and APIs as they are designed, and stays
+small. Do not build one that depends on another app's internals, calls an unstable vendor API
+directly, or handles its own protocol or payment payloads: it breaks when the other side changes.
+
+- **Use Frappe's settings doctype first:** SMS Settings, Payment Gateway, Email Account, OAuth
+  Client, Geolocation Settings or Webhook. Sending a record to another system is a Webhook, not code.
+- **A service with no Frappe home keeps its settings on a Single in the module that owns its data**:
+  fields on that module's settings Single (People Settings holds the address lookup), or one
+  `<Name> Settings` Single when the module has none. Keep secrets in Password fields.
+- **Give each connector one switch, `is_<name>_on()`**, like `geocoding.is_address_lookup_on()`, and
+  ask it before each call. Add no connector registry and no Church Features check.
+- **An inbound endpoint refuses while the switch is off**, compares its secret with
+  `hmac.compare_digest`, and sets a `rate_limit`. Follow "Whitelisted endpoints" for everything else.
+- **An outbound call runs on the long queue, from the server**, never from the browser, and is safe
+  to run again.
+
 ## The switch
 
 `Church Features.enable_multi_church` is off by default and a single-church site must notice nothing.
