@@ -7,7 +7,7 @@
   "include_name_field": 0,
   "is_standard": 1,
   "list_name": "List",
-  "modified": "2026-06-27 18:00:00.000000",
+  "modified": "2026-10-22 17:51:39.000000",
   "modified_by": "Administrator",
   "module": "Church Ministries",
   "name": "Function",
@@ -71,7 +71,7 @@
       "ui_tour": 0
     },
     {
-      "description": "Turn on to auto-recreate this function on a schedule. Repeat Frequency and the day/until fields then control the cadence.",
+      "description": "Turn on to make this function repeat on a schedule. Repeat Frequency, Repeat Every, the day fields, Repeat Until and Create Weeks Ahead then control which occurrences are made.",
       "fieldname": "auto_repeat",
       "fieldtype": "Check",
       "has_next_condition": 0,

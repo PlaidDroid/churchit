@@ -33,9 +33,14 @@
   "section_break_recurrence",
   "auto_repeat",
   "repeat_frequency",
+  "repeat_interval",
+  "repeat_monthly_by",
+  "repeat_week_of_month",
   "repeat_day_of_week",
   "repeat_month_day",
   "repeat_until",
+  "repeat_horizon_weeks",
+  "skip_dates",
   "section_break_assoc",
   "associations",
   "hidden_fields_section",
@@ -247,12 +252,13 @@
    "fieldtype": "Link",
    "hidden": 1,
    "label": "Source Template",
+   "no_copy": 1,
    "options": "Function",
    "read_only": 1
   },
   {
    "default": "0",
-   "description": "When checked, this function acts as a template: after each occurrence ends, the next one is automatically created based on the frequency below.",
+   "description": "When checked, this function acts as a template: its next occurrences are created ahead of time, up to Create Weeks Ahead, by the rule below.",
    "fieldname": "auto_repeat",
    "fieldtype": "Check",
    "label": "Automatically Recreate"
@@ -266,21 +272,21 @@
    "options": "\nDaily\nWeekly\nMonthly\nYearly"
   },
   {
-   "depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Weekly'",
-   "description": "Day of the week the next occurrence should fall on.",
+   "depends_on": "eval:doc.auto_repeat && (doc.repeat_frequency == 'Weekly' || (doc.repeat_frequency == 'Monthly' && doc.repeat_monthly_by == 'Weekday'))",
+   "description": "Day of the week the occurrences fall on.",
    "fieldname": "repeat_day_of_week",
    "fieldtype": "Select",
    "label": "Repeat Day of Week",
-   "mandatory_depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Weekly'",
+   "mandatory_depends_on": "eval:doc.auto_repeat && (doc.repeat_frequency == 'Weekly' || (doc.repeat_frequency == 'Monthly' && doc.repeat_monthly_by == 'Weekday'))",
    "options": "\nSunday\nMonday\nTuesday\nWednesday\nThursday\nFriday\nSaturday"
   },
   {
-   "depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Monthly'",
-   "description": "Day of the month (1-31) the next occurrence should fall on. If the month has fewer days, the last day of the month is used.",
+   "depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Monthly' && doc.repeat_monthly_by != 'Weekday'",
+   "description": "Day of the month (1 to 31) the occurrences fall on. If the month has fewer days, the last day of the month is used.",
    "fieldname": "repeat_month_day",
    "fieldtype": "Int",
    "label": "Repeat Day of Month",
-   "mandatory_depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Monthly'",
+   "mandatory_depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Monthly' && doc.repeat_monthly_by != 'Weekday'",
    "non_negative": 1
   },
   {
@@ -324,6 +330,49 @@
    "fieldname": "section_break_recurrence",
    "fieldtype": "Section Break",
    "label": "Recurrence"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.auto_repeat",
+   "description": "1 repeats every day, week, month or year. 2 repeats every second one, and so on.",
+   "fieldname": "repeat_interval",
+   "fieldtype": "Int",
+   "label": "Repeat Every",
+   "non_negative": 1
+  },
+  {
+   "default": "Day of Month",
+   "depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Monthly'",
+   "description": "Repeat on a day of the month (the 15th), or on a weekday of the month (the second Sunday).",
+   "fieldname": "repeat_monthly_by",
+   "fieldtype": "Select",
+   "label": "Repeat Monthly By",
+   "options": "Day of Month\nWeekday"
+  },
+  {
+   "depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Monthly' && doc.repeat_monthly_by == 'Weekday'",
+   "fieldname": "repeat_week_of_month",
+   "fieldtype": "Select",
+   "label": "Repeat Week of Month",
+   "mandatory_depends_on": "eval:doc.auto_repeat && doc.repeat_frequency == 'Monthly' && doc.repeat_monthly_by == 'Weekday'",
+   "options": "\nFirst\nSecond\nThird\nFourth\nLast"
+  },
+  {
+   "default": "8",
+   "depends_on": "eval:doc.auto_repeat",
+   "description": "How many weeks ahead the occurrences are created, so they show on the calendar.",
+   "fieldname": "repeat_horizon_weeks",
+   "fieldtype": "Int",
+   "label": "Create Weeks Ahead",
+   "non_negative": 1
+  },
+  {
+   "depends_on": "eval:doc.auto_repeat",
+   "description": "Dates with no occurrence. Deleting an occurrence adds its date here.",
+   "fieldname": "skip_dates",
+   "fieldtype": "Table",
+   "label": "Skip Dates",
+   "options": "Function Skip Date"
   }
  ],
  "grid_page_length": 50,
@@ -342,7 +391,7 @@
    "link_fieldname": "function"
   }
  ],
- "modified": "2026-10-22 16:25:52.000000",
+ "modified": "2026-10-22 17:35:40.000000",
  "modified_by": "Administrator",
  "module": "Church Ministries",
  "name": "Function",

@@ -317,6 +317,9 @@ whole, so two check-ins at once lose no row and a stale desk save fails. `record
 (`STATUS_RANK`). A `Function.validate` check acts only when `has_value_changed` on its own field, or an
 attendance save trips it.
 
+Recurring Functions are made in `church_ministries/recurrence.py`. Deleting an occurrence adds its
+date to the template's Skip Dates (`Function.on_trash`), so the daily job does not make it again.
+
 Birthdays and ages come from the Person fields, never from Life Event rows. `birth_month` and
 `birth_day` are set from the Birth event even when its year is unknown (0 when there is no
 birthday). `birth_date` needs a known year. `age` needs one too and, for someone who died, a known
