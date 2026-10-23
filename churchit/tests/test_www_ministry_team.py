@@ -14,8 +14,6 @@ from churchit.church_ministries.member_ministry_team import (
 	add_own_block,
 	answer_by_key,
 	answer_own_assignment,
-	calendar_text,
-	calendar_times,
 	get_team_calendar,
 	make_own_calendar_key,
 	remove_own_block,
@@ -29,6 +27,7 @@ from churchit.tests.helpers import (
 	make_team_position,
 	make_two_churches,
 )
+from churchit.tests.test_ics import request_feed, unfold
 from churchit.www import ministry_team, ministry_team_response
 
 
@@ -142,11 +141,9 @@ class TestMinistryTeamPages(RollbackEachTest):
 		remove_own_block(block.name)
 		self.assertEqual(self.context(ministry_team).blocks, [])
 
-	def calendar(self, key):
+	def calendar(self, key, etag=None):
 		frappe.set_user("Guest")
-		get_team_calendar(key)
-		self.assertEqual(frappe.response.content_type, "text/calendar")
-		return frappe.response.filecontent
+		return request_feed(self, get_team_calendar, etag=etag, key=key)
 
 	def test_a_member_subscribes_to_a_calendar_of_what_they_accepted(self):
 		day = add_days(getdate(), 8)
@@ -162,7 +159,9 @@ class TestMinistryTeamPages(RollbackEachTest):
 		key = calendar.url.partition("key=")[2]
 		self.assertTrue(calendar.webcal.startswith("webcal://"))
 
-		feed = self.calendar(key)
+		response = self.calendar(key)
+		self.assertEqual(response.mimetype, "text/calendar")
+		feed = unfold(response)
 		start = datetime.combine(day, time(9, 30))
 		utc_start = start.replace(tzinfo=ZoneInfo(get_system_timezone())).astimezone(UTC)
 		self.assertIn(f"DTSTART:{utc_start:%Y%m%dT%H%M%SZ}", feed)
@@ -180,14 +179,20 @@ class TestMinistryTeamPages(RollbackEachTest):
 		with self.assertRaises(frappe.PermissionError):
 			self.calendar("")
 
-	def test_an_all_day_function_fills_whole_days_and_text_is_escaped(self):
-		retreat = frappe._dict(start_date="2031-05-02", end_date="2031-05-04", all_day=1)
-		self.assertEqual(
-			calendar_times(retreat), ["DTSTART;VALUE=DATE:20310502", "DTEND;VALUE=DATE:20310505"]
-		)
-		self.assertEqual(
-			calendar_text("Ushers, Greeters; Doors\\Halls\nTwo"), "Ushers\\, Greeters\\; Doors\\\\Halls\\nTwo"
-		)
+	def test_an_unchanged_team_feed_keeps_its_etag_and_answers_304(self):
+		accepted = make_function("_Test Team Page Etag", start_date=add_days(getdate(), 9))
+		make_team_assignment(accepted.name, self.position.name, self.member.name, status="Accepted")
+		frappe.set_user(self.email)
+		make_own_calendar_key()
+		key = frappe.db.get_value("Person", self.member.name, "team_calendar_key")
+
+		first = self.calendar(key)
+		self.assertIn("_Test Team Page Etag", unfold(first))
+		self.assertEqual(first.get_etag(), self.calendar(key).get_etag())
+
+		cached = self.calendar(key, etag=f'"{first.get_etag()[0]}"')
+		self.assertEqual(cached.status_code, 304)
+		self.assertEqual(cached.get_data(), b"")
 
 	def test_a_member_cannot_remove_someone_elses_block(self):
 		theirs = frappe.get_doc(

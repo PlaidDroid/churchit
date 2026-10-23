@@ -419,6 +419,10 @@ A guest endpoint behind a public page declares no `church` parameter. `churchit.
 `selected_church_name()`, which accepts only a published church. A signed link is the exception:
 `newsletter.unsubscribe` takes `church`, and Frappe's `verify_request` checks the signature.
 
+Calendar feeds are built in `churchit/ics.py`: `make_event`, `make_calendar` (folds every line) and
+`calendar_response` (ETag and 304). Stamp each event with the `modified` of the records it shows,
+never the time of the request, or the ETag changes on every GET. Do not add a second feed mechanism.
+
 Every field a page shows carries a badge on its desk form, worked out by scanning the pages
 themselves (`church_website/published_fields.py`). Nothing is declared by hand: a new www page,
 published Web Page, Web Form or guest endpoint is picked up, and so are the helpers, jinja methods

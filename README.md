@@ -72,6 +72,7 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Name tags: printed per check-in through the browser's print dialog (any printer), or silently in ZPL to Zebra label printers such as the ZD421 via Zebra Browser Print, QZ Tray, or straight over the network. Optional pickup codes for children's ministry print on each tag and on a parent pickup tag. Both label layouts are Print Formats a church can copy and customize
 - Recurring functions: every n days, weeks, months or years, on a day of the month or a weekday of the month (the second Sunday), created weeks ahead for the calendar, with skip dates and room bookings
 - Calendar view (Private & Public)
+- A public calendar feed that visitors subscribe to in their phone or computer calendar, for the whole church or one published ministry
 - Attendance types (Confirmed, Assumed, Absent, etc.)
 - Song tracking for worship services, and a Song Usage report with CCLI numbers for CCLI reporting
 - Reports: attendance by function, attendance by person, function count by type

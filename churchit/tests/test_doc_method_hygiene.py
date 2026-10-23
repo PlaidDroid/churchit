@@ -582,6 +582,9 @@ NAME_CHECK_EXEMPT = {
 	"churchit.church_study.doctype.bible_memory_item.bible_memory_item.assign_memory": TRANSLATION,
 	"churchit.church_study.doctype.bible_memory_item.bible_memory_item.record_mistake": OWN_RECORD,
 	"churchit.church_study.doctype.bible_memory_item.bible_memory_item.complete_session": OWN_RECORD,
+	"churchit.ics.get_public_calendar": (
+		"a guest feed; it lists a ministry's Functions only when the Ministry is published"
+	),
 	"churchit.scripture.get_books": TRANSLATION,
 	"churchit.scripture.get_chapter": TRANSLATION,
 	"churchit.scripture.get_passage": TRANSLATION,

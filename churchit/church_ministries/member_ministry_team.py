@@ -3,28 +3,16 @@
 
 """A portal member's own ministry team assignments, blocks and calendar feed, and answers sent from a request email."""
 
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
-
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Coalesce
 from frappe.rate_limiter import rate_limit
-from frappe.utils import (
-	add_days,
-	format_time,
-	get_host_name,
-	get_system_timezone,
-	get_url,
-	getdate,
-	now_datetime,
-	nowdate,
-	sbool,
-)
+from frappe.utils import add_days, format_time, get_url, getdate, now_datetime, nowdate, sbool
 
 from churchit.church_ministries.doctype.function.function import TIME_FORMAT, get_time_window
 from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import ACCEPTED
 from churchit.church_scope import session_person
+from churchit.ics import calendar_response, make_calendar, make_event
 
 # A calendar app drops an event the feed stops listing, so the feed keeps recent ones.
 CALENDAR_HISTORY_DAYS = 90
@@ -50,6 +38,8 @@ def get_own_assignments(person: str, from_date: str | None = None) -> list[frapp
 			Assignment.status,
 			Assignment.decline_reason,
 			Assignment.function,
+			Assignment.modified,
+			Function.modified.as_("function_modified"),
 			Function.function_name,
 			Function.start_date,
 			Function.start_time,
@@ -94,49 +84,13 @@ def get_calendar_links(person: str) -> frappe._dict | None:
 
 def get_calendar(person: str) -> str:
 	"""*person*'s accepted assignments as an iCalendar feed."""
-	host = get_host_name()
-	stamp = as_calendar_time(now_datetime())
-	lines = [
-		"BEGIN:VCALENDAR",
-		"VERSION:2.0",
-		"PRODID:-//Churchit//Ministry Team//EN",
-		"METHOD:PUBLISH",
-		f"X-WR-CALNAME:{calendar_text(_('Ministry Team'))}",
-	]
+	events = []
 	for row in get_own_assignments(person, add_days(nowdate(), -CALENDAR_HISTORY_DAYS)):
 		if row.status != ACCEPTED:
 			continue
 		summary = _("{0} at {1}").format(row.position, row.function_name)
-		lines += [
-			"BEGIN:VEVENT",
-			f"UID:{row.name}@{host}",
-			f"DTSTAMP:{stamp}",
-			*calendar_times(row),
-			f"SUMMARY:{calendar_text(summary)}",
-			"END:VEVENT",
-		]
-	lines.append("END:VCALENDAR")
-	return "\r\n".join(lines) + "\r\n"
-
-
-def calendar_times(function) -> list[str]:
-	"""DTSTART and DTEND of *function*: whole days when it has no start time, else UTC times."""
-	start, end = get_time_window(function)
-	if function.all_day or not function.start_time:
-		# The end of an all-day event is the day after its last day.
-		return [f"DTSTART;VALUE=DATE:{start:%Y%m%d}", f"DTEND;VALUE=DATE:{end + timedelta(days=1):%Y%m%d}"]
-	return [f"DTSTART:{as_calendar_time(start)}", f"DTEND:{as_calendar_time(end)}"]
-
-
-def as_calendar_time(value: datetime) -> str:
-	"""*value*, a time in the site's time zone, as an iCalendar UTC time."""
-	local = value.replace(tzinfo=ZoneInfo(get_system_timezone()))
-	return local.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-
-
-def calendar_text(value: str) -> str:
-	"""*value* escaped for an iCalendar text property."""
-	return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+		events.append(make_event(row.name, row, summary, max(row.modified, row.function_modified)))
+	return make_calendar(_("Ministry Team"), events)
 
 
 def get_assignment_by_key(key: str):
@@ -182,11 +136,7 @@ def get_team_calendar(key: str):
 			frappe.PermissionError,
 		)
 
-	frappe.response.type = "download"
-	frappe.response.filename = "ministry-team.ics"
-	frappe.response.filecontent = get_calendar(person)
-	frappe.response.content_type = "text/calendar"
-	frappe.response.display_content_as = "inline"
+	return calendar_response(get_calendar(person), "ministry-team.ics")
 
 
 @frappe.whitelist(methods=["POST"])
