@@ -209,7 +209,8 @@ class Family(Document):
 		"""Only the primary contact's own church makes them one, because the family moves to their church.
 
 		Frappe checks the right to the family before `follow_primary_contacts_church` sets its church, so it
-		never sees where the family goes. Writes with ignore_permissions, such as a person joining their
+		never sees where the family goes. The church is set in code, not by `fetch_from`, so this checks the
+		church it set rather than calling `refuse_another_churches_parent`. Writes with ignore_permissions, such as a person joining their
 		family's roster, are the app's own and are not refused.
 		"""
 		if self.flags.ignore_permissions or not self.has_value_changed("primary_contact"):

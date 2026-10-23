@@ -194,7 +194,7 @@ containers money runs through (Fund, Ministry).
 Transfer keeps the church that gave, spent or moved it, so per-church figures come from those rows at
 read time. A money record never takes the empty church of a shared container
 (`FundTransfer.set_church_when_the_source_is_shared`), and moves money only out of a fund of the
-user's church or a shared one (`FundTransfer.refuse_another_churches_fund`). What a shared container holds is the joint
+user's church or a shared one (`refuse_another_churches_parent` on `from_fund`). What a shared container holds is the joint
 pot, and a stored total on it has to be the joint truth rather than one reader's share:
 `Fund.balance` is the joint balance, `Ministry.total_expenses` the combined spending,
 `Function.attendance_total` the one head count of one joint service. Say the consequence out loud
@@ -521,18 +521,20 @@ replaces `MapView.setup_view` (see the next section).
 - **Never name a field `assigned_to`.** Frappe's `assign_to` writes the assignee's User ID into any
   field with that name and clears it when the assignment goes. Care Request's Person link is
   `caregiver` for that reason.
-- **Frappe checks create before `fetch_from` fills `church`.** A doctype that takes its church from
-  a link checks in `validate`, when that link changes and the save is not `ignore_permissions`, that
-  the user may see the linked record's church, with a `refuse_another_churches_<link>` method:
-  Communication Consent, Person Note, Follow-up Card (its person and its workflow), Background
-  Check, Care Request, Care Assignment, Visitation Log, Counseling Case, Ministry Team Block,
-  Ministry Team Position, Function Check-In, Function Sign-Up, Bulletin, Alms Request, Prayer, Fund
-  Transfer and Room Booking. Ministry Team Assignment checks on insert, because its links are set
-  once; Family checks its primary contact and Possible Duplicate its pair. Family also checks each
-  new member, and Person checks a changed `family`, so a household spans churches only when a user
-  who sees both churches links it. A Giving Statement checks its own church instead, because a
-  statement for another church's giver stays in the issuer's church. A new doctype like these needs
-  the same method.
+- **Frappe checks create before `fetch_from` fills `church`.** It also checks write on the record as
+  the caller sent it, so it sees neither whose record the link names nor whose record this was. A
+  doctype that takes its church from a link calls
+  `church_scope.refuse_another_churches_parent(self, "<link>", _("{0} belongs to another church, ..."))`
+  in `validate`. When the link changes and the save is not `ignore_permissions`, it refuses unless
+  the user may see both the linked record's church and the stored church, and fills `{0}` with the
+  refused record's title. Ministry Team Assignment calls it only on insert, because its links are
+  set once. `tests/test_church_scope_hygiene.py` fails when a doctype whose `church` has `fetch_from`
+  does not call it on that link and is not in `PARENT_GUARD_EXCEPTIONS` with a reason: Communication
+  Consent checks every save, because its person is set once; Giving Statement checks its own church,
+  because a statement for another church's giver stays in the issuer's church; Possible Duplicate
+  checks a change of either person of its pair. Family sets its church in code, so it checks its
+  primary contact itself and each new member, and Person checks a changed `family`, so a household
+  spans churches only when a user who sees both churches links it.
 - **Model sync gives every existing row a new column's default before any post_model_sync patch.**
   When that default widens access, move the data in a pre_model_sync patch that syncs the doctype
   itself (`set_prayer_request_visibility`).

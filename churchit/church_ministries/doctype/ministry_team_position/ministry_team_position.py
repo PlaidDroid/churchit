@@ -7,33 +7,17 @@ from frappe.model.document import Document
 from frappe.utils import nowdate
 
 from churchit.church_people.doctype.background_check.background_check import is_cleared
-from churchit.church_scope import CHURCH_FIELD, has_church_access
+from churchit.church_scope import refuse_another_churches_parent
 
 
 class MinistryTeamPosition(Document):
 	def validate(self):
-		self.refuse_another_churches_ministry()
+		refuse_another_churches_parent(
+			self, "ministry", _("{0} belongs to another church, so only that church can add positions to it.")
+		)
 		ministry_name = frappe.db.get_value("Ministry", self.ministry, "ministry_name")
 		self.title = f"{self.position_name} ({ministry_name})"
 		self.warn_about_people_without_checks()
-
-	def refuse_another_churches_ministry(self):
-		"""Only the ministry's church adds positions to it. A shared ministry takes them from every church.
-
-		Frappe checks the user's rights before `church` is fetched from the ministry, on the church the
-		caller sent. Writes with ignore_permissions are the app's own and are not refused.
-		"""
-		if self.flags.ignore_permissions or not self.has_value_changed("ministry"):
-			return
-		before = self.get_doc_before_save()
-		churches = (frappe.db.get_value("Ministry", self.ministry, CHURCH_FIELD), before and before.church)
-		if not all(has_church_access(frappe.session.user, church) for church in churches):
-			frappe.throw(
-				_("{0} belongs to another church, so only that church can add positions to it.").format(
-					frappe.db.get_value("Ministry", self.ministry, "ministry_name") or self.ministry
-				),
-				frappe.PermissionError,
-			)
 
 	def warn_about_people_without_checks(self):
 		"""Warn, never refuse: a person often joins the roster while their check is still in progress."""

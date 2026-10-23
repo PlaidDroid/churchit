@@ -9,7 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import add_days, nowdate
 
 from churchit.church_people.summaries.care import FINISHED
-from churchit.church_scope import CHURCH_FIELD, has_church_access
+from churchit.church_scope import has_church_access, refuse_another_churches_parent
 
 # Days from the request, or from a change of urgency, to its due date.
 URGENCY_DAYS = {"Urgent": 1, "High": 3, "Medium": 7, "Low": 14}
@@ -27,7 +27,11 @@ class CareRequest(Document):
 				self.person = person
 
 	def validate(self):
-		self.refuse_another_churches_person()
+		refuse_another_churches_parent(
+			self,
+			"person",
+			_("{0} belongs to another church, so only that church can record care requests for them."),
+		)
 
 	def before_save(self):
 		# If Caregiver is not set, pre-fill it from the person's current
@@ -79,28 +83,6 @@ class CareRequest(Document):
 			self.due_on = self.due_on or add_days(self.submitted_on or nowdate(), days)
 		elif self.has_value_changed("urgency") and not self.has_value_changed("due_on"):
 			self.due_on = add_days(nowdate(), days)
-
-	def refuse_another_churches_person(self):
-		"""Only the person's own church records care requests for them.
-
-		Frappe checks the create right before `church` is fetched from the person, and the write right on
-		the request as the caller sent it, so it sees neither whose person this is nor whose request it was.
-		The Care Request web form saves with ignore_permissions, for the member's own Person; writes with
-		ignore_permissions are the app's own and are not refused.
-		"""
-		if self.flags.ignore_permissions or not self.has_value_changed("person"):
-			return
-		before = self.get_doc_before_save()
-		if before and not has_church_access(frappe.session.user, before.church):
-			frappe.throw(_("This care request belongs to another church."), frappe.PermissionError)
-		church = frappe.db.get_value("Person", self.person, CHURCH_FIELD)
-		if not has_church_access(frappe.session.user, church):
-			frappe.throw(
-				_(
-					"{0} belongs to another church, so only that church can record care requests for them."
-				).format(frappe.db.get_value("Person", self.person, "full_name")),
-				frappe.PermissionError,
-			)
 
 	def refuse_a_caregiver_outside_the_church(self):
 		"""Refuse before Frappe's DocShare guard would, with a message that says what to do."""

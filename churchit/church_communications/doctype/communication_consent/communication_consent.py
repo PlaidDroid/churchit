@@ -50,8 +50,10 @@ class CommunicationConsent(Document):
 		"""Only the person's own church records their consent.
 
 		Frappe checks the create right before `church` is fetched from the person,
-		so it never sees whose person this is. Writes with ignore_permissions, such
-		as an unsubscribe link, are the app's own and are not refused.
+		so it never sees whose person this is. The person is set once, so this checks
+		every save rather than a change of the link (`refuse_another_churches_parent`).
+		Writes with ignore_permissions, such as an unsubscribe link, are the app's own
+		and are not refused.
 		"""
 		if self.flags.ignore_permissions:
 			return

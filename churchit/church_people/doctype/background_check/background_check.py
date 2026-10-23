@@ -6,42 +6,24 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import add_years, getdate, nowdate
 
-from churchit.church_scope import CHURCH_FIELD, has_church_access
+from churchit.church_scope import refuse_another_churches_parent
 
 RESULT_STATUSES = ("Cleared", "Not Cleared", "Expired")
 
 
 class BackgroundCheck(Document):
 	def validate(self):
-		self.refuse_another_churches_person()
+		refuse_another_churches_parent(
+			self,
+			"person",
+			_("{0} belongs to another church, so only that church can record their background checks."),
+		)
 		if self.status in RESULT_STATUSES and not self.completed_on:
 			frappe.throw(f"Completed On is required when the status is {self.status}.")
 		if self.completed_on and not self.expires_on:
 			self.expires_on = self.default_expiry
 		if self.status == "Cleared" and self.is_past_expiry:
 			self.status = "Expired"
-
-	def refuse_another_churches_person(self):
-		"""Only the person's own church records their background checks.
-
-		Frappe checks the create right before `church` is fetched from the person, and the write right on
-		the check as the caller sent it, so it sees neither whose person this is nor whose check it was.
-		`is_cleared` reads a person's checks whatever their church. Writes with ignore_permissions are the
-		app's own and are not refused.
-		"""
-		if self.flags.ignore_permissions or not self.has_value_changed("person"):
-			return
-		before = self.get_doc_before_save()
-		if before and not has_church_access(frappe.session.user, before.church):
-			frappe.throw(_("This background check belongs to another church."), frappe.PermissionError)
-		church = frappe.db.get_value("Person", self.person, CHURCH_FIELD)
-		if not has_church_access(frappe.session.user, church):
-			frappe.throw(
-				_(
-					"{0} belongs to another church, so only that church can record their background checks."
-				).format(self.person_name or self.person),
-				frappe.PermissionError,
-			)
 
 	@property
 	def default_expiry(self):

@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from churchit.church_scope import CHURCH_FIELD, has_church_access
+from churchit.church_scope import refuse_another_churches_parent
 
 
 class PersonNote(Document):
@@ -13,7 +13,9 @@ class PersonNote(Document):
 
 	def validate(self):
 		self.refuse_changes_to_a_note_the_user_cannot_change()
-		self.refuse_another_churches_person()
+		refuse_another_churches_parent(
+			self, "person", _("{0} belongs to another church, so only that church can add notes about them.")
+		)
 
 	def refuse_changes_to_a_note_the_user_cannot_change(self):
 		"""A change needs the write right on the note as stored.
@@ -25,21 +27,3 @@ class PersonNote(Document):
 		before = self.get_doc_before_save()
 		if before and not self.flags.ignore_permissions and not before.has_permission("write"):
 			frappe.throw(_("You cannot change this note."), frappe.PermissionError)
-
-	def refuse_another_churches_person(self):
-		"""Only the person's own church writes notes about them.
-
-		Frappe checks the create right before `church` is fetched from the person,
-		so it never sees whose person this is. Writes with ignore_permissions are
-		the app's own and are not refused.
-		"""
-		if self.flags.ignore_permissions or not self.has_value_changed("person"):
-			return
-		church = frappe.db.get_value("Person", self.person, CHURCH_FIELD)
-		if not has_church_access(frappe.session.user, church):
-			frappe.throw(
-				_("{0} belongs to another church, so only that church can add notes about them.").format(
-					self.person_name or self.person
-				),
-				frappe.PermissionError,
-			)

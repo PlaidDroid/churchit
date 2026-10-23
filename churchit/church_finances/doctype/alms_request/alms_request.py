@@ -6,38 +6,20 @@ from frappe import _
 from frappe.model.document import Document
 
 from churchit.church_people.member_access import pin_to_members_own_person, validate_members_recipient
-from churchit.church_scope import CHURCH_FIELD, has_church_access
+from churchit.church_scope import refuse_another_churches_parent
 from churchit.utils import resolve_link_titles
 
 
 class AlmsRequest(Document):
 	def validate(self):
 		# Before the pin: `church` came from the requestor as sent, and the pin does not change it.
-		self.refuse_another_churches_person()
+		refuse_another_churches_parent(
+			self,
+			"requestor",
+			_("{0} belongs to another church, so only that church can record their alms requests."),
+		)
 		pin_to_members_own_person(self, "requestor")
 		validate_members_recipient(self)
-
-	def refuse_another_churches_person(self):
-		"""Only the requestor's own church records their alms requests.
-
-		Frappe checks the create right before `church` is fetched from the requestor, so it never sees
-		whose person this is. Writes with ignore_permissions, such as the portal's web form, are the
-		app's own and are not refused.
-		"""
-		if self.flags.ignore_permissions or not self.has_value_changed("requestor"):
-			return
-		stored = self.get_doc_before_save() or frappe._dict()
-		for person, church in (
-			(self.requestor, frappe.db.get_value("Person", self.requestor, CHURCH_FIELD)),
-			(stored.requestor, stored.church),
-		):
-			if not has_church_access(frappe.session.user, church):
-				frappe.throw(
-					_(
-						"{0} belongs to another church, so only that church can record their alms requests."
-					).format(frappe.db.get_value("Person", person, "full_name") or person),
-					frappe.PermissionError,
-				)
 
 	def before_save(self):
 		# Set the alms request title
