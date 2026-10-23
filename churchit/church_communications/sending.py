@@ -1,7 +1,9 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
-"""Sending a Church Email: a copy for each person, filled in for them and kept on their timeline.
+"""Sending a message about a record: a copy for each person, filled in for them and kept on their timeline.
+
+A Church Email goes out through `Delivery`; any other record sends with `send`.
 
 Placeholders are filled by a sandboxed Jinja environment that holds only the person's names.
 Church Managers write Church Emails but not Email Templates, and Frappe's own Jinja
@@ -21,8 +23,10 @@ from jinja2.sandbox import SandboxedEnvironment
 from requests import HTTPError
 
 from churchit.church_communications.bounces import bounced_addresses
-from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, unsubscribed_emails
-from churchit.church_scope import session_person
+from churchit.church_communications.consent import allowed_people
+from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL, SMS
+from churchit.church_communications.newsletter import UNSUBSCRIBE_METHOD, email_church, unsubscribed_emails
+from churchit.church_scope import default_church, document_church, session_person
 from churchit.contacts import (
 	EMAIL_DOCTYPE,
 	PHONE_DOCTYPE,
@@ -57,12 +61,116 @@ class Recipient(NamedTuple):
 	address: str
 
 
-class Delivery:
+class Sender:
+	"""Copies of one message about *source*, each kept on its person's timeline and linked to *source*.
+
+	*church* is the church the emails go out in, whose unsubscribe link they carry with *purpose*.
+	"""
+
+	def __init__(
+		self,
+		source: Document,
+		channel: str,
+		church: str | None,
+		purpose: str | None,
+		key: str = "",
+		attachments: list[dict] | None = None,
+		email_template: str | None = None,
+	):
+		self.source = source
+		self.channel = channel
+		self.church = church
+		self.purpose = purpose
+		self.key = key
+		self.attachments = attachments or []
+		self.email_template = email_template
+
+	def deliver(self, recipient: Recipient, copy: frappe._dict) -> bool:
+		"""Send *recipient* their *copy* and return whether it left. A text that did not leave is marked Error."""
+		communication = self.record(recipient, copy)
+		if self.channel == EMAIL:
+			self.send_email(recipient.address, copy, communication, person=recipient.person)
+			return True
+
+		is_sent = send_text(recipient.address, copy.text)
+		frappe.db.set_value(
+			"Communication",
+			communication,
+			"delivery_status",
+			SENT if is_sent else ERROR,
+			update_modified=False,
+		)
+		return is_sent
+
+	def record(self, recipient: Recipient, copy: frappe._dict) -> str:
+		"""Keep the copy as a Communication on the person's timeline, linked to the source."""
+		is_text = self.channel == SMS
+		communication = frappe.get_doc(
+			{
+				"doctype": "Communication",
+				"communication_type": "Communication",
+				"communication_medium": "SMS" if is_text else "Email",
+				"sent_or_received": "Sent",
+				"communication_date": now_datetime(),
+				"sender": get_formatted_email(frappe.session.user),
+				"subject": copy.subject,
+				"content": escape_html(copy.text).replace("\n", "<br>") if is_text else copy.message,
+				"phone_no": recipient.address if is_text else None,
+				"recipients": None if is_text else recipient.address,
+				"has_attachment": int(bool(self.attachments) and not is_text),
+				"email_template": self.email_template,
+				"send_key": self.key,
+				"reference_doctype": "Person",
+				"reference_name": recipient.person,
+			}
+		)
+		communication.add_link(self.source.doctype, self.source.name)
+		# The copy is kept as it was sent, without the sender's signature that Frappe would add.
+		communication.flags.skip_add_signature = True
+		return communication.insert(ignore_permissions=True).name
+
+	def send_email(
+		self,
+		address: str,
+		copy: frappe._dict,
+		communication: str | None = None,
+		now: bool = False,
+		person: str | None = None,
+	):
+		"""Queue *copy* for *address*, with an unsubscribe link that names *person*, the one it is for."""
+		unsubscribe_params = {"church": self.church, "purpose": self.purpose}
+		if person:
+			unsubscribe_params["person"] = person
+		queued = frappe.sendmail(
+			recipients=[address],
+			subject=copy.subject,
+			message=copy.message,
+			attachments=self.attachments,
+			reference_doctype=self.source.doctype,
+			reference_name=self.source.name,
+			communication=communication,
+			unsubscribe_method=UNSUBSCRIBE_METHOD,
+			unsubscribe_params=unsubscribe_params,
+			unsubscribe_message=_("Unsubscribe"),
+			send_priority=0,
+			now=now,
+		)
+		if not queued:
+			frappe.throw(_("The email to {0} could not be queued. The Error Log says why.").format(address))
+
+
+class Delivery(Sender):
 	"""One Church Email on its way: each recipient gets a copy filled in for them, kept on their timeline."""
 
 	def __init__(self, email: Document):
+		super().__init__(
+			email,
+			email.consent_channel,
+			email.sending_church,
+			email.purpose,
+			attachments=email.get_attachments(),
+		)
 		self.email = email
-		self.attachments = email.get_attachments()
 
 	def send_all(self) -> None:
 		"""Send a copy to each recipient who has none yet.
@@ -86,21 +194,7 @@ class Delivery:
 
 	def send_copy(self, recipient: Recipient, values: dict) -> bool:
 		"""Send *recipient* their copy and return whether it left. A text that did not leave is marked Error."""
-		copy = self.email.get_copy(values)
-		communication = self.record(recipient, copy)
-		if not self.email.is_text_message:
-			self.send_email(recipient.address, copy, communication, person=recipient.person)
-			return True
-
-		is_sent = send_text(recipient.address, copy.text)
-		frappe.db.set_value(
-			"Communication",
-			communication,
-			"delivery_status",
-			SENT if is_sent else ERROR,
-			update_modified=False,
-		)
-		return is_sent
+		return self.deliver(recipient, self.email.get_copy(values))
 
 	def send_test(self) -> str:
 		"""Send the reader a copy at once, filled in with their own name, and return where it went."""
@@ -115,59 +209,67 @@ class Delivery:
 		self.send_email(address, copy, now=True)
 		return address
 
-	def record(self, recipient: Recipient, copy: frappe._dict) -> str:
-		"""Keep the copy as a Communication on the person's timeline, linked to the Church Email."""
-		is_text = self.email.is_text_message
-		communication = frappe.get_doc(
-			{
-				"doctype": "Communication",
-				"communication_type": "Communication",
-				"communication_medium": "SMS" if is_text else "Email",
-				"sent_or_received": "Sent",
-				"communication_date": now_datetime(),
-				"sender": get_formatted_email(frappe.session.user),
-				"subject": copy.subject,
-				"content": escape_html(copy.text).replace("\n", "<br>") if is_text else copy.message,
-				"phone_no": recipient.address if is_text else None,
-				"recipients": None if is_text else recipient.address,
-				"has_attachment": int(bool(self.attachments) and not is_text),
-				"reference_doctype": "Person",
-				"reference_name": recipient.person,
-			}
-		)
-		communication.add_link(self.email.doctype, self.email.name)
-		# The copy is kept as it was sent, without the sender's signature that Frappe would add.
-		communication.flags.skip_add_signature = True
-		return communication.insert(ignore_permissions=True).name
 
-	def send_email(
-		self,
-		address: str,
-		copy: frappe._dict,
-		communication: str | None = None,
-		now: bool = False,
-		person: str | None = None,
-	):
-		"""Queue *copy* for *address*, with an unsubscribe link that names *person*, the one it is for."""
-		unsubscribe_params = {"church": self.email.sending_church, "purpose": self.email.purpose}
-		if person:
-			unsubscribe_params["person"] = person
-		queued = frappe.sendmail(
-			recipients=[address],
-			subject=copy.subject,
-			message=copy.message,
-			attachments=self.attachments,
-			reference_doctype=self.email.doctype,
-			reference_name=self.email.name,
-			communication=communication,
-			unsubscribe_method=UNSUBSCRIBE_METHOD,
-			unsubscribe_params=unsubscribe_params,
-			unsubscribe_message=_("Unsubscribe"),
-			send_priority=0,
-			now=now,
+def send(
+	people: list[str],
+	channel: str,
+	purpose: str | None,
+	source: Document,
+	*,
+	key: str = "",
+	church: str | None = None,
+	template: str | None = None,
+	subject: str = "",
+	message: str = "",
+	text: str = "",
+	context: dict | None = None,
+) -> set[str]:
+	"""Send each of *people* who allows *channel* for *purpose* one copy about *source*, once for each *key*.
+
+	*channel* is EMAIL or SMS. With *template* (an Email Template) the subject and message come from it.
+	*context* adds placeholders to the person's names. Returns the people whose copy left; the caller commits.
+	A text leaves at once, so a caller that texts many people calls this once per person and commits after
+	each, as `Delivery.send_all` does. Otherwise a rollback forgets texts that left, and a rerun repeats them.
+	"""
+	context = context or {}
+	if channel not in (EMAIL, SMS):
+		frappe.throw(_("A message goes by {0} or {1}, not {2}.").format(EMAIL, SMS, channel))
+	if source is None:
+		frappe.throw(_("A message needs the saved record it is about."))
+	if purpose and not frappe.db.exists("Communication Purpose", purpose):
+		frappe.throw(_("Communication Purpose {0} does not exist.").format(purpose))
+	if template:
+		email_template = frappe.get_doc("Email Template", template)
+		subject = email_template.subject
+		message = email_template.response_html if email_template.use_html else email_template.response
+	for label, content in ((_("Subject"), subject), (_("Message"), message), (_("Text"), text)):
+		check_placeholders(content, label, extra=tuple(context))
+
+	# A second sender for the same source waits here, then finds these copies sent.
+	if not frappe.db.get_value(source.doctype, source.name, "name", for_update=True):
+		frappe.throw(_("A message needs the saved record it is about."))
+	church = church or document_church(source) or default_church()
+	recipients = get_recipients(people, channel, purpose, church)
+	handled = get_people_sent(source.name, people, True, doctype=source.doctype, key=key)
+	waiting = [recipient for recipient in recipients if recipient.person not in handled]
+	values = get_person_values([recipient.person for recipient in waiting])
+	sender = Sender(source, channel, email_church(church), purpose, key=key, email_template=template)
+	return {
+		recipient.person
+		for recipient in waiting
+		if sender.deliver(
+			recipient, get_copy(channel, {**values[recipient.person], **context}, subject, message, text)
 		)
-		if not queued:
-			frappe.throw(_("The email to {0} could not be queued. The Error Log says why.").format(address))
+	}
+
+
+def get_copy(
+	channel: str, values: dict, subject: str = "", message: str = "", text: str = ""
+) -> frappe._dict:
+	"""A message filled in with one person's placeholder *values*: a text, or a subject and message."""
+	if channel == SMS:
+		return frappe._dict(text=render(text, values))
+	return frappe._dict(subject=render(subject, values), message=render(message, values, html=True))
 
 
 def render(source: str | None, values: dict, html: bool = False) -> str:
@@ -175,14 +277,17 @@ def render(source: str | None, values: dict, html: bool = False) -> str:
 	return (HTML if html else TEXT).from_string(source or "").render(values)
 
 
-def check_placeholders(source: str | None, label: str) -> None:
-	"""Refuse *source* unless it compiles and uses only the person placeholders."""
+def check_placeholders(source: str | None, label: str, extra: tuple[str, ...] = ()) -> None:
+	"""Refuse *source* unless it compiles and uses only the person placeholders and the *extra* names."""
 	if not source:
 		return
 	try:
-		unknown = get_unknown_names(TEXT.parse(source))
+		unknown = get_unknown_names(TEXT.parse(source), extra)
 		if not unknown:
-			render(source, get_values({field: field for field in PLACEHOLDERS}))
+			render(
+				source,
+				{**get_values({field: field for field in PLACEHOLDERS}), **{name: name for name in extra}},
+			)
 	except TemplateError as error:
 		frappe.throw(_("{0} cannot be filled in for each person: {1}").format(label, error.message))
 	if unknown:
@@ -190,14 +295,14 @@ def check_placeholders(source: str | None, label: str) -> None:
 			_("{0} uses {1}, which a Church Email cannot fill in. Use only these placeholders: {2}.").format(
 				label,
 				", ".join(f"{{{{ {name} }}}}" for name in sorted(unknown)),
-				", ".join(f"{{{{ {field} }}}}" for field in PLACEHOLDERS),
+				", ".join(f"{{{{ {field} }}}}" for field in (*PLACEHOLDERS, *extra)),
 			)
 		)
 
 
-def get_unknown_names(template: nodes.Template) -> set[str]:
-	"""The names *template* reads that are not placeholders, `doc.<name>` included."""
-	names = meta.find_undeclared_variables(template) - {*PLACEHOLDERS, DOCUMENT}
+def get_unknown_names(template: nodes.Template, extra: tuple[str, ...] = ()) -> set[str]:
+	"""The names *template* reads that are not placeholders or *extra* names, `doc.<name>` included."""
+	names = meta.find_undeclared_variables(template) - {*PLACEHOLDERS, *extra, DOCUMENT}
 	fields = {
 		f"{DOCUMENT}.{node.attr}"
 		for node in template.find_all(nodes.Getattr)
@@ -235,6 +340,17 @@ def get_own_number(person: str | None) -> str:
 	if not number:
 		frappe.throw(_("Add a mobile number to your user, or a phone to your Person, to get a test text."))
 	return number
+
+
+def get_recipients(people: list[str], channel: str, purpose: str | None, church: str) -> list[Recipient]:
+	"""Each of *people* who allows *channel* for *purpose*, in order, each address once.
+
+	An email also leaves out an address that stopped the emails of *church*, the church it goes out in.
+	"""
+	allowed = sorted(allowed_people(people, channel, purpose))
+	if channel == SMS:
+		return get_text_recipients(allowed)
+	return get_email_recipients(allowed, email_church(church))
 
 
 def get_email_recipients(people: list[str], church: str) -> list[Recipient]:
@@ -294,8 +410,15 @@ def send_text(number: str, text: str) -> bool:
 	return bool(frappe.db.exists("SMS Log", {"sent_to": logged_number, "creation": (">=", started)}))
 
 
-def get_people_sent(email: str, people: list[str] | None = None, include_failed: bool = False) -> set[str]:
-	"""The people who got a copy of the Church Email *email*: a Communication on their timeline linked to it.
+def get_people_sent(
+	email: str,
+	people: list[str] | None = None,
+	include_failed: bool = False,
+	*,
+	doctype: str = "Church Email",
+	key: str = "",
+) -> set[str]:
+	"""The people who got a copy of *email*, a *doctype* record, sent with *key*: a Communication linked to it.
 
 	A copy that failed is left out, unless *include_failed* asks for everyone a copy was made for.
 	"""
@@ -306,8 +429,9 @@ def get_people_sent(email: str, people: list[str] | None = None, include_failed:
 		.join(Link)
 		.on(Link.parent == Communication.name)
 		.select(Communication.reference_name)
-		.where((Link.parenttype == "Communication") & (Link.link_doctype == "Church Email"))
+		.where((Link.parenttype == "Communication") & (Link.link_doctype == doctype))
 		.where((Link.link_name == email) & (Communication.reference_doctype == "Person"))
+		.where(Coalesce(Communication.send_key, "") == key)
 	)
 	if people is not None:
 		query = query.where(Communication.reference_name.isin(people))

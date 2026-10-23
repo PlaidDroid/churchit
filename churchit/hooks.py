@@ -16,7 +16,10 @@ update_website_context = "churchit.church_website.context.update_website_context
 before_request = ["churchit.church_website.context.before_request"]
 
 fixtures = [
-	{"dt": "Custom Field", "filters": [["dt", "in", ["Contact Us Settings", "Portal Settings"]]]},
+	{
+		"dt": "Custom Field",
+		"filters": [["dt", "in", ["Communication", "Contact Us Settings", "Portal Settings"]]],
+	},
 	{
 		"dt": "Property Setter",
 		"filters": [

@@ -8,7 +8,6 @@ from frappe.model.document import Document
 from frappe.utils import add_to_date, get_datetime, now_datetime
 from rq.timeouts import JobTimeoutException
 
-from churchit.church_communications.consent import allowed_people
 from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL, SMS
 from churchit.church_communications.newsletter import email_church
 from churchit.church_communications.sending import (
@@ -16,11 +15,10 @@ from churchit.church_communications.sending import (
 	Recipient,
 	can_send_texts,
 	check_placeholders,
-	get_email_recipients,
+	get_copy,
 	get_people_sent,
 	get_person_values,
-	get_text_recipients,
-	render,
+	get_recipients,
 )
 from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import (
 	can_send_email,
@@ -111,6 +109,11 @@ class ChurchEmail(Document):
 		return self.channel == TEXT_CHANNEL
 
 	@property
+	def consent_channel(self) -> str:
+		"""The consent channel this message goes out on."""
+		return SMS if self.is_text_message else EMAIL
+
+	@property
 	def own_church(self) -> str | None:
 		"""This message's church, worked out before ensure_church fills it on a new one."""
 		return document_church(self) or default_church()
@@ -196,10 +199,7 @@ class ChurchEmail(Document):
 
 	def get_recipients(self) -> list[Recipient]:
 		"""Everyone this is for who allows its purpose, in order, each address once."""
-		if self.is_text_message:
-			return get_text_recipients(sorted(allowed_people(self.get_people(), SMS, self.purpose)))
-		people = sorted(allowed_people(self.get_people(), EMAIL, self.purpose))
-		return get_email_recipients(people, self.sending_church)
+		return get_recipients(self.get_people(), self.consent_channel, self.purpose, self.church)
 
 	def get_people(self) -> list[str]:
 		"""The people this is for, worked out now so that nobody who died or left is included."""
@@ -235,11 +235,7 @@ class ChurchEmail(Document):
 
 	def get_copy(self, values: dict) -> frappe._dict:
 		"""This message filled in with one person's placeholder *values*: a text, or a subject and message."""
-		if self.is_text_message:
-			return frappe._dict(text=render(self.text_message, values))
-		return frappe._dict(
-			subject=render(self.subject, values), message=render(self.message, values, html=True)
-		)
+		return get_copy(self.consent_channel, values, self.subject, self.message, self.text_message)
 
 	def get_attachments(self) -> list[dict]:
 		files = frappe.get_all(

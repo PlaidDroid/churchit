@@ -969,6 +969,18 @@ Texts go through Frappe's public `send_sms`, so the SMS Settings Allowed Roles a
 `require_sending_set_up` checks them at click time. The scheduler only claims and queues `deliver`
 on the long queue; a job that times out stays Sending for the stalled retry.
 
+Any other record that messages people calls `sending.send(people, channel, purpose, source, *,
+key=..., ...)`, with every argument after `source` as a keyword. It applies consent for the channel
+and purpose (`sending.get_recipients`, which a Church Email uses too), fills placeholders like a
+Church Email plus the names in `context`, and keeps each copy as a Communication on the Person,
+linked to `source`, with `key` in the Custom Field `send_key`. It locks the source row and skips
+everyone who has a copy for that source and key, so a rerun sends nothing and a new key (a
+reminder) sends again. It does not commit. A text leaves at once, so a caller that texts many people
+calls `send` once per person and commits after each, as `Delivery.send_all` does: a rollback after a
+text left forgets its copy, and a rerun texts that person again. Church Email copies keep a blank
+`send_key`. New code that messages people uses it, not `frappe.sendmail` or `send_sms`, so consent
+and the copy apply.
+
 Consent is answered only by `consent.allowed`, or `consent.allowed_people` for a list. The newest
 record decides, ties by creation; a blank-purpose Given never undoes a withdrawal for one purpose.
 Recorded On may not be in the future. A Notification has no purpose, so only consent for every
