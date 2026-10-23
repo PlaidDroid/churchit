@@ -9,6 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, today
 
 from churchit.church_ministries.attendance import record, remove
+from churchit.church_ministries.check_in_limits import refuse_a_full_room
 from churchit.church_people import household
 from churchit.church_scope import default_church, refuse_another_churches_parent
 
@@ -31,6 +32,12 @@ SECURITY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
 class FunctionCheckIn(Document):
+	def before_insert(self):
+		# A form or REST insert passes the room limit here; add_check_ins checked it for its whole group.
+		if self.function and not self.flags.ignore_permissions:
+			frappe.db.get_value("Function", self.function, "name", for_update=True)
+			refuse_a_full_room(self.function, 0 if self.check_in_kind == VOLUNTEER else 1)
+
 	def validate(self):
 		refuse_another_churches_parent(
 			self,
@@ -122,6 +129,7 @@ def add_check_ins(function: str, persons: list[str], kind: str = REGULAR) -> lis
 		record(person, function, CHECKED_IN)
 
 	new = [person for person in unique if person not in names]
+	refuse_a_full_room(function, 0 if kind == VOLUNTEER else len(new))
 	code = get_security_code(new) if new and kind != VOLUNTEER and is_coded else None
 	for person in new:
 		check_in = frappe.get_doc(

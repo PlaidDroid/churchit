@@ -10,6 +10,7 @@ from churchit.church_people.derived import (
 	CHILD,
 	get_derived_values,
 	get_grade,
+	get_grade_number,
 	life_stage_for,
 	refresh_daily,
 )
@@ -144,6 +145,13 @@ class TestGrade(FrappeTestCase):
 	def test_no_graduation_year_gives_no_grade(self):
 		self.assertIsNone(get_grade(None))
 		self.assertIsNone(get_grade(0))
+		self.assertIsNone(get_grade_number(None))
+
+	def test_the_grade_number_counts_from_kindergarten_before_and_after_school(self):
+		self.assertEqual(get_grade_number(2039, "2026-08-01"), 0)
+		self.assertEqual(get_grade_number(2039, "2026-07-31"), -1)
+		self.assertEqual(get_grade_number(2030, "2026-08-01"), 9)
+		self.assertEqual(get_grade_number(2026, "2026-08-01"), 13)
 
 	def test_saving_a_person_sets_the_grade(self):
 		year = getdate().year + 5

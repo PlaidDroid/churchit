@@ -386,28 +386,57 @@ class CheckInStation {
 		if (matches.length === 1) this.check_in([matches[0].name]);
 	}
 
+	// A person outside the function's age or grade limits is checked in only after a confirm.
 	check_in(persons, kind) {
 		if (!persons.length || !this.function) return;
+		const send = () =>
+			frappe
+				.call({
+					method: `${API}.check_in`,
+					args: {
+						function: this.function,
+						persons,
+						print_tags: this.print_field.get_value(),
+						kind,
+					},
+					freeze: true,
+					freeze_message: __("Checking in…"),
+				})
+				.then((r) => {
+					frappe.show_alert({
+						message: __("{0} checked in.", [persons.length]),
+						indicator: "green",
+					});
+					if (r.message.capacity_warning) {
+						frappe.show_alert(
+							{ message: r.message.capacity_warning, indicator: "orange" },
+							10
+						);
+					}
+					this.clear();
+					this.refresh_roster();
+					if (r.message.print) return church.name_tags.print(r.message.print);
+				});
+		if (kind === "Volunteer") return send();
 		return frappe
 			.call({
-				method: `${API}.check_in`,
-				args: {
-					function: this.function,
-					persons,
-					print_tags: this.print_field.get_value(),
-					kind,
-				},
-				freeze: true,
-				freeze_message: __("Checking in…"),
+				method: "churchit.church_ministries.check_in_limits.get_bound_problems",
+				args: { function: this.function, persons },
 			})
 			.then((r) => {
-				frappe.show_alert({
-					message: __("{0} checked in.", [persons.length]),
-					indicator: "green",
-				});
-				this.clear();
-				this.refresh_roster();
-				if (r.message.print) return church.name_tags.print(r.message.print);
+				const problems = Object.values(r.message || {});
+				if (!problems.length) return send();
+				const escape = frappe.utils.escape_html;
+				const lines = problems.map(
+					({ full_name, problem }) =>
+						`<li><b>${escape(full_name)}</b>: ${escape(problem)}</li>`
+				);
+				frappe.confirm(
+					`<p>${__("Outside the age or grade limits of this function:")}</p>
+					<ul>${lines.join("")}</ul>
+					<p>${__("Check in anyway?")}</p>`,
+					send
+				);
 			});
 	}
 

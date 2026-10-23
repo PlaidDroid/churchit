@@ -77,3 +77,4 @@ churchit.patches.v1_0.date_collection_ledger_rows
 churchit.patches.v1_0.remove_private_fields_from_versions
 churchit.patches.v1_0.remove_permlevel_fields_from_person_versions
 churchit.patches.v1_0.make_authorized_pickups_records
+churchit.patches.v1_0.store_new_check_in_settings_defaults

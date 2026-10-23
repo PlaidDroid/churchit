@@ -22,6 +22,8 @@
   "column_break_tags",
   "name_tag_format",
   "zpl_format",
+  "limits_section",
+  "capacity_mode",
   "church_printers_section",
   "printers"
  ],
@@ -132,6 +134,19 @@
    "options": "Print Format"
   },
   {
+   "fieldname": "limits_section",
+   "fieldtype": "Section Break",
+   "label": "Rooms and Self Check-In"
+  },
+  {
+   "default": "Warn",
+   "description": "What check-in does when the rooms booked for a Function are full. Capacity is the sum of the Capacity of each Room in the Function's approved Room Bookings. Off: no check. Warn: the station shows a warning. Block: check-in is refused.",
+   "fieldname": "capacity_mode",
+   "fieldtype": "Select",
+   "label": "Room Capacity",
+   "options": "Off\nWarn\nBlock"
+  },
+  {
    "depends_on": "eval:!(frappe.boot.churchit && frappe.boot.churchit.single_church)",
    "fieldname": "church_printers_section",
    "fieldtype": "Section Break",
@@ -148,7 +163,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-16 16:00:00",
+ "modified": "2026-10-22 21:48:34.000000",
  "modified_by": "Administrator",
  "module": "Church Ministries",
  "name": "Check-In Settings",

@@ -54,7 +54,8 @@
    "in_standard_filter": 1,
    "label": "Function",
    "options": "Function",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "depends_on": "eval:!(frappe.boot.churchit && frappe.boot.churchit.single_church)",
@@ -121,7 +122,8 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Kind",
-   "options": "Regular\nGuest\nVolunteer"
+   "options": "Regular\nGuest\nVolunteer",
+   "set_only_once": 1
   },
   {
    "collapsible": 0,

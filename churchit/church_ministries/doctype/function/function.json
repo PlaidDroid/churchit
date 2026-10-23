@@ -30,6 +30,12 @@
   "team_needs",
   "section_break_dlpa",
   "attendance",
+  "section_break_check_in_limits",
+  "min_age",
+  "max_age",
+  "column_break_check_in_limits",
+  "min_grade",
+  "max_grade",
   "section_break_recurrence",
   "auto_repeat",
   "repeat_frequency",
@@ -167,6 +173,42 @@
    "fieldtype": "Table",
    "label": "Attendance",
    "options": "Function Attendance"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_check_in_limits",
+   "fieldtype": "Section Break",
+   "label": "Age and Grade"
+  },
+  {
+   "description": "Youngest age, in years on the start date, that may check in. A person with no birth date does not pass a set limit.",
+   "fieldname": "min_age",
+   "fieldtype": "Int",
+   "label": "Minimum Age",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "max_age",
+   "fieldtype": "Int",
+   "label": "Maximum Age",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_check_in_limits",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Lowest school grade on the start date that may check in. A person with no graduation year does not pass a set limit.",
+   "fieldname": "min_grade",
+   "fieldtype": "Select",
+   "label": "Minimum Grade",
+   "options": "\nKindergarten\nGrade 1\nGrade 2\nGrade 3\nGrade 4\nGrade 5\nGrade 6\nGrade 7\nGrade 8\nGrade 9\nGrade 10\nGrade 11\nGrade 12"
+  },
+  {
+   "fieldname": "max_grade",
+   "fieldtype": "Select",
+   "label": "Maximum Grade",
+   "options": "\nKindergarten\nGrade 1\nGrade 2\nGrade 3\nGrade 4\nGrade 5\nGrade 6\nGrade 7\nGrade 8\nGrade 9\nGrade 10\nGrade 11\nGrade 12"
   },
   {
    "description": "Counts Confirmed, Assumed and Checked-In attendance, from the day the function starts.",
@@ -391,7 +433,7 @@
    "link_fieldname": "function"
   }
  ],
- "modified": "2026-10-22 17:35:40.000000",
+ "modified": "2026-10-22 23:22:01.000000",
  "modified_by": "Administrator",
  "module": "Church Ministries",
  "name": "Function",

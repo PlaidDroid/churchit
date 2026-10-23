@@ -9,6 +9,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime, today
 
+from churchit.church_ministries.check_in_limits import get_capacity_warning
 from churchit.church_ministries.doctype.function_check_in.function_check_in import (
 	check_in_persons,
 	is_shared_function,
@@ -368,6 +369,8 @@ def check_in(function: str, persons: str | list[str], print_tags: bool = False, 
 	"""Check people in as *kind* and, when asked, hand their name tags to the printer path."""
 	names = check_in_persons(function, persons, kind)
 	result = {"check_ins": names}
+	if warning := get_capacity_warning(function):
+		result["capacity_warning"] = warning
 	if cint(print_tags):
 		# A network printer can take seconds, so the check-in locks must not wait for it.
 		frappe.db.commit()

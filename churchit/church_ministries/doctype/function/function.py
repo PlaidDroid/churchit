@@ -69,7 +69,16 @@ def apply_template(source_name: str, start_date: str | None = None):
 	copied_doc = {}
 
 	# Specify which fields to include (whitelist approach)
-	include_fields = ["address", "all_day", "description", "associated_ministry"]
+	include_fields = [
+		"address",
+		"all_day",
+		"description",
+		"associated_ministry",
+		"min_age",
+		"max_age",
+		"min_grade",
+		"max_grade",
+	]
 
 	# Copy normal fields
 	for field in include_fields:

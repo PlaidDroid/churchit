@@ -99,19 +99,24 @@ def life_stage_for(role, age):
 	return ADULT if age >= frappe.db.get_single_value("People Settings", "adult_age") else CHILD
 
 
-def get_grade(graduation_year: int | None, on_date=None) -> str | None:
-	"""The school grade on *on_date* (today by default) of someone who finishes high school in *graduation_year*.
+def get_grade_number(graduation_year: int | None, on_date=None) -> int | None:
+	"""The school grade number on *on_date* (today by default) of someone who finishes high school in *graduation_year*.
 
-	Kindergarten, Grade 1 to Grade 12, then Graduated; None before kindergarten or without a year. The grade
-	moves up on the first day of People Settings' school year start month.
+	0 is kindergarten, below 0 is before it and above FINAL_GRADE is after graduation; None without a year. The
+	grade moves up on the first day of People Settings' school year start month.
 	"""
 	if not graduation_year:
 		return None
-	grade = FINAL_GRADE - (graduation_year - get_school_year_end(getdate(on_date)))
+	return FINAL_GRADE - (graduation_year - get_school_year_end(getdate(on_date)))
+
+
+def get_grade(graduation_year: int | None, on_date=None) -> str | None:
+	"""The school grade on *on_date*: Kindergarten, Grade 1 to Grade 12, then Graduated; None before kindergarten or without a year."""
+	grade = get_grade_number(graduation_year, on_date)
+	if grade is None or grade < 0:
+		return None
 	if grade > FINAL_GRADE:
 		return GRADUATED
-	if grade < 0:
-		return None
 	return f"Grade {grade}" if grade else KINDERGARTEN
 
 
