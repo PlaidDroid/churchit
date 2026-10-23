@@ -652,6 +652,8 @@ class CheckInStation {
 	new_visitor(query = "") {
 		const is_phone = /^[\d\s()+.-]+$/.test(query);
 		const [first_name, ...rest] = is_phone ? [] : query.split(/\s+/).filter(Boolean);
+		// People on file who may be the visitor are offered once, before anyone new is added.
+		let matches_shown = false;
 		const dialog = new frappe.ui.Dialog({
 			title: __("New Visitor"),
 			fields: [
@@ -701,15 +703,67 @@ class CheckInStation {
 					label: __("Emergency Contact Phone"),
 					options: "Phone",
 				},
+				{ fieldtype: "Section Break" },
+				{ fieldtype: "HTML", fieldname: "matches" },
 			],
 			primary_action_label: __("Add & Check In"),
 			primary_action: (values) => {
-				frappe.call({ method: `${API}.add_visitor`, args: values }).then((r) => {
-					dialog.hide();
-					this.check_in([r.message.name]);
-				});
+				if (matches_shown) return add(values);
+				frappe
+					.call({
+						method: "churchit.church_ministries.page.check_in.visitors.find_visitor_matches",
+						args: {
+							function: this.function,
+							first_name: values.first_name,
+							last_name: values.last_name,
+							phone: values.phone,
+						},
+					})
+					.then((r) => {
+						if (!(r.message || []).length) return add(values);
+						matches_shown = true;
+						this.show_visitor_matches(dialog, r.message);
+					});
 			},
 		});
+		const add = (values) =>
+			frappe.call({ method: `${API}.add_visitor`, args: values }).then((r) => {
+				dialog.hide();
+				this.check_in([r.message.name], "Guest");
+			});
 		dialog.show();
+	}
+
+	show_visitor_matches(dialog, groups) {
+		const matches = groups.flatMap((group) =>
+			group.members
+				.filter((member) => member.matched)
+				.map((member) => ({ ...member, family_name: group.family_name }))
+		);
+		const rows = matches.map((member) => {
+			const detail = [member.family_name, member.age && __("Age {0}", [member.age])]
+				.filter(Boolean)
+				.join(" · ");
+			return `<div class="d-flex align-items-center mb-2">
+				${frappe.get_avatar("avatar-medium", member.full_name, member.photo)}
+				<span class="flex-fill ml-2">
+					${frappe.utils.escape_html(member.full_name)}
+					<small class="d-block text-muted">${frappe.utils.escape_html(detail)}</small>
+				</span>
+				<button type="button" class="btn btn-sm btn-primary visitor-match"
+					data-person="${member.name}">${__("Check In")}</button>
+			</div>`;
+		});
+		const $wrapper = dialog.fields_dict.matches.$wrapper;
+		$wrapper.html(
+			`<p class="text-muted">${__(
+				"They may already be on file. Check in the right person, or add them as a new visitor."
+			)}</p>${rows.join("")}`
+		);
+		$wrapper.find(".visitor-match").on("click", (event) => {
+			dialog.hide();
+			this.check_in([event.currentTarget.dataset.person], "Guest");
+		});
+		dialog.get_primary_btn().text(__("Add as New Visitor"));
 	}
 }
