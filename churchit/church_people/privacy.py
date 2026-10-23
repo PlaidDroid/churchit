@@ -16,7 +16,9 @@ The records that name the person keep the link and lose the copies of the person
 their text (titles, fetched names, donor emails). Their notes and connection cards are deleted outright, since
 everything in them is about the person and nothing in them is counted. The change history, comments and
 attachments of the person and of the records about them (`RECORDS_ABOUT_THE_PERSON`) are deleted, because they
-hold the old values, and the messages kept on them lose their addresses and text.
+hold the old values, and the messages kept on them lose their addresses and text. A record that names the
+person in a field of its own also loses the answers kept on it to a Question Set, and its change history
+(`clear_answers`).
 
 A member's Personal Data Deletion Request anonymizes their Person once Frappe has deleted their login
 (`anonymize_on_data_deletion`).
@@ -36,6 +38,7 @@ from churchit.church_people.doctype.person.person import UNKNOWN_GENDER, get_dis
 from churchit.church_people.membership import INACTIVE, living_people_filter
 from churchit.church_people.person_data_map import LinkedRecord, linked_records
 from churchit.contacts import CONTACT_TABLES, UNIQUE_VALUE_FIELDS
+from churchit.questions import clear_answers, get_answer_tables
 
 ANONYMIZED = "Anonymized"
 # Person fields that say who the person is.
@@ -124,7 +127,11 @@ def anonymize(person: str, emails: Iterable[str] = ()) -> None:
 			update_modified=False,
 		)
 	forget_records_about(person)
-	remove_copies(linked_records(person), names, emails)
+	records = linked_records(person)
+	remove_copies(records, names, emails)
+	for record in records:
+		if get_answer_tables(record.doctype):
+			clear_answers(frappe.get_doc(record.doctype, record.name))
 	doc.add_comment("Info", _("Personal data removed."))
 
 

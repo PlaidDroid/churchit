@@ -186,9 +186,9 @@ virtual doctype is not exempt, so a new import source goes in the import group.
 
 Between the two lies a third bucket: a doctype in `SHAREABLE_DOCTYPES` (`churchit/church_scope.py`)
 is scoped as usual, but each record may be handed to every church with a **Shared with all churches**
-checkbox. Today that is the reusable content, the supplier directory, the places and equipment that
-congregations share, the occasions they hold together (Function, Meeting Minutes), and the two
-containers money runs through (Fund, Ministry).
+checkbox. Today that is the reusable content (question sets among it), the supplier directory, the
+places and equipment that congregations share, the occasions they hold together (Function, Meeting
+Minutes), and the two containers money runs through (Fund, Ministry).
 
 **A container may be shared; money never is.** Every Collection, Expense, Online Donation and Fund
 Transfer keeps the church that gave, spent or moved it, so per-church figures come from those rows at
@@ -777,6 +777,16 @@ doctype about one person (its subject, not a caregiver or other role) goes in
 `privacy.PERSONAL_DOCTYPES` when anonymizing should delete it, as for Person Note and Connection
 Card. Otherwise it goes in `privacy.RECORDS_ABOUT_THE_PERSON`, and anonymizing deletes its history,
 comments and attachments and blanks its messages.
+
+Custom questions go through `churchit/questions.py`. A doctype that asks a Question Set keeps the
+answers in a Question Answer table and writes them only with `questions.set_answers`, after
+`validate_answers`. Name the person who answers in a Link field of the owner doctype itself:
+anonymizing clears the Question Answer tables and the change history of each record that names the
+person in its own field (`clear_answers`), and a record that names the person only in a table row (one
+attendee of a group) keeps its answers, which are the group's. A merge keeps the answers, because they
+stay on their record. Render the questions with `churchit.questions.render(wrapper, fields)` from
+`questions.get_fields`; do not add conditional questions, `depends_on`, Web Form `eval:` text or
+stored JSON.
 
 Frappe logs list and Report Builder exports, prints and PDFs. A new export or print path for
 personal data must call `make_access_log`, as the Church Directory PDF and `churchit/exports.py` do.

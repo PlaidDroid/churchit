@@ -71,6 +71,7 @@ app_include_js = [
 	"/assets/churchit/js/contact_tables.js",
 	"/assets/churchit/js/name_tags.js",
 	"/assets/churchit/js/bible_reference.js",
+	"/assets/churchit/js/questions.js",
 ]
 
 # include js, css files in header of web template
@@ -83,6 +84,7 @@ web_include_js = [
 	"/assets/churchit/js/missions_map.js",
 	"/assets/churchit/js/nav_active_state.js",
 	"/assets/churchit/js/pwa.js",
+	"/assets/churchit/js/questions.js",
 ]
 
 # include js, css files in header of web form

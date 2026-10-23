@@ -50,6 +50,7 @@ SHAREABLE_DOCTYPES = (
 	"Location",
 	"Meeting Minutes",
 	"Ministry",
+	"Question Set",
 	"Room",
 	"Sermon",
 	"Sermon Handout",
