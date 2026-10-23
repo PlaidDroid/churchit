@@ -346,7 +346,7 @@ class CheckInStation {
 		if (matches.length === 1) this.check_in([matches[0].name]);
 	}
 
-	check_in(persons) {
+	check_in(persons, kind) {
 		if (!persons.length || !this.function) return;
 		return frappe
 			.call({
@@ -355,6 +355,7 @@ class CheckInStation {
 					function: this.function,
 					persons,
 					print_tags: this.print_field.get_value(),
+					kind,
 				},
 				freeze: true,
 				freeze_message: __("Checking in…"),

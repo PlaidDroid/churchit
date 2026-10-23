@@ -1,6 +1,8 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, now_datetime
@@ -28,6 +30,8 @@ from churchit.tests.helpers import (
 	set_multi_church,
 	set_private_people,
 )
+
+STATION = "churchit.church_ministries.page.check_in.check_in"
 
 
 def check_in_with_code(function, person, code):
@@ -101,11 +105,31 @@ class TestCheckInStation(FrappeTestCase):
 		self.assertEqual(context["name_tag_printing"], "Browser")
 
 	def test_check_in_records_people_and_returns_a_print_job(self):
-		result = check_in(self.function.name, [self.parent.name, self.child.name], print_tags=1)
+		with patch.object(frappe.db, "commit"):
+			result = check_in(self.function.name, [self.parent.name, self.child.name], print_tags=1)
 		self.assertEqual(len(result["check_ins"]), 2)
 		self.assertEqual(result["print"]["count"], 2)
 		roster = get_check_ins(self.function.name)
 		self.assertEqual(sorted(row.full_name for row in roster), ["Zed Zebrastripe", "Zoe Zebrastripe"])
+
+	def test_check_ins_are_committed_before_the_printer_is_reached(self):
+		"""An unreachable network printer must not hold the check-in locks, nor lose the check-ins."""
+		steps = []
+
+		def print_to_a_printer_that_is_down(check_ins):
+			steps.append("print")
+			frappe.throw("Could not reach printer")
+
+		with (
+			patch.object(frappe.db, "commit", side_effect=lambda: steps.append("commit")),
+			patch(f"{STATION}.print_name_tags", side_effect=print_to_a_printer_that_is_down),
+			self.assertRaises(frappe.ValidationError),
+		):
+			check_in(self.function.name, [self.loner.name], print_tags=1)
+		self.assertEqual(steps, ["commit", "print"])
+		self.assertTrue(
+			frappe.db.exists("Function Check-In", {"function": self.function.name, "person": self.loner.name})
+		)
 
 	def test_check_in_without_printing_returns_no_job(self):
 		result = check_in(self.function.name, [self.loner.name])

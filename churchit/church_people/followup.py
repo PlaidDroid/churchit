@@ -17,6 +17,7 @@ from frappe import _
 from frappe.permissions import get_doctype_roles
 from frappe.utils import today
 
+from churchit.church_ministries.doctype.function_check_in.function_check_in import VOLUNTEER
 from churchit.church_people import smart_lists
 from churchit.church_scope import church_filters
 
@@ -177,9 +178,15 @@ def on_check_in(doc, method=None) -> None:
 	"""after_insert on Function Check-In: a person's first check-in ever starts the First Check-In workflows.
 
 	The cards start after the check-in commits, so a follow-up problem never stops the Check-In Station.
+	A volunteer who serves is not a newcomer, so a Volunteer check-in neither starts a card nor counts.
 	"""
+	if doc.check_in_kind == VOLUNTEER:
+		return
 	# church-scope: a first check-in is the first at any church
-	if frappe.db.exists("Function Check-In", {"person": doc.person, "name": ("!=", doc.name)}):
+	if frappe.db.exists(
+		"Function Check-In",
+		{"person": doc.person, "name": ("!=", doc.name), "check_in_kind": ("!=", VOLUNTEER)},
+	):
 		return
 	frappe.enqueue(start_check_in_cards, enqueue_after_commit=True, check_in=doc.name)
 

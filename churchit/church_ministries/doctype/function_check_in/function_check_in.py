@@ -6,12 +6,15 @@ import secrets
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint
+from frappe.utils import cint, today
 
 from churchit.church_ministries.attendance import record, remove
+from churchit.church_people import household
 from churchit.church_scope import default_church, refuse_another_churches_parent
 
 CHECKED_IN = "Checked-In"
+REGULAR = "Regular"
+VOLUNTEER = "Volunteer"
 
 # Letters and digits that are hard to confuse on a printed tag.
 SECURITY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -55,8 +58,8 @@ def new_security_code():
 
 
 @frappe.whitelist(methods=["POST"])
-def check_in_persons(function_name: str, persons: str | list[str]):
-	"""Check *persons* in to a function. New check-ins made in one call share a security code."""
+def check_in_persons(function_name: str, persons: str | list[str], kind: str | None = None):
+	"""Check *persons* in to a function as *kind* (Regular when not given), after the permission checks."""
 	frappe.has_permission("Function Check-In", "create", throw=True)
 	# The inserts below ignore permissions, so the function and every person are checked here.
 	frappe.has_permission("Function", doc=function_name, throw=True)
@@ -66,29 +69,78 @@ def check_in_persons(function_name: str, persons: str | list[str]):
 		for person in persons:
 			frappe.has_permission("Person", doc=person, throw=True)
 
-	code = None
-	if frappe.db.get_single_value("Check-In Settings", "security_codes"):
-		code = new_security_code()
+	return add_check_ins(function_name, persons, kind or REGULAR)
 
-	names = []
-	for person in persons:
-		existing = frappe.db.get_value(
-			"Function Check-In", {"function": function_name, "person": person}, "name"
+
+def add_check_ins(function: str, persons: list[str], kind: str = REGULAR) -> list[str]:
+	"""Check *persons* in to *function* and return their check-ins in order. The caller checks permissions.
+
+	A person already checked in keeps their check-in, and their attendance is Checked-In again.
+	"""
+	# The Function row, then the code lock, then check-in rows: the order of every writer, so none deadlock.
+	frappe.db.get_value("Function", function, "name", for_update=True)
+	is_coded = frappe.db.get_single_value("Check-In Settings", "security_codes", for_update=True)
+
+	unique = list(dict.fromkeys(persons))
+	# A locking read: a plain one answers from the request's older snapshot and misses another station's row.
+	names = dict(
+		frappe.db.get_values(
+			"Function Check-In",
+			{"function": function, "person": ("in", unique)},
+			["person", "name"],
+			for_update=True,
 		)
-		if existing:
-			record(person, function_name, CHECKED_IN)
-			names.append(existing)
-			continue
+	)
+	for person in names:
+		record(person, function, CHECKED_IN)
+
+	new = [person for person in unique if person not in names]
+	code = get_security_code(new) if new and kind != VOLUNTEER and is_coded else None
+	for person in new:
 		check_in = frappe.get_doc(
 			{
 				"doctype": "Function Check-In",
-				"function": function_name,
+				"function": function,
 				"person": person,
+				"check_in_kind": kind,
 				"security_code": code,
 			}
 		).insert(ignore_permissions=True)
-		names.append(check_in.name)
-	return names
+		names[person] = check_in.name
+	return [names[person] for person in persons]
+
+
+def get_security_code(persons: list[str]) -> str:
+	"""The oldest code a check-in of *persons* or their households got today, else a code no check-in has today.
+
+	Verify Pickup finds a code at any church, so a code is unique on the site for the day. The Check-In
+	Settings row lock holds to commit, so a second station waits and then sees this code. The reads after it
+	lock too: a plain read answers from the request's older snapshot.
+	"""
+	frappe.db.get_single_value("Check-In Settings", "security_codes", for_update=True)
+
+	people = set(persons)
+	for person in persons:
+		if family := frappe.db.get_value("Person", person, "family"):
+			people.update(household.members(family))
+
+	# church-scope: codes are unique across the whole site each day, and a household keeps one at any church
+	held = frappe.db.get_values(
+		"Function Check-In",
+		{"creation": (">=", today()), "security_code": ("is", "set")},
+		["person", "security_code"],
+		order_by="creation asc",
+		for_update=True,
+	)
+	household_code = next((code for person, code in held if person in people), None)
+	if household_code:
+		return household_code
+
+	used = {code for _person, code in held}
+	code = new_security_code()
+	while code in used:
+		code = new_security_code()
+	return code
 
 
 @frappe.whitelist(methods=["POST"])

@@ -37,12 +37,12 @@ def cards_of(person):
 	return frappe.get_all(CARD, filters={"person": person}, pluck="workflow", order_by="workflow asc")
 
 
-def check_in(function, person):
+def check_in(function, person, **values):
 	"""Check *person* in, and return the name of the check-in whose cards the job would start."""
 	with patch("frappe.enqueue") as enqueue:
-		frappe.get_doc({"doctype": "Function Check-In", "function": function, "person": person}).insert(
-			ignore_permissions=True
-		)
+		frappe.get_doc(
+			{"doctype": "Function Check-In", "function": function, "person": person, **values}
+		).insert(ignore_permissions=True)
 	queued = [call for call in enqueue.call_args_list if call.args and call.args[0] is start_check_in_cards]
 	return queued[0].kwargs["check_in"] if queued else None
 
@@ -101,6 +101,14 @@ class TestFollowupTriggers(RollbackEachTest):
 			(first_time, "Function Check-In"),
 		)
 		self.assertIsNone(check_in(second.name, self.person))
+
+	def test_a_volunteer_check_in_starts_no_card_and_leaves_the_first_check_in_to_come(self):
+		workflow_on("_Test First Check-In", ("First Check-In", None))
+		serving = make_function("_Test Followup Serving")
+		attending = make_function("_Test Followup Attending")
+
+		self.assertIsNone(check_in(serving.name, self.person, check_in_kind="Volunteer"))
+		self.assertTrue(start_check_in_cards(check_in(attending.name, self.person)))
 
 	def test_a_check_in_starts_only_the_workflows_for_its_function_type(self):
 		workflow_on(

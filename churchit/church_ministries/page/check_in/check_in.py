@@ -309,11 +309,13 @@ def get_living_people(names: list[str], fields: list[str] | None = None) -> dict
 
 
 @frappe.whitelist(methods=["POST"])
-def check_in(function: str, persons: str | list[str], print_tags: bool = False):
-	"""Check people in and, when asked, hand their name tags to the printer path."""
-	names = check_in_persons(function, persons)
+def check_in(function: str, persons: str | list[str], print_tags: bool = False, kind: str | None = None):
+	"""Check people in as *kind* and, when asked, hand their name tags to the printer path."""
+	names = check_in_persons(function, persons, kind)
 	result = {"check_ins": names}
 	if cint(print_tags):
+		# A network printer can take seconds, so the check-in locks must not wait for it.
+		frappe.db.commit()
 		result["print"] = print_name_tags(check_ins=names)
 	return result
 
