@@ -14,6 +14,7 @@ import frappe
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
 	create_communication_purposes,
 )
+from churchit.church_ministries.doctype.check_in_settings.check_in_settings import add_volunteer_tag_format
 from churchit.church_missions.doctype.missionary_status.missionary_status import (
 	DEFAULT_STATUSES as DEFAULT_MISSIONARY_STATUSES,
 )
@@ -64,6 +65,7 @@ def execute():
 	_create_group_roles()
 	_create_group_statuses()
 	_create_default_ministry()
+	add_volunteer_tag_format()
 
 	# Bible translations, and the one the main church reads by default
 	_create_bible_translations()

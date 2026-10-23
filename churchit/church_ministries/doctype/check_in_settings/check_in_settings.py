@@ -7,6 +7,9 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from churchit.church_ministries.doctype.function_check_in.function_check_in import VOLUNTEER
+from churchit.church_ministries.page.check_in.team import get_position
+
 ZPL_METHODS = ("Zebra Browser Print", "QZ Tray", "Network Printer")
 # What a per-church row may override. The print formats stay site-wide: they are
 # the tag's design, not the hardware it comes out of.
@@ -19,6 +22,7 @@ PRINTER_FIELDS = (
 	"label_height",
 	"label_dpi",
 )
+VOLUNTEER_NAME_TAG = "Volunteer Name Tag"
 
 
 class CheckInSettings(Document):
@@ -27,8 +31,12 @@ class CheckInSettings(Document):
 	def validate(self):
 		if (self.label_width or 0) <= 0 or (self.label_height or 0) <= 0:
 			frappe.throw(_("Label width and height must be greater than zero."))
-		self.validate_print_format(self.name_tag_format, raw=False)
-		self.validate_print_format(self.zpl_format, raw=True)
+		for formats in [self, *self.tag_formats]:
+			self.validate_print_format(formats.name_tag_format, raw=False)
+			self.validate_print_format(formats.zpl_format, raw=True)
+		kinds = [row.check_in_kind for row in self.tag_formats]
+		if len(kinds) != len(set(kinds)):
+			frappe.throw(_("Add one Tag Formats by Kind row for each kind."))
 
 	def for_church(self, church=None):
 		"""These settings with *church*'s printer row applied, or unchanged when it has none.
@@ -62,8 +70,14 @@ class CheckInSettings(Document):
 
 	@property
 	def template(self):
-		"""Jinja source of the print format the current printing method needs."""
-		name = self.zpl_format if self.is_zpl else self.name_tag_format
+		"""Jinja source of the default print format the current printing method needs."""
+		return self.get_template()
+
+	def get_template(self, kind: str | None = None) -> str:
+		"""Jinja source of *kind*'s print format for the current printing method, else the default one."""
+		field = "zpl_format" if self.is_zpl else "name_tag_format"
+		row = next((row for row in self.tag_formats if row.check_in_kind == kind and row.get(field)), None)
+		name = (row or self).get(field)
 		if not name:
 			frappe.throw(_("Choose a name tag Print Format in Check-In Settings."))
 		print_format = frappe.get_doc("Print Format", name)
@@ -81,14 +95,23 @@ class CheckInSettings(Document):
 		return result
 
 	def render_name_tags(self, check_ins):
-		template = self.template
-		context = {"settings": self}
-		# The template is a Print Format, rendered in Frappe's sandbox as Frappe renders print formats.
-		# nosemgrep: frappe-ssti
-		labels = [frappe.render_template(template, {**context, "doc": doc}) for doc in check_ins]
-		for doc, names in self.pickup_groups(check_ins):
+		"""One tag per check-in in the format of its kind, then the pickup tags in the default format.
+
+		A volunteer's tag gets their position here, so the template reads no assignment.
+		"""
+		templates = {kind: self.get_template(kind) for kind in {doc.check_in_kind for doc in check_ins}}
+		labels = []
+		for doc in check_ins:
+			context = {"settings": self, "doc": doc}
+			if doc.check_in_kind == VOLUNTEER:
+				context["position"] = get_position(doc.person, doc.function)
+			# The template is a Print Format, rendered in Frappe's sandbox as Frappe renders print formats.
 			# nosemgrep: frappe-ssti
-			labels.append(frappe.render_template(template, {**context, "doc": doc, "pickup_names": names}))
+			labels.append(frappe.render_template(templates[doc.check_in_kind], context))
+		for doc, names in self.pickup_groups(check_ins):
+			context = {"settings": self, "doc": doc, "pickup_names": names}
+			# nosemgrep: frappe-ssti
+			labels.append(frappe.render_template(self.template, context))
 		if self.is_zpl:
 			return "\n".join(labels)
 		return (
@@ -113,6 +136,15 @@ class CheckInSettings(Document):
 				connection.sendall(zpl.encode("utf-8"))
 		except OSError as error:
 			frappe.throw(_("Could not reach printer {0}:{1} ({2}).").format(host, port, str(error)))
+
+
+def add_volunteer_tag_format() -> None:
+	"""Print Volunteer check-ins with the Volunteer Name Tag, unless a Volunteer row is already there."""
+	settings = frappe.get_single("Check-In Settings")
+	if any(row.check_in_kind == VOLUNTEER for row in settings.tag_formats):
+		return
+	settings.append("tag_formats", {"check_in_kind": VOLUNTEER, "name_tag_format": VOLUNTEER_NAME_TAG})
+	settings.save(ignore_permissions=True)
 
 
 def name_gone_by(person: str) -> str:

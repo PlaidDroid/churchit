@@ -127,6 +127,7 @@ class CheckInStation {
 		this.$roster = this.$body.find(".roster-list");
 		this.$roster_filter = this.$body.find(".roster-filter");
 		this.bind();
+		this.make_team_tab();
 	}
 
 	// Built directly because page.add_field() strips the arrow that opens the linked Function.
@@ -241,6 +242,7 @@ class CheckInStation {
 		this.start_polling();
 		this.show_rooms();
 		this.show_headcount();
+		this.refresh_team();
 	}
 
 	// People counted in the room, named or not. The attendance total takes the larger count.
@@ -623,6 +625,72 @@ class CheckInStation {
 		});
 	}
 
+	// The Team tab lists who serves at the Function. They check in as Volunteers: no code, no pickup tag.
+	make_team_tab() {
+		const $people = this.$body.find(
+			".search-row, .station-hint, .station-results, .station-actions"
+		);
+		const $tabs = $(`<ul class="nav nav-tabs mb-3">
+			<li class="nav-item">
+				<a class="nav-link active" role="button" data-tab="people">${__("People")}</a>
+			</li>
+			<li class="nav-item">
+				<a class="nav-link" role="button" data-tab="team">${__("Team")}</a>
+			</li>
+		</ul>`).insertBefore(this.$body.find(".search-row"));
+		this.$team = $(`<div class="station-team"></div>`)
+			.hide()
+			.insertAfter(this.$body.find(".station-actions"));
+		$tabs.on("click", ".nav-link", (event) => {
+			const is_team = event.currentTarget.dataset.tab === "team";
+			$tabs.find(".nav-link").removeClass("active");
+			$(event.currentTarget).addClass("active");
+			$people.toggle(!is_team);
+			this.$team.toggle(is_team);
+			if (is_team) this.refresh_team();
+			else this.focus_search();
+		});
+		this.$team.on("click", ".btn-team-check-in", (event) => {
+			const check_in = this.check_in([event.currentTarget.dataset.person], "Volunteer");
+			if (check_in) check_in.then(() => this.refresh_team());
+		});
+	}
+
+	refresh_team() {
+		if (!this.function || !this.$team.is(":visible")) return;
+		frappe
+			.call({
+				method: "churchit.church_ministries.page.check_in.team.get_team",
+				args: { function: this.function },
+			})
+			.then((r) => {
+				const team = r.message || [];
+				this.$team.html(
+					team.length
+						? team.map((row) => this.team_row(row)).join("")
+						: `<div class="empty">${__(
+								"No one has accepted a Ministry Team position at this Function."
+						  )}</div>`
+				);
+			});
+	}
+
+	team_row(row) {
+		const action = row.is_checked_in
+			? `<span class="text-muted">${__("Checked in")}</span>`
+			: `<button class="btn btn-default btn-sm btn-team-check-in" data-person="${
+					row.person
+			  }">${__("Check In")}</button>`;
+		return `<div class="roster-row">
+			${frappe.get_avatar("avatar-medium", row.person_name)}
+			<span class="name">
+				${frappe.utils.escape_html(row.person_name)}
+				<small class="d-block text-muted">${frappe.utils.escape_html(row.position || "")}</small>
+			</span>
+			${action}
+		</div>`;
+	}
+
 	// The volunteer compares the person at the desk with who may collect, then records who took each child.
 	verify_pickup() {
 		const dialog = new frappe.ui.Dialog({
@@ -635,6 +703,21 @@ class CheckInStation {
 					label: __("Security Code"),
 					description: __("The 4 characters on the pickup tag."),
 					reqd: 1,
+				},
+				{
+					fieldtype: "Button",
+					fieldname: "scan",
+					label: __("Scan"),
+					// The pickup tag's QR code holds the security code.
+					click: () =>
+						new frappe.ui.Scanner({
+							dialog: true,
+							multiple: false,
+							on_scan: (data) => {
+								dialog.set_value("code", data.result.text);
+								this.show_pickup(dialog, data.result.text);
+							},
+						}),
 				},
 				{ fieldtype: "HTML", fieldname: "families" },
 			],

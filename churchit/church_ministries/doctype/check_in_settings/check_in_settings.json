@@ -22,6 +22,7 @@
   "column_break_tags",
   "name_tag_format",
   "zpl_format",
+  "tag_formats",
   "limits_section",
   "capacity_mode",
   "church_printers_section",
@@ -132,6 +133,13 @@
    "fieldtype": "Link",
    "label": "ZPL Format",
    "options": "Print Format"
+  },
+  {
+   "description": "A different name tag for Guest or Volunteer check-ins. A kind with no row uses the formats above.",
+   "fieldname": "tag_formats",
+   "fieldtype": "Table",
+   "label": "Tag Formats by Kind",
+   "options": "Check-In Tag Format"
   },
   {
    "fieldname": "limits_section",
