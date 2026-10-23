@@ -1,11 +1,15 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
-"""Who may check in to a Function: age and grade bounds and room capacity."""
+"""Who may check in to a Function, and when: age and grade bounds, room capacity and the self check-in window."""
+
+from datetime import timedelta
 
 import frappe
 from frappe import _
+from frappe.utils import cint, now_datetime
 
+from churchit.church_ministries.doctype.function.function import get_time_window
 from churchit.church_people.derived import (
 	FINAL_GRADE,
 	KINDERGARTEN,
@@ -63,6 +67,14 @@ def get_capacity(function: str, for_update: bool = False) -> tuple[int, int]:
 		for_update=for_update,
 	)
 	return len(present), capacity
+
+
+def is_check_in_open(function: str) -> bool:
+	"""Whether self check-in to *function* is open now: its time window, opened check_in_opens_minutes early."""
+	fields = ["start_date", "end_date", "start_time", "end_time", "all_day"]
+	start, end = get_time_window(frappe.db.get_value("Function", function, fields, as_dict=True))
+	opens = cint(frappe.get_cached_doc("Check-In Settings").check_in_opens_minutes)
+	return start - timedelta(minutes=opens) <= now_datetime() <= end
 
 
 def get_age_problem(bounds, person) -> str | None:

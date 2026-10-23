@@ -11,6 +11,7 @@ import frappe
 from frappe import _
 from frappe.query_builder.functions import Coalesce
 
+from churchit.church_ministries.kiosk import KIOSK_ROLE
 from churchit.church_people.doctype.people_settings.people_settings import SHARE_DEFAULTS
 from churchit.church_people.matching import (
 	Profile,
@@ -35,9 +36,10 @@ def link_portal_user(login_manager=None):
 	email and has no login is linked. With none, a Visitor is added and the people
 	who may be them are left for the office. With several, nobody is linked and the
 	office sorts them out. A linked user costs one query on every later sign-in.
+	A self check-in kiosk is a device, not a person, so it gets none.
 	"""
 	user = frappe.session.user
-	if not is_portal_member(user) or session_person():
+	if not is_portal_member(user) or session_person() or KIOSK_ROLE in frappe.get_roles(user):
 		return
 
 	# A failed link must not stop the sign-in; the next sign-in tries again.
