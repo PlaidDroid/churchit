@@ -17,8 +17,6 @@
   "photo",
   "members_section",
   "members",
-  "pickup_section",
-  "authorized_pickups",
   "contact_information_section",
   "addresses",
   "phones",
@@ -117,20 +115,6 @@
    "options": "Family Members"
   },
   {
-   "description": "People outside the household who may collect this family's children after check-in. The household's Adults may always collect them.",
-   "fieldname": "pickup_section",
-   "fieldtype": "Section Break",
-   "label": "Pickup",
-   "permlevel": 1
-  },
-  {
-   "fieldname": "authorized_pickups",
-   "fieldtype": "Table",
-   "label": "Authorized Pickups",
-   "options": "Authorized Pickup",
-   "permlevel": 1
-  },
-  {
    "fieldname": "members_section",
    "fieldtype": "Section Break"
   }
@@ -146,9 +130,13 @@
   {
    "link_doctype": "Alms Request",
    "link_fieldname": "recipient"
+  },
+  {
+   "link_doctype": "Authorized Pickup",
+   "link_fieldname": "family"
   }
  ],
- "modified": "2026-10-22 15:51:04.000000",
+ "modified": "2026-10-22 22:18:03.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Family",
@@ -211,29 +199,6 @@
    "read": 1,
    "role": "Church User",
    "write": 1
-  },
-  {
-   "permlevel": 1,
-   "read": 1,
-   "role": "System Manager",
-   "write": 1
-  },
-  {
-   "permlevel": 1,
-   "read": 1,
-   "role": "Church Manager",
-   "write": 1
-  },
-  {
-   "permlevel": 1,
-   "read": 1,
-   "role": "Church People Editor",
-   "write": 1
-  },
-  {
-   "permlevel": 1,
-   "read": 1,
-   "role": "Church Check-In"
   }
  ],
  "quick_entry": 0,

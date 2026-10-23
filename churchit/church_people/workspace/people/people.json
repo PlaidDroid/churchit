@@ -332,7 +332,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Person Documents",
-   "link_count": 30,
+   "link_count": 31,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -570,6 +570,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Authorized Pickups",
+   "link_count": 0,
+   "link_to": "Authorized Pickup",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Possible Duplicates",
    "link_count": 0,
    "link_to": "Possible Duplicate",
@@ -638,7 +648,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-18 13:00:00.000000",
+ "modified": "2026-10-22 22:24:45.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "People",

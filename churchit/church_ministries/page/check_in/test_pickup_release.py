@@ -5,6 +5,7 @@ import frappe
 
 from churchit.church_ministries.page.check_in.check_in import get_pickup_families, release_children
 from churchit.church_ministries.page.check_in.test_check_in import check_in_with_code
+from churchit.church_people.doctype.family.test_pickup_scope import make_pickup
 from churchit.church_people.test_household import make_household, set_adult_age
 from churchit.tests.helpers import RollbackEachTest, ensure, ensure_user, make_function, make_person
 
@@ -26,12 +27,7 @@ class TestPickupRelease(RollbackEachTest):
 		)
 		self.daughter = make_person("Dot", "Releaseton", family=self.family).name
 		self.aunt = make_person("Ada", "_Test Release Aunt").name
-		family = frappe.get_doc("Family", self.family)
-		family.append(
-			"authorized_pickups",
-			{"person": self.aunt, "relationship": ensure("Person Relation Type", {"type": "Aunt"})},
-		)
-		family.save(ignore_permissions=True)
+		make_pickup(self.family, self.aunt, relationship=ensure("Person Relation Type", {"type": "Aunt"}))
 		self.son_check_in = check_in_with_code(function, self.son, "R4LS").name
 		self.daughter_check_in = check_in_with_code(function, self.daughter, "R4LS").name
 		frappe.set_user(self.volunteer)

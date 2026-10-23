@@ -17,6 +17,7 @@ from churchit.church_ministries.page.check_in.check_in import (
 	search_people,
 	undo_check_in,
 )
+from churchit.church_people.doctype.family.test_pickup_scope import make_pickup
 from churchit.church_people.doctype.people_settings.people_settings import SHARE_DEFAULTS
 from churchit.church_people.test_household import make_household, set_adult_age
 from churchit.tests.helpers import (
@@ -186,12 +187,8 @@ class TestVerifyPickup(FrappeTestCase):
 			"_Test Pickup Uncle",
 			life_events=[{"event_type": ensure("Life Event Type", {"type": "Death"}), "date": "2024-01-01"}],
 		).name
-		family = frappe.get_doc("Family", cls.family)
-		family.append(
-			"authorized_pickups", {"person": cls.aunt, "relationship": aunt, "notes": "Sundays only"}
-		)
-		family.append("authorized_pickups", {"person": cls.late_uncle})
-		family.save(ignore_permissions=True)
+		make_pickup(cls.family, cls.aunt, relationship=aunt, notes="Sundays only")
+		make_pickup(cls.family, cls.late_uncle)
 		cls.check_in = check_in_with_code(cls.function.name, cls.son, "K7PX")
 
 	def tearDown(self):
@@ -305,7 +302,7 @@ class TestStationBetweenChurches(FrappeTestCase):
 		)
 
 	def test_a_joint_service_pickup_lists_another_churchs_authorized_pickups(self):
-		"""The pickup table is hidden from another church's form, but the station still reads it."""
+		"""Another church's volunteer cannot list the pickups, but the station still reads them."""
 		joint = make_function("_Test Station Joint Pickups", church=self.branch_b, is_shared=1)
 		child = make_person("Cody", "_Test Station Pickup Child", church=self.branch_b)
 		aunt = make_person("Ava", "_Test Station Pickup Aunt", church=self.branch_b).name
@@ -314,9 +311,9 @@ class TestStationBetweenChurches(FrappeTestCase):
 				"doctype": "Family",
 				"family_name": "_Test Station Pickup Family",
 				"members": [{"member": child.name}],
-				"authorized_pickups": [{"person": aunt}],
 			}
 		).insert(ignore_permissions=True)
+		make_pickup(family.name, aunt)
 		check_in_with_code(joint.name, child.name, "P1CK")
 
 		frappe.set_user(self.volunteer_a)

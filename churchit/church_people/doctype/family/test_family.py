@@ -1,11 +1,7 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
-from unittest.mock import patch
-
 import frappe
-from frappe.api.v1 import read_doc
-from frappe.desk.form.load import getdoc
 from frappe.permissions import add_user_permission
 from frappe.tests.utils import FrappeTestCase
 
@@ -262,12 +258,9 @@ class TestAuthorizedPickups(RollbackEachTest):
 		self.neighbour = make_person("Nina", "_Test Neighbour").name
 
 	def set_pickups(self, family, *people):
-		family = frappe.get_doc("Family", family)
-		family.authorized_pickups = []
 		for person in people:
-			family.append("authorized_pickups", {"person": person})
-		family.save(ignore_permissions=True)
-		return [row.person for row in family.authorized_pickups]
+			frappe.get_doc({"doctype": "Authorized Pickup", "family": family, "person": person}).insert()
+		return pickups_of(family)
 
 	def test_someone_outside_the_household_or_another_adult_at_home_may_collect(self):
 		self.assertEqual(
@@ -276,8 +269,8 @@ class TestAuthorizedPickups(RollbackEachTest):
 		)
 
 	def test_an_adult_of_the_household_is_refused(self):
-		with self.assertRaisesRegex(frappe.ValidationError, "Row 2 .* may always collect its children"):
-			self.set_pickups(self.family, self.neighbour, self.mother)
+		with self.assertRaisesRegex(frappe.ValidationError, "may always collect its children"):
+			self.set_pickups(self.family, self.mother)
 
 	def test_a_child_of_the_family_is_refused(self):
 		with self.assertRaisesRegex(frappe.ValidationError, "is a child of this family"):
@@ -293,8 +286,20 @@ class TestAuthorizedPickups(RollbackEachTest):
 
 		merge_families(self.family, copy.name)
 
-		pickups = frappe.get_doc("Family", self.family).authorized_pickups
-		self.assertEqual([row.person for row in pickups], [self.neighbour, aunt])
+		self.assertEqual(sorted(pickups_of(self.family)), sorted([self.neighbour, aunt]))
+
+	def test_a_person_is_listed_once_for_a_family(self):
+		self.set_pickups(self.family, self.neighbour)
+		with self.assertRaisesRegex(frappe.ValidationError, "may already collect"):
+			self.set_pickups(self.family, self.neighbour)
+
+	def test_the_pickups_follow_the_family(self):
+		self.set_pickups(self.family, self.neighbour)
+		church = frappe.db.get_value("Family", self.family, "church")
+		self.assertEqual(frappe.db.get_value("Authorized Pickup", {"family": self.family}, "church"), church)
+
+		frappe.delete_doc("Family", self.family, ignore_permissions=True, force=True)
+		self.assertFalse(frappe.db.exists("Authorized Pickup", {"family": self.family}))
 
 
 class TestFamilyAcrossChurches(RollbackEachTest):
@@ -367,70 +372,6 @@ class TestFamilyAcrossChurches(RollbackEachTest):
 			frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Person", theirs, "family"), household)
 
-	def test_pickups_are_hidden_from_staff_and_other_churches(self):
-		parent = make_person("_Test Pickup", "Parent", church=self.branch_a).name
-		aunt = make_person("_Test Pickup", "Aunt", church=self.branch_a).name
-		uncle = make_person("_Test Pickup", "Uncle", church=self.branch_a).name
-		family = make_household_of(parent, primary_contact=parent)
-		household = frappe.get_doc("Family", family)
-		household.append("authorized_pickups", {"person": aunt, "notes": "_Test gate code"})
-		household.save(ignore_permissions=True)
-		readers = {
-			name: self.user(f"_test_pickup_{name}@example.com", role, church)
-			for name, role, church in (
-				("staff_a", "Church Staff", self.branch_a),
-				("staff_b", "Church Staff", self.branch_b),
-				("manager_a", "Church Manager", self.branch_a),
-				("manager_b", "Church Manager", self.branch_b),
-			)
-		}
-
-		for name in ("staff_a", "staff_b", "manager_b"):
-			frappe.set_user(readers[name])
-			self.assertFalse(read_doc("Family", family).get("authorized_pickups"), name)
-			if name.startswith("staff"):
-				rows = frappe.get_list(
-					"Authorized Pickup",
-					parent_doctype="Family",
-					filters={"parent": family},
-					fields=["person", "notes"],
-				)
-				self.assertFalse([row for row in rows if row.get("person") or row.get("notes")], name)
-
-		frappe.set_user(readers["manager_a"])
-		self.assertEqual([row.person for row in read_doc("Family", family).authorized_pickups], [aunt])
-		mine = frappe.get_doc("Family", family)
-		mine.append("authorized_pickups", {"person": uncle})
-		mine.save()
-		frappe.set_user("Administrator")
-		self.assertEqual(
-			[row.person for row in frappe.get_doc("Family", family).authorized_pickups], [aunt, uncle]
-		)
-
-	def test_pickups_stay_out_of_the_form_timeline(self):
-		parent = make_person("_Test Pickup", "Parent", church=self.branch_a).name
-		aunt = make_person("_Test Pickup", "Aunt", church=self.branch_a).name
-		family = frappe.get_doc("Family", make_household_of(parent, primary_contact=parent))
-		# Saves write no Version in tests unless in_test is off.
-		with patch.object(frappe, "in_test", False):
-			family.append("authorized_pickups", {"person": aunt, "notes": "_Test gate code"})
-			family.family_name = "_Test Timeline Household"
-			family.save(ignore_permissions=True)
-			family.authorized_pickups[0].notes = "_Test new gate code"
-			family.save(ignore_permissions=True)
-			family.authorized_pickups = []
-			family.save(ignore_permissions=True)
-
-		frappe.set_user(self.user("_test_pickup_staff_a@example.com", "Church Staff", self.branch_a))
-		try:
-			getdoc("Family", family.name)
-			versions = [version.data for version in frappe.response.docinfo.versions]
-		finally:
-			frappe.set_user("Administrator")
-		self.assertEqual(len(versions), 1)
-		self.assertIn("_Test Timeline Household", versions[0])
-		self.assertNotIn("authorized_pickups", versions[0])
-
 	def user(self, email, role, church):
 		ensure_user(email, email.split("@")[0], roles=(role,))
 		set_user_church(email, church)
@@ -449,4 +390,10 @@ def make_household_of(*people, **values):
 		)
 		.insert(ignore_permissions=True)
 		.name
+	)
+
+
+def pickups_of(family):
+	return frappe.get_all(
+		"Authorized Pickup", filters={"family": family}, pluck="person", order_by="creation"
 	)

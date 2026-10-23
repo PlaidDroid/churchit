@@ -1,12 +1,13 @@
 {
  "actions": [],
  "creation": "2026-10-21 09:00:00.000000",
- "description": "Someone outside the household who may collect the family's children after check-in.",
+ "description": "Someone outside the household who may collect the family's children after check-in. The Check-In Station lists them at Verify Pickup.",
  "doctype": "DocType",
  "documentation": "/app/manual%3A-people",
- "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "family",
+  "church",
   "person",
   "person_name",
   "relationship",
@@ -14,12 +15,32 @@
  ],
  "fields": [
   {
+   "fieldname": "family",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Family",
+   "options": "Family",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:!(frappe.boot.churchit && frappe.boot.churchit.single_church)",
+   "fetch_from": "family.church",
+   "fieldname": "church",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "in_standard_filter": 0,
+   "label": "Church",
+   "options": "Church",
+   "read_only": 1
+  },
+  {
    "fieldname": "person",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Person",
    "options": "Person",
-   "permlevel": 1,
    "reqd": 1
   },
   {
@@ -28,7 +49,6 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Name",
-   "permlevel": 1,
    "read_only": 1
   },
   {
@@ -36,28 +56,63 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Relationship",
-   "options": "Person Relation Type",
-   "permlevel": 1
+   "options": "Person Relation Type"
   },
   {
    "fieldname": "notes",
    "fieldtype": "Small Text",
-   "in_list_view": 1,
-   "label": "Notes",
-   "permlevel": 1
+   "label": "Notes"
   }
  ],
- "grid_page_length": 50,
- "istable": 1,
  "links": [],
- "modified": "2026-10-22 15:51:04.000000",
+ "modified": "2026-10-22 22:18:03.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Authorized Pickup",
  "owner": "Administrator",
- "permissions": [],
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Church Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Church People Editor",
+   "select": 1,
+   "write": 1
+  }
+ ],
  "row_format": "Dynamic",
+ "search_fields": "person_name,family",
+ "show_title_field_in_link": 1,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "person_name"
 }

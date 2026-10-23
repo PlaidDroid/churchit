@@ -239,9 +239,9 @@ def get_pickup_family(family: str | None, children: list[dict]) -> dict:
 	# church-scope: the family of a check-in the caller may read
 	pickups = frappe.get_all(
 		"Authorized Pickup",
-		filters={"parenttype": "Family", "parent": family},
+		filters={"family": family},
 		fields=["person", "relationship", "notes"],
-		order_by="idx asc",
+		order_by="creation asc",
 	)
 	adults = household.members(family, [household.ADULT])
 	people = get_living_people(adults + [row.person for row in pickups])

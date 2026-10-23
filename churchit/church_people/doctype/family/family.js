@@ -6,17 +6,6 @@ frappe.ui.form.on("Family", {
 		frm.set_query("primary_contact", () => ({
 			filters: { name: ["in", (frm.doc.members || []).map((row) => row.member)] },
 		}));
-		// The household's Adults may always collect its children, and a child collects no one.
-		frm.set_query("person", "authorized_pickups", () => ({
-			filters: {
-				name: [
-					"not in",
-					(frm.doc.members || [])
-						.filter((row) => ["Adult", "Child"].includes(row.household_role))
-						.map((row) => row.member),
-				],
-			},
-		}));
 	},
 	refresh(frm) {
 		if (!frm.is_new()) {

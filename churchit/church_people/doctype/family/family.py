@@ -8,6 +8,7 @@ from frappe.utils import escape_html
 
 from churchit.church_people import household
 from churchit.church_people.derived import life_stage_for
+from churchit.church_people.doctype.authorized_pickup.authorized_pickup import set_pickups_church
 from churchit.church_people.family_relations import (
 	ROLE_TYPES,
 	get_gendered_type,
@@ -27,9 +28,6 @@ from churchit.church_people.merge import (
 from churchit.church_scope import has_church_access, is_multi_church
 from churchit.contacts import validate_contact_tables
 
-# The permlevel of the Authorized Pickups table and its fields.
-PICKUP_PERMLEVEL = 1
-
 
 class Family(Document):
 	def validate(self):
@@ -47,33 +45,10 @@ class Family(Document):
 		self.label_primary_contact_and_spouse()
 		self.label_spouses_of_members()
 		self.fill_household_roles()
-		self.validate_authorized_pickups()
 		if previous:
 			old_family_name = self.family_name
 			self.rename_after_primary_contact()
 			self.warn_about_new_primary_contact(old_family_name)
-
-	def get_permlevel_access(self, permission_type="write"):
-		"""The user's permlevels, less the authorized pickups when they cannot see this family's church.
-
-		Permlevels follow roles, not churches, and every church reads the shared directory, so another
-		church's staff would otherwise read who may collect this family's children.
-		"""
-		levels = super().get_permlevel_access(permission_type)
-		if has_church_access(frappe.session.user, self.get("church")):
-			return levels
-		return [level for level in levels if level != PICKUP_PERMLEVEL]
-
-	def save_version(self):
-		"""Save the Version without the pickups: the form timeline shows it to every reader of the family."""
-		before = self.get_doc_before_save()
-		if not before:
-			return super().save_version()
-		stored, before.authorized_pickups = before.authorized_pickups, self.authorized_pickups
-		try:
-			super().save_version()
-		finally:
-			before.authorized_pickups = stored
 
 	@property
 	def member_names(self):
@@ -164,19 +139,6 @@ class Family(Document):
 			)
 		return [member for member in blank if member.household_role]
 
-	def validate_authorized_pickups(self):
-		"""Refuse an authorized pickup who is an Adult or a Child of this household."""
-		refusals = {
-			household.ADULT: _("{0} is an Adult of this household and may always collect its children."),
-			household.CHILD: _("{0} is a child of this family."),
-		}
-		roles = {member.member: member.household_role for member in self.members if member.member}
-		for pickup in self.authorized_pickups:
-			refusal = refusals.get(roles.get(pickup.person))
-			if refusal:
-				name = frappe.bold(escape_html(pickup.person_name or pickup.person))
-				frappe.throw(_("Row {0} of Authorized Pickups: {1}").format(pickup.idx, refusal.format(name)))
-
 	def rename_after_primary_contact(self):
 		"""Put the primary contact's first name after the last dash, "Doe - John" to "Doe - Jane"."""
 		first_name = frappe.db.get_value("Person", self.primary_contact, "first_name")
@@ -246,11 +208,18 @@ class Family(Document):
 			)
 
 	def before_rename(self, old, new, merge=False):
-		"""A family's ID changes only by a merge into another family."""
+		"""A family's ID changes only by a merge into another family.
+
+		The rename then points this family's authorized pickups at the kept family, so a pickup the kept
+		family has already goes first.
+		"""
 		refuse_all_but_a_merge(self, frappe.get_doc("Family", new) if merge else None)
+		# church-scope: the pickups of the one family a merge keeps, by name
+		kept = frappe.get_all("Authorized Pickup", filters={"family": new}, pluck="person")
+		frappe.db.delete("Authorized Pickup", {"family": old, "person": ("in", kept)})
 
 	def after_rename(self, old, new, merge=False):
-		"""Take over a merged family's members, authorized pickups, contact rows and blank fields.
+		"""Take over a merged family's members, contact rows and blank fields.
 
 		A member's relationship is to the primary contact, so a member who comes from a family with another
 		primary contact loses it, and validate fills what it can work out again. A household role stays.
@@ -261,7 +230,6 @@ class Family(Document):
 		removed = frappe.get_doc("Family", old)
 		same_contact = not self.primary_contact or self.primary_contact == removed.primary_contact
 		moved = adopt_rows(self, removed, "members", lambda row: row.member)
-		adopt_rows(self, removed, "authorized_pickups", lambda row: row.person)
 		adopt_contact_rows(self, removed)
 		self.reload()
 		fill_blanks(self, removed, typed_fields(self))
@@ -288,11 +256,17 @@ class Family(Document):
 			frappe.db.set_value("Person", member, "family", self.name, update_modified=False)
 
 	def on_update(self):
+		if self.has_value_changed("church"):
+			set_pickups_church(self.name, self.church)
 		before = self.get_doc_before_save()
 		roles = {member.member: member.household_role or None for member in before.members} if before else {}
 		self.set_life_stages(
 			[member for member in self.members if (member.household_role or None) != roles.get(member.member)]
 		)
+
+	def on_trash(self):
+		"""A family's authorized pickups go with it."""
+		frappe.db.delete("Authorized Pickup", {"family": self.name})
 
 	def set_life_stages(self, rows):
 		"""Give the member of each of *rows* the life stage their household role implies."""

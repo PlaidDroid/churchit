@@ -13,6 +13,7 @@ from churchit.church_foundations import church_access
 from churchit.church_ministries.attendance import COUNTED_TYPES
 from churchit.church_people import events, followup, matching, membership, summaries
 from churchit.church_people.derived import BIRTH, DEATH, sync_derived, years_since
+from churchit.church_people.doctype.authorized_pickup.authorized_pickup import set_pickups_church
 from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
 from churchit.church_people.doctype.marital_status.marital_status import MARRIED, WIDOWED, WITH_SPOUSE
 from churchit.church_people.member_access import (
@@ -161,6 +162,7 @@ class Person(Document):
 			return
 		if frappe.db.get_value("Family", self.family, "church") != self.church:
 			frappe.db.set_value("Family", self.family, "church", self.church)
+			set_pickups_church(self.family, self.church)
 
 	def before_insert(self):
 		if frappe.flags.in_import:
