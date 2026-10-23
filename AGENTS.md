@@ -311,6 +311,12 @@ Attendance counts only the types in `church_ministries/attendance.COUNTED_TYPES`
 Function whose start date is today or earlier. Take both from there, and a total from
 `attendance.get_total`; `test_reports_hygiene` fails on a second copy of the types.
 
+Write a person's attendance row only through `attendance.record(person, function, status)` and
+`attendance.remove(person, function, status)`. They load the Function with `for_update` and save it
+whole, so two check-ins at once lose no row and a stale desk save fails. `record` never lowers a type
+(`STATUS_RANK`). A `Function.validate` check acts only when `has_value_changed` on its own field, or an
+attendance save trips it.
+
 Birthdays and ages come from the Person fields, never from Life Event rows. `birth_month` and
 `birth_day` are set from the Birth event even when its year is unknown (0 when there is no
 birthday). `birth_date` needs a known year. `age` needs one too and, for someone who died, a known

@@ -3,6 +3,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.query_builder.functions import Coalesce, Sum
 
+from churchit.church_ministries.attendance import record, remove
 from churchit.church_people.member_access import is_portal_member
 from churchit.church_scope import (
 	church_filters,
@@ -11,6 +12,8 @@ from churchit.church_scope import (
 	session_person,
 )
 from churchit.utils import resolve_link_titles
+
+SIGNED_UP = "Signed-Up"
 
 
 class FunctionSignUp(Document):
@@ -64,36 +67,16 @@ class FunctionSignUp(Document):
 		self.title = " - ".join(p for p in parts if p)
 
 		if self.attending:
-			self._add_attendance_record()
+			record(self.person, self.function, SIGNED_UP)
 		else:
 			self._remove_attendance_record()
 
 	def on_trash(self):
 		self._remove_attendance_record()
 
-	def _add_attendance_record(self):
-		"""Add a Signed-Up row, unless the person's attendance is already recorded."""
-		function_doc = frappe.get_doc("Function", self.function)
-		# Any other row (Checked-In, Confirmed, Absent) says more than a sign-up does.
-		if any(row.person == self.person for row in function_doc.attendance):
-			return
-		function_doc.append(
-			"attendance",
-			{
-				"person": self.person,
-				"attendance_type": "Signed-Up",
-			},
-		)
-		function_doc.save(ignore_permissions=True)
-
 	def _remove_attendance_record(self):
-		function_doc = frappe.get_doc("Function", self.function)
-		for row in function_doc.attendance:
-			if row.person == self.person and row.attendance_type == "Signed-Up":
-				function_doc.remove(row)
-				function_doc.save(ignore_permissions=True)
-				frappe.msgprint(_("The associated attendance record has been removed."))
-				return
+		if remove(self.person, self.function, SIGNED_UP):
+			frappe.msgprint(_("The associated attendance record has been removed."))
 
 
 @frappe.whitelist()

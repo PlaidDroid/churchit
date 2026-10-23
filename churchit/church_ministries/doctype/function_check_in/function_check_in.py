@@ -8,7 +8,10 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
 
+from churchit.church_ministries.attendance import record, remove
 from churchit.church_scope import default_church, refuse_another_churches_parent
+
+CHECKED_IN = "Checked-In"
 
 # Letters and digits that are hard to confuse on a printed tag.
 SECURITY_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -35,36 +38,11 @@ class FunctionCheckIn(Document):
 		parts = [function_label or "", person_label or ""]
 		self.title = " - ".join(p for p in parts if p)
 
-		self._add_attendance_record()
+		record(self.person, self.function, CHECKED_IN)
 
 	def on_trash(self):
-		self._remove_attendance_record()
-
-	def _add_attendance_record(self):
-		function_doc = frappe.get_doc("Function", self.function)
-		for row in function_doc.attendance:
-			if row.person == self.person:
-				if row.attendance_type != "Checked-In":
-					row.attendance_type = "Checked-In"
-					function_doc.save(ignore_permissions=True)
-				return
-		function_doc.append(
-			"attendance",
-			{
-				"person": self.person,
-				"attendance_type": "Checked-In",
-			},
-		)
-		function_doc.save(ignore_permissions=True)
-
-	def _remove_attendance_record(self):
-		function_doc = frappe.get_doc("Function", self.function)
-		for row in function_doc.attendance:
-			if row.person == self.person and row.attendance_type == "Checked-In":
-				function_doc.remove(row)
-				function_doc.save(ignore_permissions=True)
-				frappe.msgprint(_("The associated attendance record has been removed."), alert=True)
-				return
+		if remove(self.person, self.function, CHECKED_IN):
+			frappe.msgprint(_("The associated attendance record has been removed."), alert=True)
 
 
 def is_shared_function(function_name):
@@ -98,7 +76,7 @@ def check_in_persons(function_name: str, persons: str | list[str]):
 			"Function Check-In", {"function": function_name, "person": person}, "name"
 		)
 		if existing:
-			frappe.get_doc("Function Check-In", existing)._add_attendance_record()
+			record(person, function_name, CHECKED_IN)
 			names.append(existing)
 			continue
 		check_in = frappe.get_doc(
