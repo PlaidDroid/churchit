@@ -1,6 +1,8 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from unittest.mock import patch
+
 import frappe
 from frappe.api.v1 import read_doc
 from frappe.client import get as client_get
@@ -615,6 +617,26 @@ class TestPersonMedicalNotes(FrappeTestCase):
 		self.assertEqual(
 			frappe.db.get_value("Person", person.name, "medical_notes"), "_Test Diabetic, carries insulin"
 		)
+
+	def test_medical_notes_stay_out_of_the_form_timeline(self):
+		"""The timeline shows a Person's Versions to every reader, and Church Staff may not read the notes."""
+		person = make_person("_Test Timeline", medical_notes="_Test Diabetic")
+		person.update({"first_name": "_Test Timeline Renamed", "medical_notes": "_Test Carries insulin"})
+		# Saves write no Version in tests unless in_test is off.
+		with patch.object(frappe, "in_test", False):
+			person.save(ignore_permissions=True)
+			person.medical_notes = "_Test Allergic to latex"
+			person.save(ignore_permissions=True)
+
+		frappe.set_user(
+			ensure_user("_test_medical_church_staff@example.com", "Staff", roles=("Church Staff",))
+		)
+		getdoc("Person", person.name)
+		versions = [version.data for version in frappe.response.docinfo.versions]
+		frappe.set_user("Administrator")
+
+		self.assertTrue([data for data in versions if "_Test Timeline Renamed" in data])
+		self.assertFalse([data for data in versions if "medical_notes" in data])
 
 
 class TestPersonChurchEmails(FrappeTestCase):

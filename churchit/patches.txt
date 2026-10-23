@@ -75,3 +75,4 @@ churchit.patches.v1_0.date_future_consent_when_entered
 churchit.patches.v1_0.zero_future_attendance_totals
 churchit.patches.v1_0.date_collection_ledger_rows
 churchit.patches.v1_0.remove_private_fields_from_versions
+churchit.patches.v1_0.remove_permlevel_fields_from_person_versions

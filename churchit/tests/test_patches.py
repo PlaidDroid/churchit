@@ -37,6 +37,7 @@ from churchit.patches.v1_0 import (
 	remove_duplicate_new_members_chart,
 	remove_email_group_onboarding,
 	remove_knowledge_base,
+	remove_permlevel_fields_from_person_versions,
 	remove_private_fields_from_versions,
 	rename_agency_logo_field,
 	restamp_shared_fund_transfers,
@@ -1176,3 +1177,29 @@ class TestRemovePrivateFieldsFromVersions(RollbackEachTest):
 		data = frappe.parse_json(frappe.db.get_value("Version", merged.name, "data"))
 		self.assertEqual(data.changed, [["gender", "Unknown", "Female"]])
 		self.assertFalse(frappe.db.exists("Version", only_key.name))
+
+
+class TestRemovePermlevelFieldsFromPersonVersions(RollbackEachTest):
+	def test_medical_notes_leave_the_person_versions_once(self):
+		def version(*changed):
+			return frappe.get_doc(
+				{
+					"doctype": "Version",
+					"ref_doctype": "Person",
+					"docname": "_Test Medical Versions",
+					"data": frappe.as_json(
+						{"changed": list(changed), "added": [], "removed": [], "row_changed": []}
+					),
+				}
+			).insert(ignore_permissions=True)
+
+		notes = ["medical_notes", None, "_Test Diabetic"]
+		renamed = version(notes, ["first_name", "Old", "New"])
+		only_notes = version(notes, ["open_care_requests", 0, 1])
+
+		remove_permlevel_fields_from_person_versions.execute()
+		remove_permlevel_fields_from_person_versions.execute()
+
+		data = frappe.parse_json(frappe.db.get_value("Version", renamed.name, "data"))
+		self.assertEqual(data.changed, [["first_name", "Old", "New"]])
+		self.assertFalse(frappe.db.exists("Version", only_notes.name))

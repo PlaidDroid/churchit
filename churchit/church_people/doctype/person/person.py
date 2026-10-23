@@ -115,6 +115,21 @@ class Person(Document):
 			return levels
 		return [level for level in levels if level not in CHURCH_ONLY_PERMLEVELS]
 
+	def save_version(self):
+		"""Save the Version without fields above permlevel 0: the form timeline shows it to every reader."""
+		before = self.get_doc_before_save()
+		if not before:
+			return super().save_version()
+		private = [df.fieldname for df in self.meta.fields if df.permlevel]
+		stored = {fieldname: before.get(fieldname) for fieldname in private}
+		for fieldname in private:
+			setattr(before, fieldname, self.get(fieldname))
+		try:
+			super().save_version()
+		finally:
+			for fieldname, value in stored.items():
+				setattr(before, fieldname, value)
+
 	@property
 	def is_primary_contact(self):
 		return (
