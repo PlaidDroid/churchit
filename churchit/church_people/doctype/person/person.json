@@ -43,6 +43,8 @@
   "photo",
   "alergies",
   "medical_notes",
+  "emergency_contact_name",
+  "emergency_contact_phone",
   "user",
   "hide_from_directory",
   "share_email",
@@ -449,6 +451,22 @@
    "print_hide": 1
   },
   {
+   "description": "Who to call in an emergency, for someone with no household adult in Churchit, such as a visiting child.",
+   "fieldname": "emergency_contact_name",
+   "fieldtype": "Data",
+   "label": "Emergency Contact Name",
+   "permlevel": 1,
+   "print_hide": 1
+  },
+  {
+   "fieldname": "emergency_contact_phone",
+   "fieldtype": "Data",
+   "label": "Emergency Contact Phone",
+   "options": "Phone",
+   "permlevel": 1,
+   "print_hide": 1
+  },
+  {
    "fieldname": "birth_date",
    "fieldtype": "Date",
    "label": "Birth Date",
@@ -759,7 +777,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-22 16:25:52.000000",
+ "modified": "2026-10-22 21:48:34.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",

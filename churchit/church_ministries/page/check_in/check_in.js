@@ -154,6 +154,10 @@ class CheckInStation {
 		this.$results.on("click", ".member:not(.checked-in)", (event) => {
 			this.toggle($(event.currentTarget).data("person"));
 		});
+		this.$results.on("click", ".member-care", (event) => {
+			event.stopPropagation();
+			this.show_care($(event.currentTarget).data("person"));
+		});
 		this.$results.on("click", ".select-family", (event) => {
 			$(event.currentTarget)
 				.closest(".family-card")
@@ -312,16 +316,52 @@ class CheckInStation {
 		else if (this.selected.has(member.name)) classes.push("selected");
 		const detail = checked_in
 			? __("Checked in")
-			: member.age
-			? __("Age {0}", [member.age])
+			: [member.age && __("Age {0}", [member.age]), member.grade]
+					.filter(Boolean)
+					.join(" · ");
+		const allergies = member.alergies
+			? `<span class="indicator-pill red mt-1">${__("Allergies: {0}", [
+					frappe.utils.escape_html(member.alergies),
+			  ])}</span>`
 			: "";
+		// The server sends these only to readers of Person permission level 1.
+		const care =
+			member.medical_notes || member.emergency_contact_name || member.emergency_contact_phone
+				? `<span class="member-care" role="button" data-person="${member.name}"
+					title="${__("Medical notes and emergency contact")}">
+					${frappe.utils.icon("stethoscope", "md")}
+				</span>`
+				: "";
 		return `<button type="button" class="${classes.join(" ")}" data-person="${member.name}">
 			${frappe.get_avatar("avatar-medium", member.full_name, member.photo)}
 			<span>
 				${frappe.utils.escape_html(member.full_name)}${checked_in ? " ✓" : ""}
-				<small>${detail}</small>
+				<small>${frappe.utils.escape_html(detail)}</small>
+				${allergies}
 			</span>
+			${care}
 		</button>`;
+	}
+
+	show_care(person) {
+		const member = this.groups
+			.flatMap((group) => group.members)
+			.find((row) => row.name === person);
+		const contact = [member.emergency_contact_name, member.emergency_contact_phone]
+			.filter(Boolean)
+			.join(", ");
+		const section = (label, text) =>
+			text
+				? `<p class="text-muted mb-1">${label}</p>
+				<p style="white-space: pre-line">${frappe.utils.escape_html(text)}</p>`
+				: "";
+		frappe.msgprint({
+			title: frappe.utils.escape_html(member.full_name),
+			message:
+				section(__("Allergies"), member.alergies) +
+				section(__("Medical Notes"), member.medical_notes) +
+				section(__("Emergency Contact"), contact),
+		});
 	}
 
 	toggle(person) {
@@ -642,6 +682,24 @@ class CheckInStation {
 					label: __("Family"),
 					options: "Family",
 					description: __("Leave blank for a new visitor with no family record yet."),
+				},
+				{
+					fieldtype: "Section Break",
+					label: __("Emergency Contact"),
+					collapsible: 1,
+					description: __("For a visitor with no household adult in Churchit."),
+				},
+				{
+					fieldtype: "Data",
+					fieldname: "emergency_contact_name",
+					label: __("Emergency Contact Name"),
+				},
+				{ fieldtype: "Column Break" },
+				{
+					fieldtype: "Data",
+					fieldname: "emergency_contact_phone",
+					label: __("Emergency Contact Phone"),
+					options: "Phone",
 				},
 			],
 			primary_action_label: __("Add & Check In"),

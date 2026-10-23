@@ -52,6 +52,8 @@ PERSONAL_FIELDS = (
 	"suffix",
 	"photo",
 	"medical_notes",
+	"emergency_contact_name",
+	"emergency_contact_phone",
 	"alergies",
 	"anniversary",
 	"graduation_year",

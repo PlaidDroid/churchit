@@ -35,6 +35,8 @@ class TestAnonymizePerson(RollbackEachTest):
 			"Member",
 			nickname="Hid",
 			medical_notes="Peanuts",
+			emergency_contact_name="_Test Hidden Contact",
+			emergency_contact_phone="+1 555 010 0098",
 			photo="https://example.com/_test_hidden.jpg",
 			emails=[email("_test.hidden@example.com")],
 			phones=[phone("555-010-0099")],
@@ -61,7 +63,15 @@ class TestAnonymizePerson(RollbackEachTest):
 		self.assertEqual(
 			(person.first_name, person.full_name, person.last_name), (ANONYMIZED, ANONYMIZED, None)
 		)
-		for fieldname in ("nickname", "medical_notes", "photo", "user", "birth_date"):
+		for fieldname in (
+			"nickname",
+			"medical_notes",
+			"emergency_contact_name",
+			"emergency_contact_phone",
+			"photo",
+			"user",
+			"birth_date",
+		):
 			self.assertFalse(person.get(fieldname), fieldname)
 		self.assertEqual((person.emails, person.phones, person.addresses), ([], [], []))
 		self.assertEqual(

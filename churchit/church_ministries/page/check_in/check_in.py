@@ -29,6 +29,8 @@ from churchit.church_scope import (
 from churchit.contacts import phone_digits
 
 RESULT_LIMIT = 12
+# Person fields at permlevel 1, sent to the station only for a reader with that level.
+CARE_FIELDS = ("medical_notes", "emergency_contact_name", "emergency_contact_phone")
 
 
 @frappe.whitelist()
@@ -60,6 +62,7 @@ def get_station_context():
 def search_people(query: str | None, function: str | None = None):
 	"""People matching *query* by name, nickname, family name or phone digits, grouped by family."""
 	frappe.has_permission("Person", throw=True)
+	frappe.has_permission("Function Check-In", "create", throw=True)
 	query = (query or "").strip()
 	if len(query) < 2:
 		return []
@@ -76,6 +79,7 @@ def search_people(query: str | None, function: str | None = None):
 def find_card_holder(person: str, function: str | None = None):
 	"""The family of the person whose member card was scanned, found by the same rules as a search."""
 	frappe.has_permission("Person", throw=True)
+	frappe.has_permission("Function Check-In", "create", throw=True)
 	return group_by_family([person], get_people_scope(function))
 
 
@@ -84,7 +88,8 @@ def get_people_scope(function):
 
 	A station has to find whoever walks in, whichever church they belong to. With
 	a private directory that still holds at a joint service, so the results carry
-	names, ages and photos only, never contact details.
+	names, ages, grades, allergies and photos, never the person's own contact details.
+	Medical notes and the emergency contact go only to readers of permlevel 1.
 	"""
 	if function:
 		frappe.has_permission("Function", doc=function, throw=True)
@@ -146,21 +151,16 @@ def group_by_family(matched, scope):
 	or_filters = [["name", "in", matched]]
 	if families:
 		or_filters.append(["family", "in", families])
+	fields = ["name", "first_name", "last_name", "full_name", "age", "photo", "family", "alergies", "grade"]
+	if 1 in frappe.get_meta("Person").get_permlevel_access("read"):
+		fields += CARE_FIELDS
 	# The church and living filters are the backstop: every person the station lists
 	# passes them, whichever of the searches above found them.
 	people = frappe.get_all(
 		"Person",
 		filters=[scope, is_living],
 		or_filters=or_filters,
-		fields=[
-			"name",
-			"first_name",
-			"last_name",
-			"full_name",
-			"age",
-			"photo",
-			"family",
-		],
+		fields=fields,
 		order_by="age desc, first_name asc",
 	)
 	family_rows = frappe.get_all(
@@ -386,7 +386,12 @@ def undo_check_in(name: str):
 
 @frappe.whitelist(methods=["POST"])
 def add_visitor(
-	first_name: str | None, last_name: str | None = None, phone: str | None = None, family: str | None = None
+	first_name: str | None,
+	last_name: str | None = None,
+	phone: str | None = None,
+	family: str | None = None,
+	emergency_contact_name: str | None = None,
+	emergency_contact_phone: str | None = None,
 ):
 	"""Create a Person on the spot so a first-time visitor can be checked in.
 
@@ -408,6 +413,8 @@ def add_visitor(
 			"family": family,
 			"source": SOURCE_CHECK_IN,
 			"membership": VISITOR,
+			"emergency_contact_name": (emergency_contact_name or "").strip(),
+			"emergency_contact_phone": (emergency_contact_phone or "").strip(),
 			**dict.fromkeys(SHARE_DEFAULTS, 0),
 		}
 	)
