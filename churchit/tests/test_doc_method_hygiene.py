@@ -570,6 +570,10 @@ NAME_CHECK_EXEMPT = {
 	"churchit.church_ministries.page.check_in.check_in.add_visitor": (
 		"Check-In reads every family; it refuses a family whose church the user cannot see (has_church_access)"
 	),
+	"churchit.church_ministries.pre_check_in.get_pre_check_in_code": (
+		"a member signs only an open self check-in Function of their church (get_functions on session_church), "
+		"for people they may write"
+	),
 	"churchit.church_missions.doctype.missionary.missionary.get_country_coordinates": (
 		"Country is Frappe's global reference data"
 	),

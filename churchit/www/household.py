@@ -5,6 +5,7 @@ import frappe
 from frappe import _
 
 from churchit.church_foundations.doctype.church.church import address_line
+from churchit.church_ministries.pre_check_in import get_functions
 from churchit.church_people.household import CHILD, get_ages, members
 from churchit.church_scope import session_person
 from churchit.contacts import mailing_address
@@ -23,6 +24,7 @@ def get_context(context):
 	context.person = session_person()
 	if context.person:
 		context.update(get_household(context.person))
+		context.check_in_functions = get_functions()
 
 
 def get_household(person: str) -> dict:

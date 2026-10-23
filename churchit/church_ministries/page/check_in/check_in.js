@@ -312,12 +312,46 @@ class CheckInStation {
 	}
 
 	// A member card's QR code holds the Person ID; the server applies the search's own rules to it.
+	// A pre check-in code from the member portal starts with "f=".
 	scan_card() {
 		new frappe.ui.Scanner({
 			dialog: true,
 			multiple: false,
-			on_scan: (data) => this.show_card_holder(data.result.text),
+			on_scan: (data) => {
+				const text = data.result.text;
+				if (text.startsWith("f=")) this.check_in_code(text);
+				else this.show_card_holder(text);
+			},
 		});
+	}
+
+	// The code names its own function, which may not be the one this station shows.
+	check_in_code(payload) {
+		frappe
+			.call({
+				method: "churchit.church_ministries.pre_check_in.check_in",
+				args: { payload, print_tags: this.print_field.get_value() },
+				freeze: true,
+				freeze_message: __("Checking in…"),
+			})
+			.then((r) => {
+				const result = r.message;
+				const function_name = frappe.utils.escape_html(result.function_name);
+				frappe.show_alert({
+					message: result.new.length
+						? __("{0} checked in to {1}.", [result.new.length, function_name])
+						: __("Already checked in to {0}.", [function_name]),
+					indicator: result.new.length ? "green" : "orange",
+				});
+				if (result.capacity_warning) {
+					frappe.show_alert(
+						{ message: result.capacity_warning, indicator: "orange" },
+						10
+					);
+				}
+				this.refresh_roster();
+				if (result.print) return church.name_tags.print(result.print);
+			});
 	}
 
 	show_card_holder(person) {

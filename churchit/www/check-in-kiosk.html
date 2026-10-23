@@ -43,7 +43,7 @@
 	<p class="kiosk-church">{{ church_name or "" }}</p>
 
 	<section class="kiosk-step" data-step="phone">
-		<label class="kiosk-prompt" for="kiosk-phone">{{ _("Type your phone number") }}</label>
+		<label class="kiosk-prompt" for="kiosk-phone">{{ _("Type your phone number, or scan your check-in code") }}</label>
 		<input id="kiosk-phone" class="form-control kiosk-phone" type="tel" inputmode="numeric" autocomplete="off">
 		<div class="kiosk-keypad">
 			{% for key in ["1", "2", "3", "4", "5", "6", "7", "8", "9"] %}
@@ -129,6 +129,7 @@ frappe.ready(function () {
 	}
 
 	function find() {
+		if (phone.value.trim().indexOf("f=") === 0) return check_in_code();
 		var button = kiosk.querySelector(".kiosk-find");
 		button.disabled = true;
 		call("find_household", { phone: phone.value })
@@ -246,22 +247,38 @@ frappe.ready(function () {
 		var button = kiosk.querySelector(".kiosk-check-in");
 		button.disabled = true;
 		call("check_in", { phone: phone.value, choices: choices })
-			.then(function (result) {
-				var message = kiosk.querySelector(".kiosk-done");
-				show("done");
-				if (!result.print) {
-					message.textContent = __("You are already checked in. Ask at the welcome desk for a new name tag.");
-					return;
-				}
-				message.textContent = result.has_earlier_code
-					? __("You are checked in. Take your name tags. Keep the pickup tag you got earlier today: it still applies.")
-					: __("You are checked in. Take your name tags.");
-				return church.name_tags.print(result.print);
-			})
+			.then(finish)
 			.catch(function () {})
 			.finally(function () {
 				button.disabled = false;
 			});
+	}
+
+	// A handheld scanner types a pre check-in code from the member portal into the phone field.
+	function check_in_code() {
+		var button = kiosk.querySelector(".kiosk-find");
+		button.disabled = true;
+		call("check_in_code", { payload: phone.value.trim() })
+			.then(finish)
+			.catch(function () {
+				phone.value = "";
+			})
+			.finally(function () {
+				button.disabled = false;
+			});
+	}
+
+	function finish(result) {
+		var message = kiosk.querySelector(".kiosk-done");
+		show("done");
+		if (!result.print) {
+			message.textContent = __("You are already checked in. Ask at the welcome desk for a new name tag.");
+			return;
+		}
+		message.textContent = result.has_earlier_code
+			? __("You are checked in. Take your name tags. Keep the pickup tag you got earlier today: it still applies.")
+			: __("You are checked in. Take your name tags.");
+		return church.name_tags.print(result.print);
 	}
 
 	kiosk.querySelector(".kiosk-keypad").addEventListener("click", function (event) {

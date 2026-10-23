@@ -72,6 +72,22 @@ def check_in(phone: str, choices: str | dict) -> dict:
 	return print_new_check_ins(*add_household_check_ins(dict(chosen)), church)
 
 
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=REQUESTS_PER_HOUR, seconds=60 * 60)
+def check_in_code(payload: str) -> dict:
+	"""Check in the people of a scanned pre check-in code, at an open self check-in Function of this church."""
+	from churchit.church_ministries.pre_check_in import read_payload, redeem  # it imports this module
+
+	frappe.only_for(KIOSK_ROLE)
+	church = get_church()
+	function, persons = read_payload(payload)
+	if function not in {row.name for row in get_open_functions(church)}:
+		frappe.throw(
+			_("Check-in is not open for these people here. Ask at the welcome desk."), frappe.PermissionError
+		)
+	return print_new_check_ins(*redeem(function, persons), church)
+
+
 def print_new_check_ins(names: list[str], new: list[str], church: str | None) -> dict:
 	"""The kiosk's answer for check-ins *names*: the tags of the *new* ones, through *church*'s printer."""
 	if not new:

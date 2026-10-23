@@ -15,6 +15,10 @@
 	.household-list .member-role { flex: 0 0 6.5rem; }
 	.household-list .member-note { flex: 0 0 4rem; color: var(--text-muted, #6b7280); white-space: nowrap; }
 	.household-list .member-edit { flex: 0 0 3.5rem; text-align: right; }
+	.pre-check-in-person { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 0; font-weight: normal; }
+	.pre-check-in select { max-width: 420px; margin: 8px 0; }
+	/* white behind the code, so a scanner reads it in dark mode too */
+	.pre-check-in-code img { display: block; width: 260px; max-width: 100%; height: auto; margin: 16px 0 8px; padding: 8px; background: #fff; }
 </style>
 {% endblock %}
 
@@ -63,6 +67,32 @@
 			{% endfor %}
 		</ul>
 		<p class="text-muted">{{ _("To add or remove someone, contact the church office.") }}</p>
+
+		{% set check_in_people = members | selectattr("can_edit") | list %}
+		{% if check_in_functions and check_in_people %}
+		<section class="pre-check-in" id="pre-check-in">
+			<h4 class="mt-5 mb-1">{{ _("Check In Before You Arrive") }}</h4>
+			<p class="text-muted">{{ _("Choose who is coming and where. Then show the code at the Check-In Station or the kiosk.") }}</p>
+			{% for member in check_in_people %}
+			<label class="pre-check-in-person">
+				<input type="checkbox" name="person" value="{{ member.name | e }}"> {{ member.display_name | e }}
+			</label>
+			{% endfor %}
+			<select class="form-control" name="function" aria-label="{{ _('Function') }}">
+				{% for function in check_in_functions %}
+				<option value="{{ function.name | e }}">
+					{{ function.function_name | e }}{% if function.start_time %}, {{ frappe.format(function.start_time, {"fieldtype": "Time"}) }}{% endif %}
+				</option>
+				{% endfor %}
+			</select>
+			<p class="pre-check-in-error text-danger" role="alert"></p>
+			<button type="button" class="btn btn-primary btn-sm" id="get-check-in-code">{{ _("Get Check-In Code") }}</button>
+			<div class="pre-check-in-code" hidden>
+				<img alt="{{ _('Check-in code') }}">
+				<p class="text-muted"></p>
+			</div>
+		</section>
+		{% endif %}
 	{% endif %}
 </div>
 {% endblock %}
@@ -99,6 +129,40 @@ frappe.ready(function () {
 				},
 			});
 		});
+	});
+});
+
+frappe.ready(function () {
+	var section = document.getElementById("pre-check-in");
+	if (!section) return;
+	var button = document.getElementById("get-check-in-code");
+	var error = section.querySelector(".pre-check-in-error");
+	var code = section.querySelector(".pre-check-in-code");
+	button.addEventListener("click", function () {
+		var persons = Array.from(section.querySelectorAll("input[name='person']:checked")).map(function (box) {
+			return box.value;
+		});
+		error.textContent = "";
+		code.hidden = true;
+		if (!persons.length) {
+			error.textContent = __("Choose who is coming.");
+			return;
+		}
+		frappe
+			.call({
+				method: "churchit.church_ministries.pre_check_in.get_pre_check_in_code",
+				args: { function: section.querySelector("select[name='function']").value, persons: persons },
+				btn: button,
+				error_msg: error,
+				statusCode: {},
+			})
+			.done(function (r) {
+				code.querySelector("img").src = r.message.qr_code;
+				code.querySelector("p").textContent = __("Show this code when you arrive. It works until {0}.", [
+					r.message.valid_until,
+				]);
+				code.hidden = false;
+			});
 	});
 });
 </script>
