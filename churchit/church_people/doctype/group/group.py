@@ -6,6 +6,7 @@ from frappe.model.document import Document
 from frappe.utils import getdate
 
 from churchit.church_people.group_meetings import get_meets
+from churchit.church_people.group_requirements import check_member_requirements
 
 
 class Group(Document):
@@ -14,6 +15,7 @@ class Group(Document):
 
 	def validate(self):
 		self.meets = get_meets(self.name)
+		check_member_requirements(self)
 
 	@property
 	def member_count(self) -> int:

@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import add_years, getdate, nowdate
+from frappe.utils import add_years, format_date, getdate, nowdate
 
 from churchit.church_scope import refuse_another_churches_parent
 
@@ -69,3 +69,18 @@ def is_cleared(person: str, on_date, check_types: list[str] | None = None) -> bo
 	"""True when *person* holds a cleared check, current on *on_date*, of each of *check_types*, or of any type when none are given."""
 	current = get_current_check_types(person, on_date)
 	return set(check_types) <= current if check_types else bool(current)
+
+
+def get_check_problem(person: str, on_date, check_types: list[str], label: str) -> str | None:
+	"""Why *person* lacks the checks that *label* needs on *on_date*, or None when they hold them."""
+	if is_cleared(person, on_date, check_types):
+		return None
+	person_name = frappe.db.get_value("Person", person, "full_name")
+	if not check_types:
+		return _("{0} needs a current, cleared Background Check, and {1} has none.").format(
+			label, person_name
+		)
+	missing = sorted(set(check_types) - get_current_check_types(person, on_date))
+	return _("{0} needs these checks, cleared and current on {1}: {2}. {3} is missing {4}.").format(
+		label, format_date(on_date), ", ".join(sorted(check_types)), person_name, ", ".join(missing)
+	)

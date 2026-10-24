@@ -22,6 +22,12 @@
   "requires_approval",
   "capacity",
   "close_enrollment_on",
+  "section_break_requirements",
+  "needs_background_check",
+  "checks_apply_to",
+  "column_break_requirements",
+  "required_checks",
+  "block_without_checks",
   "section_break_members",
   "members"
  ],
@@ -133,6 +139,49 @@
    "fieldname": "close_enrollment_on",
    "fieldtype": "Date",
    "label": "Close Enrollment On"
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "needs_background_check",
+   "fieldname": "section_break_requirements",
+   "fieldtype": "Section Break",
+   "label": "Requirements"
+  },
+  {
+   "default": "0",
+   "description": "Tick this when the group's leaders, or all its members, need a current, cleared Background Check, for example in a youth group.",
+   "fieldname": "needs_background_check",
+   "fieldtype": "Check",
+   "label": "Needs Background Check"
+  },
+  {
+   "default": "Leaders",
+   "depends_on": "needs_background_check",
+   "description": "Who needs the checks: the people in a role that leads the group, or every member.",
+   "fieldname": "checks_apply_to",
+   "fieldtype": "Select",
+   "label": "Checks Apply To",
+   "options": "Leaders\nEveryone"
+  },
+  {
+   "fieldname": "column_break_requirements",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "needs_background_check",
+   "description": "The checks the group needs, such as Child Safety Training. Each one must be cleared and current. Leave it blank to accept any cleared check.",
+   "fieldname": "required_checks",
+   "fieldtype": "Table MultiSelect",
+   "label": "Required Checks",
+   "options": "Group Required Check"
+  },
+  {
+   "default": "0",
+   "depends_on": "needs_background_check",
+   "description": "Refuse to add someone without the checks, instead of only warning.",
+   "fieldname": "block_without_checks",
+   "fieldtype": "Check",
+   "label": "Block People Without Checks"
   }
  ],
  "grid_page_length": 50,
@@ -149,7 +198,7 @@
    "link_fieldname": "group"
   }
  ],
- "modified": "2026-10-23 21:04:00.000000",
+ "modified": "2026-10-23 21:09:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Group",

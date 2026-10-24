@@ -12,10 +12,7 @@ from frappe.utils import format_date, format_time, get_url, get_url_to_form, get
 
 from churchit.church_ministries.doctype.function.function import TIME_FORMAT, get_time_window
 from churchit.church_ministries.doctype.ministry_team_block.ministry_team_block import get_blocks_covering
-from churchit.church_people.doctype.background_check.background_check import (
-	get_current_check_types,
-	is_cleared,
-)
+from churchit.church_people.doctype.background_check import background_check
 from churchit.church_scope import refuse_another_churches_parent, refuse_another_churches_record, scoped
 from churchit.contacts import get_primary_email, get_primary_emails
 
@@ -93,17 +90,10 @@ class MinistryTeamAssignment(Document):
 	def get_check_problem(self, on_date) -> str | None:
 		"""Why the person lacks the checks the position needs on *on_date*, or None."""
 		position = self.position_doc
-		required = [row.check_type for row in position.required_checks]
-		if not position.needs_background_check or is_cleared(self.person, on_date, required):
+		if not position.needs_background_check:
 			return None
-		if not required:
-			return _("{0} needs a current, cleared Background Check, and {1} has none.").format(
-				position.title, self.person_name
-			)
-		missing = sorted(set(required) - get_current_check_types(self.person, on_date))
-		return _(
-			"{0} needs these checks, cleared and current on the day of the function: {1}. {2} is missing {3}."
-		).format(position.title, ", ".join(sorted(required)), self.person_name, ", ".join(missing))
+		required = [row.check_type for row in position.required_checks]
+		return background_check.get_check_problem(self.person, on_date, required, position.title)
 
 	def warn_about_conflicts(self):
 		warnings = self.get_warnings()
