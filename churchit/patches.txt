@@ -91,3 +91,4 @@ churchit.patches.v1_0.add_group_meeting_function_type
 churchit.patches.v1_0.add_group_types
 churchit.patches.v1_0.add_group_leader_menu_item
 churchit.patches.v1_0.add_group_attendance_reminder_template
+churchit.patches.v1_0.add_group_files_menu_item

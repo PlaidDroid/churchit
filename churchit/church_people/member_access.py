@@ -177,3 +177,43 @@ def family_query_conditions(user=None, doctype=None) -> str:
 		return ""
 	family = frappe.db.get_value("Person", {"user": user}, "family")
 	return f"`tabFamily`.`name` = {frappe.db.escape(family)}" if family else "1 = 0"
+
+
+def has_group_file_permission(doc, ptype=None, user=None) -> bool:
+	"""A portal member reaches only the files of the groups they belong to.
+
+	Adding one also needs a leader (`GroupFile.validate`).
+	"""
+	user = user or frappe.session.user
+	if not is_portal_member(user):
+		return True
+	person = frappe.db.get_value("Person", {"user": user}, "name")
+	return bool(person) and bool(
+		frappe.db.exists(
+			"Group Member", {"parenttype": "Group", "parent": doc.get("group"), "person": person}
+		)
+	)
+
+
+def group_file_query_conditions(user=None, doctype=None) -> str:
+	"""For a portal member, only the Group Files of their groups."""
+	user = user or frappe.session.user
+	if not is_portal_member(user):
+		return ""
+	person = frappe.db.get_value("Person", {"user": user}, "name")
+	if not person:
+		return "1 = 0"
+	return (
+		"`tabGroup File`.`group` in (select `parent` from `tabGroup Member` "
+		f"where `parenttype` = 'Group' and `person` = {frappe.db.escape(person)})"
+	)
+
+
+def make_group_files_private(doc, method=None) -> None:
+	"""A file attached to a Group File is private.
+
+	File's own before_insert has already written a public file to disk by now, so a public one is
+	refused rather than flagged private.
+	"""
+	if doc.attached_to_doctype == "Group File" and not doc.is_private:
+		frappe.throw(_("Files of a group are private. Upload the file again with Private ticked."))

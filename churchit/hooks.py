@@ -242,17 +242,19 @@ has_permission = {
 	"Person Note": "churchit.church_people.notes.has_note_permission",
 	"Prayer Request": "churchit.church_prayers.prayer_access.has_prayer_permission",
 	"Follow-up Card": "churchit.church_people.followup.has_card_permission",
+	"Group File": "churchit.church_people.member_access.has_group_file_permission",
 }
 
 # A portal member lists only their own Person, a Note Category limits who reads its
-# notes, and the follow-up role lists only the cards assigned to it. Church scoping
-# never uses this.
+# notes, the follow-up role lists only the cards assigned to it, and a portal member
+# lists only the files of their own groups. Church scoping never uses this.
 permission_query_conditions = {
 	"Person": "churchit.church_people.member_access.person_query_conditions",
 	"Family": "churchit.church_people.member_access.family_query_conditions",
 	"Prayer Request": "churchit.church_prayers.prayer_access.prayer_query_conditions",
 	"Person Note": "churchit.church_people.notes.note_query_conditions",
 	"Follow-up Card": "churchit.church_people.followup.card_query_conditions",
+	"Group File": "churchit.church_people.member_access.group_file_query_conditions",
 }
 
 # A person's notes show on their timeline, to the users who may read them.
@@ -297,6 +299,9 @@ doc_events = {
 	},
 	"Email Unsubscribe": {
 		"after_insert": "churchit.church_communications.consent.record_unsubscribe",
+	},
+	"File": {
+		"before_insert": "churchit.church_people.member_access.make_group_files_private",
 	},
 	"Function Check-In": {
 		"after_insert": "churchit.church_people.followup.on_check_in",
