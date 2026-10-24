@@ -15,6 +15,8 @@ from churchit.church_website import pwa
 from churchit.church_website.footer import get_footer_church
 
 PORTAL_URL = "/portal"
+# The pages that draw a Leaflet map.
+MAP_PAGES = ("missions", "find-a-group")
 THEME_MODE_SCRIPT = (
 	"<script>" + (Path(__file__).parents[1] / "public/js/theme_mode.js").read_text() + "</script>"
 )
@@ -133,11 +135,11 @@ def _add_theme_mode_script(context):
 
 
 def _add_leaflet(context):
-	"""Load Leaflet on /missions for its map. The website bundle has no `frappe.require`.
+	"""Load Leaflet on the pages with a map. The website bundle has no `frappe.require`.
 
 	Frappe hands every page the cached hook lists, so this assigns new lists.
 	"""
-	if getattr(frappe.local, "path", None) != "missions" or "leaflet.bundle.js" in context.web_include_js:
+	if getattr(frappe.local, "path", None) not in MAP_PAGES or "leaflet.bundle.js" in context.web_include_js:
 		return
 	context.web_include_js = ["leaflet.bundle.js", *context.web_include_js]
 	context.web_include_css = ["leaflet.bundle.css", *context.web_include_css]

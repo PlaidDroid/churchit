@@ -73,6 +73,13 @@ def get_meets(group: str | None) -> str:
 
 def describe_schedule(schedule) -> str:
 	"""One line such as "Weekly on Tuesday at 7:00 PM, Main Hall"."""
+	text = describe_schedule_time(schedule)
+	place = schedule.address and frappe.db.get_value("Address", schedule.address, "address_title")
+	return f"{text}, {place}" if place else text
+
+
+def describe_schedule_time(schedule) -> str:
+	"""When a schedule meets, such as "Weekly on Tuesday at 7:00 PM", without the place."""
 	interval = cint(schedule.repeat_interval) or 1
 	text = _(schedule.repeat_frequency)
 	if interval > 1:
@@ -82,8 +89,7 @@ def describe_schedule(schedule) -> str:
 		text = _("{0} on {1}").format(text, day)
 	if schedule.start_time and not schedule.all_day:
 		text = _("{0} at {1}").format(text, format_time(schedule.start_time, TIME_FORMAT))
-	place = schedule.address and frappe.db.get_value("Address", schedule.address, "address_title")
-	return f"{text}, {place}" if place else text
+	return text
 
 
 def get_repeat_day(schedule) -> str | None:
