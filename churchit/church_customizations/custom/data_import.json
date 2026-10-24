@@ -24,6 +24,16 @@
       "delete": 1,
       "read": 1,
       "write": 1
+    },
+    {
+      "parent": "Data Import",
+      "role": "Church Finance",
+      "permlevel": 0,
+      "if_owner": 1,
+      "create": 1,
+      "delete": 1,
+      "read": 1,
+      "write": 1
     }
   ],
   "doctype": "Data Import",

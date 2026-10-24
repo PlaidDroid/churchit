@@ -70,7 +70,8 @@ GLOBAL_DOCTYPES = {
 		"Memory Session",
 	},
 	"the church tree itself": {"Church"},
-	"virtual import targets that store nothing; the people they make take the importer's church": {
+	"virtual import targets that store nothing; the records they make take the importer's church": {
+		"Giving Import",
 		"People Import",
 		"Planning Center Import",
 		"Rock RMS Import",
