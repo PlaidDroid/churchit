@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 
+from churchit.church_communications.sending import can_send_texts
 from churchit.church_people.group_api import get_open_join_requests
 from churchit.church_people.group_leaders import get_led_groups
 from churchit.church_people.group_meetings import get_group_meetings, get_roster
@@ -35,6 +36,7 @@ def get_context(context):
 	context.rosters = {group: get_contact_roster(group) for group in groups}
 	context.meetings = {group: get_group_meetings(group) for group in groups}
 	context.join_requests = get_open_join_requests(groups)
+	context.can_send_texts = can_send_texts()
 
 
 def get_contact_roster(group: str) -> list[frappe._dict]:

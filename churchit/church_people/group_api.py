@@ -4,22 +4,27 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import get_url, sbool
+from frappe.rate_limiter import rate_limit
+from frappe.utils import escape_html, get_url, sbool
 
-from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL
+from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL, SMS
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
 	GROUP_MESSAGES,
 )
-from churchit.church_communications.sending import send
+from churchit.church_communications.sending import can_send_texts, send
 from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import (
 	can_send_email,
 )
 from churchit.church_people.doctype.group_join_request.group_join_request import APPROVED, DENIED, REQUESTED
 from churchit.church_people.group_leaders import get_leaders, require_leader
+from churchit.church_people.group_meetings import get_roster
 from churchit.church_scope import church_filters, session_church, session_person
 
 JOIN_REQUEST_TEMPLATE = "Group Join Request"
 JOIN_DECISION_TEMPLATE = "Group Join Decision"
+MESSAGE_TEMPLATE = "Group Message"
+# A text carries no subject. The leader's words are a placeholder value, never template source.
+MESSAGE_TEXT = "{{ leader_name }}: {{ message }}"
 
 
 def _session_person():
@@ -216,3 +221,57 @@ def decide_join_request(request: str, approve: bool | str) -> dict:
 		context={"group_name": group_doc.group_name, "approved": approved, "link": get_url("/groups")},
 	)
 	return {"status": doc.status}
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=10, seconds=60 * 60)
+def message_group(group: str, subject: str, message: str, channel: str = EMAIL) -> int:
+	"""Leader page: send *message* to the living members of a group the session user leads.
+
+	Each message gets its own send key, the Comment's name, so the same words sent twice both go out.
+	Returns the number of people it reached.
+	"""
+	leader = require_leader(group)
+	if not (subject or "").strip() or not (message or "").strip():
+		frappe.throw(_("Write a subject and a message."))
+	if channel == SMS and not can_send_texts():
+		frappe.throw(_("This site cannot send texts."))
+	if channel == EMAIL and not can_send_email():
+		frappe.throw(_("This site cannot send email yet. Ask the church office."))
+
+	group_doc = frappe.get_doc("Group", group)
+	leader_name = frappe.db.get_value("Person", leader, "full_name")
+	comment = group_doc.add_comment(
+		"Info",
+		_("{0} sent the group a message: {1}").format(escape_html(leader_name), escape_html(subject)),
+	)
+	members = [person.name for person in get_roster(group)]
+	context = {
+		"subject": subject,
+		"message": message,
+		"leader_name": leader_name,
+		"group_name": group_doc.group_name,
+	}
+	if channel != SMS:
+		return len(
+			send(
+				members,
+				channel,
+				GROUP_MESSAGES,
+				group_doc,
+				key=comment.name,
+				template=MESSAGE_TEMPLATE,
+				context=context,
+			)
+		)
+
+	reached = 0
+	for member in members:
+		# A text leaves at once, so each copy is committed as soon as it is sent.
+		reached += len(
+			send(
+				[member], SMS, GROUP_MESSAGES, group_doc, key=comment.name, text=MESSAGE_TEXT, context=context
+			)
+		)
+		frappe.db.commit()
+	return reached

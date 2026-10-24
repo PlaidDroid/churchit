@@ -161,7 +161,7 @@ class TestGroupLeaderPage(GroupLeaderTestCase):
 		self.assertEqual(self.context(group=second.name).groups, [second.name])
 		self.assertEqual(len(self.context(group=self.other_group.name).groups), 2, "a group they do not lead")
 
-	def test_the_page_renders_the_roster_and_a_meeting(self):
+	def test_the_page_renders_the_roster_a_meeting_and_the_message_form(self):
 		meeting = self.meeting(attendance=[{"person": self.sharer.name, "attendance_type": "Confirmed"}])
 		frappe.set_user(self.leader_user)
 		set_request(method="GET", path="group-leader")
@@ -173,6 +173,7 @@ class TestGroupLeaderPage(GroupLeaderTestCase):
 		self.assertNotIn("_test_page_private@example.com", html)
 		self.assertIn(f'data-function="{meeting.name}"', html)
 		self.assertRegex(html, rf'value="present" data-person="{self.sharer.name}"\s+checked>')
+		self.assertIn("message-form", html)
 
 	def test_get_group_meetings_refuses_a_leader_of_another_group(self):
 		frappe.set_user(self.other_leader_user)

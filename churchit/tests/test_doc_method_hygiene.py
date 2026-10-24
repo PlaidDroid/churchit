@@ -580,6 +580,9 @@ NAME_CHECK_EXEMPT = {
 	"churchit.church_people.group_api.join_group": (
 		"a member joins only a public portal group of their church (church_filters on session_church)"
 	),
+	"churchit.church_people.group_api.message_group": (
+		"a portal leader holds no right on the Group; require_leader refuses anyone who does not lead it"
+	),
 	"churchit.church_people.group_meetings.record_group_attendance": (
 		"it reads the Function only for its group; require_leader refuses anyone who does not lead that "
 		"group, and only that group's people are written"
