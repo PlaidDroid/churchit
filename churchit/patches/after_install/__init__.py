@@ -64,6 +64,7 @@ def execute():
 	_create_missionary_support_frequencies()
 	_create_missionary_statuses()
 	_create_group_roles()
+	create_group_types()
 	_create_group_statuses()
 	_create_default_ministry()
 	add_volunteer_tag_format()
@@ -376,6 +377,37 @@ def _create_missionary_support_frequencies():
 def _create_group_roles():
 	for role in ("Leader", "Member"):
 		_insert_if_missing("Group Role", {"role": role}, role=role, is_leader=int(role == "Leader"))
+
+
+GROUP_TYPES = {
+	"Small Group": {
+		"description": "A small group that meets often for Bible study, prayer and fellowship.",
+		"public": 1,
+		"show_in_portal": 1,
+	},
+	"Class": {
+		"description": "A class with a teacher, such as a membership class or a Bible class.",
+		"public": 1,
+		"show_in_portal": 1,
+	},
+	"Support Group": {
+		"description": "A group for people with a shared need, such as grief or recovery. A leader approves each new member.",
+		"public": 1,
+		"show_in_portal": 1,
+		"requires_approval": 1,
+	},
+	"Youth Group": {
+		"description": "A group for young people. A leader approves each new member.",
+		"public": 1,
+		"show_in_portal": 1,
+		"requires_approval": 1,
+	},
+}
+
+
+def create_group_types():
+	for group_type, defaults in GROUP_TYPES.items():
+		_insert_if_missing("Group Type", {"type": group_type}, type=group_type, **defaults)
 
 
 def _create_group_statuses():

@@ -143,6 +143,7 @@ class TestAfterInstall(FrappeTestCase):
 				"Missionary Support Frequency",
 				"Group Role",
 				"Group Status",
+				"Group Type",
 				"Bible Translation",
 				"Web Page",
 				"Visit Type",

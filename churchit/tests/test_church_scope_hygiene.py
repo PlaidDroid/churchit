@@ -44,6 +44,7 @@ GLOBAL_DOCTYPES = {
 		"Function Type",
 		"Group Role",
 		"Group Status",
+		"Group Type",
 		"Inactive Reason",
 		"Life Event Type",
 		"Marital Status",

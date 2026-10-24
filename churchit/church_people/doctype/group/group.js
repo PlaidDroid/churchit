@@ -25,6 +25,19 @@ frappe.ui.form.on("Group", {
 			);
 		}
 	},
+
+	group_type(frm) {
+		// A copy the user can change: the server copies nothing, as an unticked box looks unset.
+		if (!frm.doc.group_type) return;
+		frappe.db
+			.get_value("Group Type", frm.doc.group_type, [
+				"public",
+				"show_in_portal",
+				"requires_approval",
+				"capacity",
+			])
+			.then(({ message }) => message && frm.set_value(message));
+	},
 });
 
 function email_members(frm, selected_only) {
