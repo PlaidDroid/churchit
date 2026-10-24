@@ -814,7 +814,7 @@ class TestChurchPermissions(FrappeTestCase):
 						"person": person.name,
 						"fund": fund,
 						"amount": 50,
-						"payment_type": frappe.db.get_value("Payment Type", {}, "name"),
+						"payment_type": frappe.db.get_value("Payment Type", {"is_non_cash": 0}, "name"),
 					}
 				],
 			}

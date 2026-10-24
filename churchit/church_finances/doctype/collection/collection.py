@@ -24,6 +24,13 @@ class Collection(Document):
 	def validate(self):
 		for donation in self.donations:
 			refuse_another_churches_record(self, "Fund", donation.fund)
+			# Statements describe donated property and never value it (IRS Publication 1771).
+			if donation.is_non_cash and (donation.amount or not (donation.description or "").strip()):
+				frappe.throw(
+					_(
+						"Row {0}: a non-cash gift needs a description of what was given, and an amount of 0."
+					).format(donation.idx)
+				)
 
 	def before_save(self):
 		parts = [self.function or "", str(self.date or "")]

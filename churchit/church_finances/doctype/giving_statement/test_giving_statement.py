@@ -13,7 +13,12 @@ from churchit.church_finances.doctype.giving_statement.giving_statement import (
 	get_statement_recipients,
 	statement_header,
 )
+from churchit.church_finances.doctype.payment_type.payment_type import (
+	NON_CASH,
+	create_non_cash_payment_type,
+)
 from churchit.church_foundations.church_access import set_user_church
+from churchit.patches.v1_0 import mark_funds_tax_deductible
 from churchit.tests.helpers import (
 	RollbackEachTest,
 	ensure,
@@ -29,10 +34,12 @@ from churchit.tests.helpers import (
 PERIOD = ("2029-01-01", "2029-12-31")
 
 
-def make_collection(date, donations, submit=True, church=None):
-	"""A Collection carrying one Donation row per (person, amount) pair."""
+def make_collection(date, donations, submit=True, church=None, fund=None, rows=()):
+	"""A Collection carrying one Donation row per (person, amount) pair, plus any whole *rows*."""
 	fund_name = f"_Test Statement Fund {church}" if church else "_Test Statement Fund"
-	fund = ensure("Fund", {"fund": fund_name}, {"fund": fund_name, "church": church} if church else None)
+	fund = fund or ensure(
+		"Fund", {"fund": fund_name}, {"fund": fund_name, "church": church} if church else None
+	)
 	payment_type = ensure("Payment Type", {"type": "_Test Statement Cash"}, {"type": "_Test Statement Cash"})
 	collection = frappe.get_doc(
 		{"doctype": "Collection", "date": date, "expected_total": sum(a for _p, a in donations)}
@@ -44,6 +51,8 @@ def make_collection(date, donations, submit=True, church=None):
 			"donations",
 			{"person": person, "amount": amount, "fund": fund, "payment_type": payment_type},
 		)
+	for row in rows:
+		collection.append("donations", {"fund": fund, **row})
 	collection.insert(ignore_permissions=True)
 	if submit:
 		collection.submit()
@@ -294,3 +303,89 @@ class TestBranchStatementHeader(FrappeTestCase):
 
 		self.assertEqual(header["name"], "_Test Branch Legal")
 		self.assertEqual(header["tax_id"], "11-1111111")
+
+
+class TestTaxDeductibleFunds(FrappeTestCase):
+	"""A statement is a tax receipt, so it counts only gifts to funds that are tax deductible."""
+
+	def setUp(self):
+		self.giver = make_person("_Test Deductible", "Giver")
+		self.pass_through = ensure(
+			"Fund",
+			{"fund": "_Test Pass-Through Fund"},
+			{"fund": "_Test Pass-Through Fund", "is_tax_deductible": 0},
+		)
+
+	def test_a_gift_to_a_fund_that_is_not_tax_deductible_is_left_off(self):
+		make_collection("2029-03-01", [(self.giver.name, 100)])
+		make_collection("2029-03-08", [(self.giver.name, 40)], fund=self.pass_through)
+
+		statement = frappe.get_doc(
+			{
+				"doctype": "Giving Statement",
+				"person": self.giver.name,
+				"from_date": PERIOD[0],
+				"to_date": PERIOD[1],
+			}
+		).insert(ignore_permissions=True)
+
+		self.assertEqual([line.amount for line in statement.lines], [100])
+		self.assertEqual(statement.total_amount, 100)
+
+	def test_a_giver_of_only_such_gifts_gets_no_statement(self):
+		make_collection("2029-03-08", [(self.giver.name, 40)], fund=self.pass_through)
+		self.assertNotIn(self.giver.name, get_givers(*PERIOD))
+
+	def test_the_patch_marks_every_fund_that_existed_tax_deductible(self):
+		Fund = frappe.qb.DocType("Fund")
+		frappe.qb.update(Fund).set(Fund.is_tax_deductible, 0).run()
+
+		mark_funds_tax_deductible.execute()
+
+		self.assertFalse(frappe.db.exists("Fund", {"is_tax_deductible": 0}))
+
+	def test_running_the_patch_again_keeps_a_fund_the_user_unticked(self):
+		ensure("Fund", {"fund": "_Test Statement Fund"})
+		frappe.db.set_value("Fund", self.pass_through, "is_tax_deductible", 0)
+
+		mark_funds_tax_deductible.execute()
+
+		self.assertEqual(frappe.db.get_value("Fund", self.pass_through, "is_tax_deductible"), 0)
+
+
+class TestNonCashOnStatements(FrappeTestCase):
+	"""IRS Publication 1771: the church describes donated property and does not state its value."""
+
+	def setUp(self):
+		create_non_cash_payment_type()
+		self.giver = make_person("_Test NonCash", "Giver")
+
+	def test_the_statement_shows_the_description_with_no_amount(self):
+		make_collection(
+			"2029-04-01",
+			[(self.giver.name, 25)],
+			rows=[
+				{
+					"person": self.giver.name,
+					"payment_type": NON_CASH,
+					"amount": 0,
+					"description": "_Test piano",
+				}
+			],
+		)
+
+		statement = frappe.get_doc(
+			{
+				"doctype": "Giving Statement",
+				"person": self.giver.name,
+				"from_date": PERIOD[0],
+				"to_date": PERIOD[1],
+			}
+		).insert(ignore_permissions=True)
+
+		self.assertEqual(statement.total_amount, 25)
+		self.assertEqual([line.description for line in statement.lines if line.description], ["_Test piano"])
+		html = frappe.get_print("Giving Statement", statement.name, "Contribution Statement")
+		row = next(part for part in html.split("<tr") if "_Test piano" in part)
+		self.assertNotIn("0.00", row, "a non-cash line states no value")
+

@@ -14,6 +14,7 @@ import frappe
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
 	create_communication_purposes,
 )
+from churchit.church_finances.doctype.payment_type.payment_type import create_non_cash_payment_type
 from churchit.church_ministries.doctype.check_in_settings.check_in_settings import add_volunteer_tag_format
 from churchit.church_missions.doctype.missionary_status.missionary_status import (
 	DEFAULT_STATUSES as DEFAULT_MISSIONARY_STATUSES,
@@ -278,6 +279,7 @@ def _create_position_types():
 def _create_payment_types():
 	for payment_type in ("Cash", "Check", "Online"):
 		_insert_if_missing("Payment Type", {"type": payment_type}, type=payment_type)
+	create_non_cash_payment_type()
 
 
 def _create_person_relation_types():

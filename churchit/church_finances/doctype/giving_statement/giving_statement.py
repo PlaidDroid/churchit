@@ -74,17 +74,20 @@ class GivingStatement(Document):
 
 
 def get_donations(people, from_date, to_date):
-	"""Submitted donations by *people* between the two dates, oldest first."""
+	"""Submitted donations by *people* to tax-deductible funds between the two dates, oldest first."""
 	if not people:
 		return []
 
 	Donation = frappe.qb.DocType("Donation")
 	Collection = frappe.qb.DocType("Collection")
+	Fund = frappe.qb.DocType("Fund")
 
 	query = (
 		frappe.qb.from_(Donation)
 		.inner_join(Collection)
 		.on(Collection.name == Donation.parent)
+		.inner_join(Fund)
+		.on(Fund.name == Donation.fund)
 		.select(
 			Collection.date,
 			Donation.person,
@@ -92,10 +95,12 @@ def get_donations(people, from_date, to_date):
 			Donation.payment_type,
 			Donation.check_number,
 			Donation.amount,
+			Donation.description,
 		)
 		.where(
 			(Donation.parenttype == "Collection")
 			& Donation.person.isin(people)
+			& (Fund.is_tax_deductible == 1)
 			& (Collection.docstatus == 1)
 			& (Collection.date >= from_date)
 			& (Collection.date < add_days(to_date, 1))
@@ -133,7 +138,7 @@ def acknowledgment(church=None):
 
 
 def get_givers(from_date, to_date):
-	"""Everyone with a submitted donation in the period, within the issuer's churches.
+	"""Everyone with a submitted donation to a tax-deductible fund in the period, within the issuer's churches.
 
 	Unscoped, a branch issuing statements also issued them for other churches,
 	and each landed in the branch's own church: a statement takes its church
@@ -141,16 +146,20 @@ def get_givers(from_date, to_date):
 	"""
 	Donation = frappe.qb.DocType("Donation")
 	Collection = frappe.qb.DocType("Collection")
+	Fund = frappe.qb.DocType("Fund")
 
 	query = (
 		frappe.qb.from_(Donation)
 		.inner_join(Collection)
 		.on(Collection.name == Donation.parent)
+		.inner_join(Fund)
+		.on(Fund.name == Donation.fund)
 		.select(Donation.person)
 		.distinct()
 		.where(
 			(Donation.parenttype == "Collection")
 			& Donation.person.isnotnull()
+			& (Fund.is_tax_deductible == 1)
 			& (Collection.docstatus == 1)
 			& (Collection.date >= from_date)
 			& (Collection.date < add_days(to_date, 1))

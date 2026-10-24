@@ -80,3 +80,5 @@ churchit.patches.v1_0.make_authorized_pickups_records
 churchit.patches.v1_0.store_new_check_in_settings_defaults
 churchit.patches.v1_0.add_volunteer_name_tag_format
 churchit.patches.v1_0.add_child_safety_purpose
+churchit.patches.v1_0.mark_funds_tax_deductible
+churchit.patches.v1_0.add_non_cash_payment_type
