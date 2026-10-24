@@ -1,10 +1,15 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import get_year_ending, get_year_start, nowdate
 
+from churchit.church_finances.doctype.giving_statement.giving_statement import generate_statements
 from churchit.church_finances.doctype.online_donation.online_donation import alert_unrecorded_gifts
+from churchit.church_people import summaries
 from churchit.tests.helpers import RollbackEachTest, ensure_user, make_person, make_two_churches
 
 
@@ -263,3 +268,126 @@ class TestChargedGifts(RollbackEachTest):
 
 		self.assertEqual(frappe.db.get_value("Online Donation", gift.name, "status"), "Needs Review")
 		self.assertEqual(len(self.alerts(self.finance_a, gift)), 1)
+
+
+class TestLinkingAGiftToAPerson(RollbackEachTest):
+	"""Finance names the giver of a guest gift, so the gift reaches their statement and giving summary."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		ensure_online_payment_type()
+		cls.root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+		cls.finance = TestChargedGifts.bind_finance(
+			"_test_link_finance@example.com", "LinkFinance", cls.branch_a
+		)
+		cls.staff = ensure_user("_test_link_staff@example.com", "LinkStaff", roles=("Church Staff",))
+		make_person("LinkStaff", "Staff", church=cls.branch_a, user=cls.staff)
+		cls.fund = (
+			frappe.get_doc({"doctype": "Fund", "fund": "_Test Linked Gift Fund", "church": cls.branch_a})
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def setUp(self):
+		super().setUp()
+		person = make_person("_Test Linked", "Giver", church=self.branch_a)
+		person.append("emails", {"email_address": "_test_linked_giver@example.com"})
+		self.person = person.save(ignore_permissions=True).name
+
+	def paid_guest_gift(self):
+		gift = make_gift(self.fund, 40, church=self.branch_a, donor_name="Guest", email="guest@example.com")
+		log_charge(gift)
+		gift.on_payment_authorized("Completed")
+		return frappe.get_doc("Online Donation", gift.name)
+
+	def comments_on(self, collection):
+		return frappe.db.count("Comment", {"reference_doctype": "Collection", "reference_name": collection})
+
+	def link(self, gift, user):
+		frappe.set_user(user)
+		gift = frappe.get_doc("Online Donation", gift.name)
+		gift.person = self.person
+		with patch("frappe.enqueue") as enqueue:
+			gift.save()
+		frappe.set_user("Administrator")
+		return enqueue
+
+	def test_finance_links_a_paid_guest_gift_to_a_person(self):
+		gift = self.paid_guest_gift()
+		comments = self.comments_on(gift.collection)
+
+		enqueue = self.link(gift, self.finance)
+
+		row = frappe.get_all(
+			"Donation", filters={"parent": gift.collection}, fields=["person", "person_email"]
+		)
+		self.assertEqual(row, [{"person": self.person, "person_email": "_test_linked_giver@example.com"}])
+		self.assertEqual(self.comments_on(gift.collection), comments + 1)
+		comment = frappe.get_last_doc(
+			"Comment", filters={"reference_doctype": "Collection", "reference_name": gift.collection}
+		)
+		self.assertEqual(comment.comment_type, "Info")
+		self.assertIn(frappe.db.get_value("Person", self.person, "full_name"), comment.content)
+		self.assertNotIn(self.person, comment.content)
+		enqueue.assert_any_call(
+			summaries.refresh, queue="short", enqueue_after_commit=True, people=[self.person]
+		)
+
+		summaries.refresh([self.person])
+		self.assertTrue(frappe.db.get_value("Person", self.person, "last_gift_on"))
+		frappe.set_user(self.finance)
+		generate_statements(str(get_year_start(nowdate())), str(get_year_ending(nowdate())))
+		frappe.set_user("Administrator")
+		statement = frappe.get_all("Giving Statement", filters={"person": self.person}, pluck="total_amount")
+		self.assertEqual(statement, [40])
+
+	def test_a_pending_gift_changes_only_its_own_field(self):
+		gift = make_gift(self.fund, 40, church=self.branch_a, donor_name="Guest", email="guest@example.com")
+		comments = frappe.db.count("Comment", {"reference_doctype": "Collection"})
+
+		enqueue = self.link(gift, self.finance)
+
+		self.assertEqual(frappe.db.get_value("Online Donation", gift.name, "person"), self.person)
+		self.assertEqual(frappe.db.count("Comment", {"reference_doctype": "Collection"}), comments)
+		self.assertNotIn(summaries.refresh, [call.args[0] for call in enqueue.call_args_list])
+
+	def test_a_gift_cannot_move_to_another_collection(self):
+		"""A REST update can send a read only field, and a new person would rewrite that Collection's rows."""
+		other = self.paid_guest_gift()
+		gift = make_gift(self.fund, 40, church=self.branch_a, donor_name="Guest", email="guest@example.com")
+
+		frappe.set_user(self.finance)
+		gift = frappe.get_doc("Online Donation", gift.name).update(
+			{"collection": other.collection, "person": self.person}
+		)
+		with self.assertRaises(frappe.ValidationError):
+			gift.save()
+		frappe.set_user("Administrator")
+
+		self.assertFalse(frappe.db.get_value("Online Donation", gift.name, "collection"))
+		self.assertFalse(frappe.db.get_value("Donation", {"parent": other.collection}, "person"))
+
+	def test_a_refunded_gift_cannot_be_linked(self):
+		gift = self.paid_guest_gift()
+		frappe.get_doc("Collection", gift.collection).cancel()
+		comments = self.comments_on(gift.collection)
+
+		with self.assertRaises(frappe.ValidationError):
+			self.link(gift, self.finance)
+		frappe.set_user("Administrator")
+
+		self.assertFalse(frappe.db.get_value("Online Donation", gift.name, "person"))
+		self.assertFalse(frappe.db.get_value("Donation", {"parent": gift.collection}, "person"))
+		self.assertEqual(self.comments_on(gift.collection), comments)
+
+	def test_church_staff_cannot_link_a_gift(self):
+		gift = self.paid_guest_gift()
+
+		with self.assertRaises(frappe.PermissionError):
+			self.link(gift, self.staff)
+		frappe.set_user("Administrator")
+
+		self.assertFalse(frappe.db.get_value("Online Donation", gift.name, "person"))
+		self.assertFalse(frappe.db.get_value("Donation", {"parent": gift.collection}, "person"))

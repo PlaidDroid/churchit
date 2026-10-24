@@ -9,6 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import flt, fmt_money, formatdate, now, nowdate
 
 from churchit.church_finances.payments import get_integration_request, is_charge_confirmed, notify_finance
+from churchit.church_people import summaries
 from churchit.church_scope import refuse_another_churches_record
 from churchit.contacts import get_primary_email
 
@@ -23,6 +24,26 @@ ONLINE_PAYMENT_TYPE = "Online"
 class OnlineDonation(Document):
 	def validate(self):
 		refuse_another_churches_record(self, "Fund", self.fund)
+		self.refuse_a_changed_collection()
+		self.refuse_a_giver_on_a_cancelled_collection()
+
+	def refuse_a_changed_collection(self):
+		"""Only record_donation sets the Collection, because a new person rewrites its Donation row."""
+		if self.flags.recording_gift or (self.is_new() and not self.collection):
+			return
+		if self.has_value_changed("collection"):
+			frappe.throw(_("An online gift gets its Collection when it is recorded. You cannot change it."))
+
+	def refuse_a_giver_on_a_cancelled_collection(self):
+		"""A refunded gift's Donation row is cancelled, so no statement would count the new giver."""
+		if not (self.collection and self.has_value_changed("person")):
+			return
+		if frappe.db.get_value("Collection", self.collection, "docstatus") == 2:
+			frappe.throw(_("The collection of this gift is cancelled, so you cannot change its person."))
+
+	def on_update(self):
+		if self.collection and self.has_value_changed("person"):
+			self.give_donation_to_person()
 
 	@property
 	def charged_amount(self) -> float:
@@ -118,9 +139,29 @@ class OnlineDonation(Document):
 
 		self.status = "Paid"
 		self.collection = collection.name
+		self.flags.recording_gift = True
 		self.save(ignore_permissions=True)
 
 		self.send_acknowledgment()
+
+	def give_donation_to_person(self):
+		"""Name the giver Finance chose on the gift's Donation row, so statements and summaries count it."""
+		frappe.db.set_value(
+			"Donation",
+			{"parent": self.collection, "parenttype": "Collection"},
+			{
+				"person": self.person,
+				"person_email": get_primary_email("Person", self.person) if self.person else None,
+			},
+		)
+		giver = frappe.db.get_value("Person", self.person, "full_name") if self.person else _("nobody")
+		frappe.get_doc("Collection", self.collection).add_comment(
+			"Info", _("Online gift {0} now names {1} as the giver.").format(self.name, giver)
+		)
+
+		before = self.get_doc_before_save() or frappe._dict()
+		people = {before.get("person"), self.person} - {None, ""}
+		frappe.enqueue(summaries.refresh, queue="short", enqueue_after_commit=True, people=sorted(people))
 
 	def send_acknowledgment(self):
 		"""Email the giver a receipt using the shipped "Donation Acknowledgment"
