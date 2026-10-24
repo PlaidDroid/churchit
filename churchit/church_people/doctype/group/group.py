@@ -3,9 +3,30 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import getdate
 
 
 class Group(Document):
+	@property
+	def member_count(self) -> int:
+		return len(self.members)
+
+	@property
+	def is_full(self) -> bool:
+		return bool(self.capacity) and self.member_count >= self.capacity
+
+	@property
+	def is_enrollment_open(self) -> bool:
+		"""Whether a person can join, or ask to join, from the portal today."""
+		closed = self.close_enrollment_on and getdate(self.close_enrollment_on) < getdate()
+		return bool(
+			self.status == "Active"
+			and self.public
+			and self.show_in_portal
+			and not self.is_full
+			and not closed
+		)
+
 	def has_webform_permission(self):
 		"""Portal access: only members of a portal-visible group may view it."""
 		if not self.show_in_portal:

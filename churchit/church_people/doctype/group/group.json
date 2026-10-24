@@ -17,6 +17,9 @@
   "public",
   "show_in_portal",
   "show_in_directory",
+  "requires_approval",
+  "capacity",
+  "close_enrollment_on",
   "section_break_members",
   "members"
  ],
@@ -89,6 +92,28 @@
    "fieldname": "show_in_directory",
    "fieldtype": "Check",
    "label": "Show in Directory"
+  },
+  {
+   "default": "0",
+   "depends_on": "public",
+   "description": "A person who joins from the portal sends a request, and a leader approves it. Untick to let people join at once.",
+   "fieldname": "requires_approval",
+   "fieldtype": "Check",
+   "label": "Requires Approval"
+  },
+  {
+   "default": "0",
+   "description": "The most members the group takes. When it is full, nobody can join from the portal. 0 means no limit.",
+   "fieldname": "capacity",
+   "fieldtype": "Int",
+   "label": "Capacity",
+   "non_negative": 1
+  },
+  {
+   "description": "After this date nobody can join or request to join from the portal.",
+   "fieldname": "close_enrollment_on",
+   "fieldtype": "Date",
+   "label": "Close Enrollment On"
   }
  ],
  "grid_page_length": 50,
@@ -100,7 +125,7 @@
    "link_fieldname": "group"
   }
  ],
- "modified": "2026-10-15 09:00:00",
+ "modified": "2026-10-23 21:02:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Group",

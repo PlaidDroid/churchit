@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.handler import execute_cmd
+from frappe.utils import add_days, today
 
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
 	GROUP_MESSAGES,
@@ -116,3 +117,39 @@ class TestGroupLeaders(RollbackEachTest):
 		self.assertEqual(frappe.db.get_value("Group Role", "Leader", "is_leader"), 1)
 		with self.assertRaises(frappe.ValidationError):
 			frappe.delete_doc("Communication Purpose", GROUP_MESSAGES)
+
+
+class TestGroupEnrollment(RollbackEachTest):
+	def make_group(self, members=0, **values):
+		group = frappe.get_doc(
+			{
+				"doctype": "Group",
+				"group_name": "_Test Enrollment",
+				"status": "Active",
+				"public": 1,
+				"show_in_portal": 1,
+				**values,
+			}
+		)
+		for index in range(members):
+			group.append("members", {"person": make_person("_Test Enrollment", str(index)).name})
+		return group.insert(ignore_permissions=True)
+
+	def test_a_full_group_is_closed(self):
+		group = self.make_group(members=2, capacity=2)
+		self.assertEqual(group.member_count, 2)
+		self.assertTrue(group.is_full)
+		self.assertFalse(group.is_enrollment_open)
+
+	def test_no_capacity_is_never_full(self):
+		group = self.make_group(members=2, capacity=0)
+		self.assertFalse(group.is_full)
+		self.assertTrue(group.is_enrollment_open)
+
+	def test_enrollment_closes_after_its_date(self):
+		self.assertTrue(self.make_group(close_enrollment_on=today()).is_enrollment_open)
+		self.assertFalse(self.make_group(close_enrollment_on=add_days(today(), -1)).is_enrollment_open)
+
+	def test_a_private_hidden_or_inactive_group_is_closed(self):
+		for values in ({"public": 0}, {"show_in_portal": 0}, {"status": "Inactive"}):
+			self.assertFalse(self.make_group(**values).is_enrollment_open, values)
