@@ -9,6 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "amount",
+  "fee_amount",
   "fund",
   "church",
   "status",
@@ -33,6 +34,14 @@
    "in_preview": 1,
    "label": "Amount",
    "reqd": 1
+  },
+  {
+   "description": "The processing fee the giver chose to cover. It is part of the gift.",
+   "fieldname": "fee_amount",
+   "fieldtype": "Currency",
+   "label": "Covered Fee",
+   "options": "currency",
+   "read_only": 1
   },
   {
    "fieldname": "fund",
@@ -137,7 +146,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-22 15:50:00",
+ "modified": "2026-10-23 01:04:01.000000",
  "modified_by": "Administrator",
  "module": "Church Finances",
  "name": "Online Donation",

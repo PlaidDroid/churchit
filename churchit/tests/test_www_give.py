@@ -9,6 +9,10 @@ from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_finances.doctype.giving_settings.test_giving_settings import make_gateway
+from churchit.church_finances.doctype.online_donation.test_online_donation import (
+	ensure_online_payment_type,
+	log_charge,
+)
 from churchit.tests.helpers import RollbackEachTest, ensure, ensure_user, make_person, make_two_churches
 from churchit.www.give import get_context, start_donation
 
@@ -34,7 +38,9 @@ class TestGivePage(FrappeTestCase):
 		settings.update(values)
 		settings.gateways = []
 		for gateway in gateways:
-			settings.append("gateways", {"payment_gateway": gateway})
+			settings.append(
+				"gateways", gateway if isinstance(gateway, dict) else {"payment_gateway": gateway}
+			)
 		settings.save(ignore_permissions=True)
 
 	def _context(self):
@@ -156,6 +162,53 @@ class TestGivePage(FrappeTestCase):
 				execute_cmd("churchit.www.give.start_donation")
 
 		self.assertEqual(frappe.db.count("Online Donation"), gifts)
+
+	def give_with_fee_cover(self, offer_fee_cover):
+		"""Give 100 through a gateway charging 2.9% + 0.30, asking to cover the fee and naming a fee of 50."""
+		gateway = {"payment_gateway": self.gateway, "fee_percent": 2.9, "fee_fixed": 0.30}
+		self._configure(gateways=[{**gateway, "offer_fee_cover": offer_fee_cover}])
+		frappe.set_user("Guest")
+		frappe.local.request = frappe._dict(method="POST")
+		self.addCleanup(delattr, frappe.local, "request")
+		frappe.local.form_dict = frappe._dict(
+			amount=100,
+			fund=self.fund.name,
+			donor_name="A",
+			email="a@example.com",
+			cover_fee="1",
+			fee_amount=50,
+		)
+
+		controller = MagicMock(spec=["get_payment_url"])
+		with patch("payments.utils.get_payment_gateway_controller", return_value=controller):
+			execute_cmd("churchit.www.give.start_donation")
+		frappe.set_user("Administrator")
+
+		kwargs = controller.get_payment_url.call_args.kwargs
+		return kwargs["amount"], frappe.get_doc("Online Donation", kwargs["reference_docname"])
+
+	def test_a_covered_fee_is_worked_out_on_the_server_and_given(self):
+		self._configure(gateways=[{"payment_gateway": self.gateway, "offer_fee_cover": 1}])
+		self.assertEqual(list(self._context().fee_cover), [self.gateway])
+
+		charged, gift = self.give_with_fee_cover(offer_fee_cover=1)
+
+		self.assertEqual(charged, 103.30)
+		self.assertEqual((gift.amount, gift.fee_amount), (100, 3.30))
+		ensure_online_payment_type()
+		log_charge(gift)
+		gift.on_payment_authorized("Completed")
+		collection = frappe.get_doc(
+			"Collection", frappe.db.get_value("Online Donation", gift.name, "collection")
+		)
+		self.assertEqual(collection.donations[0].amount, 103.30)
+
+	def test_a_gateway_that_offers_no_fee_cover_adds_no_fee(self):
+		charged, gift = self.give_with_fee_cover(offer_fee_cover=0)
+
+		self.assertEqual(charged, 100)
+		self.assertFalse(gift.fee_amount)
+		self.assertEqual(self._context().fee_cover, {})
 
 	def test_logged_in_gifts_link_the_session_person(self):
 		user = ensure_user("_test_linked_giver@example.com", "_Test Linked Giver")

@@ -5,12 +5,10 @@ from itertools import groupby
 
 import frappe
 from frappe import _
-from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 from frappe.model.document import Document
 from frappe.utils import flt, fmt_money, formatdate, now, nowdate
-from frappe.utils.user import get_users_with_role
 
-from churchit.church_communications.scoped_notification import drop_out_of_scope
+from churchit.church_finances.payments import get_integration_request, is_charge_confirmed, notify_finance
 from churchit.church_scope import refuse_another_churches_record
 from churchit.contacts import get_primary_email
 
@@ -25,6 +23,11 @@ ONLINE_PAYMENT_TYPE = "Online"
 class OnlineDonation(Document):
 	def validate(self):
 		refuse_another_churches_record(self, "Fund", self.fund)
+
+	@property
+	def charged_amount(self) -> float:
+		"""The whole payment: the gift and the processing fee the giver chose to cover."""
+		return flt(flt(self.amount) + flt(self.fee_amount), self.precision("amount"))
 
 	def on_payment_authorized(self, status=None):
 		"""Callback invoked by the Payments-app gateway controller once the
@@ -49,7 +52,7 @@ class OnlineDonation(Document):
 		self.check_permission("write")
 		if self.status != "Pending":
 			frappe.throw(_("Only a Pending gift can be recorded. This gift is {0}.").format(_(self.status)))
-		if not self.get_integration_request():
+		if not get_integration_request(self):
 			frappe.throw(_("No completed payment was found for this gift."))
 
 		self.record_charge()
@@ -63,47 +66,29 @@ class OnlineDonation(Document):
 		if frappe.db.get_value(self.doctype, self.name, "status", for_update=True) == "Paid":
 			return
 
-		request = self.get_integration_request()
+		request = get_integration_request(self)
 		if request:
 			self.transaction_reference = request.name
 
-		problem = self.get_charge_problem(request)
-		if problem:
+		if not is_charge_confirmed(self, self.charged_amount, self.currency):
 			self.db_set({"status": "Needs Review", "transaction_reference": self.transaction_reference})
-			notify_finance([self], problem)
+			notify_finance([self], self.get_charge_problem(request))
 			return
 
 		self.record_donation()
 
-	def get_integration_request(self):
-		"""The newest Completed Integration Request a gateway logged for this gift."""
-		return frappe.db.get_value(
-			"Integration Request",
-			{"reference_doctype": self.doctype, "reference_docname": self.name, "status": "Completed"},
-			["name", "data"],
-			as_dict=True,
-			order_by="creation desc",
-		)
-
-	def get_charge_problem(self, request) -> str | None:
-		"""Why *request* cannot record this gift, or None when it charged the gift exactly."""
+	def get_charge_problem(self, request) -> str:
+		"""Why *request*, the newest completed charge, cannot record this gift."""
 		if not request:
 			return _("No completed payment was found for online gift {0}.").format(self.name)
 
 		charged = frappe.parse_json(request.data or "{}")
-		precision = self.precision("amount")
-		if (
-			flt(charged.get("amount"), precision) == flt(self.amount, precision)
-			and charged.get("currency") == self.currency
-		):
-			return None
-
 		return _(
 			"Online gift {0} was charged {1}, but the gift is {2}. Check the payment before you record it."
 		).format(
 			self.name,
 			fmt_money(charged.get("amount"), currency=charged.get("currency")),
-			fmt_money(self.amount, currency=self.currency),
+			fmt_money(self.charged_amount, currency=self.currency),
 		)
 
 	def record_donation(self):
@@ -118,7 +103,7 @@ class OnlineDonation(Document):
 		collection.append(
 			"donations",
 			{
-				"amount": self.amount,
+				"amount": self.charged_amount,
 				"payment_type": ONLINE_PAYMENT_TYPE,
 				"fund": self.fund,
 				# blank person => recorded as an anonymous gift
@@ -127,7 +112,7 @@ class OnlineDonation(Document):
 			},
 		)
 		# A single-donation collection balances exactly, so before_submit() passes.
-		collection.expected_total = self.amount
+		collection.expected_total = self.charged_amount
 		collection.insert(ignore_permissions=True)
 		collection.submit()
 
@@ -154,7 +139,7 @@ class OnlineDonation(Document):
 
 		context = {
 			"first_name": first_name or _("Friend"),
-			"amount": fmt_money(self.amount, currency=self.currency),
+			"amount": fmt_money(self.charged_amount, currency=self.currency),
 			"fund": frappe.db.get_value("Fund", self.fund, "fund") or self.fund,
 			"date": formatdate(nowdate()),
 			"doc": self,
@@ -187,23 +172,6 @@ class OnlineDonation(Document):
 			)
 
 
-def notify_finance(gifts: list, reason: str):
-	"""Alert the Church Finance users who can see the church of *gifts* (all of one church)."""
-	users = drop_out_of_scope(get_users_with_role("Church Finance"), gifts[0], "name")
-	if not users:
-		return
-
-	enqueue_create_notification(
-		users,
-		{
-			"type": "Alert",
-			"subject": reason,
-			"document_type": "Online Donation",
-			"document_name": gifts[0].name,
-		},
-	)
-
-
 def alert_unrecorded_gifts():
 	"""Daily: tell Finance about gifts that a gateway charged but that are still Pending.
 
@@ -230,7 +198,7 @@ def alert_unrecorded_gifts():
 	)
 
 	for _church, rows in groupby(gifts, key=lambda gift: gift.church):
-		rows = list(rows)
+		rows = [frappe._dict(gift, doctype="Online Donation") for gift in rows]
 		notify_finance(
 			rows,
 			_(

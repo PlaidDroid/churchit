@@ -30,7 +30,7 @@ def log_charge(gift, amount=None, status="Completed", currency="USD"):
 			"reference_docname": gift.name,
 			"status": status,
 			"data": frappe.as_json(
-				{"amount": gift.amount if amount is None else amount, "currency": currency}
+				{"amount": gift.charged_amount if amount is None else amount, "currency": currency}
 			),
 		}
 	).insert(ignore_permissions=True)
@@ -242,3 +242,24 @@ class TestChargedGifts(RollbackEachTest):
 		self.assertEqual(frappe.db.get_value("Online Donation", cancelled.name, "status"), "Cancelled")
 		self.assertFalse(self.alerts(self.finance_a, abandoned))
 		self.assertEqual(frappe.db.count("Collection"), collections)
+
+	def test_a_covered_fee_is_part_of_the_gift(self):
+		gift = make_gift(self.fund, 100, church=self.branch_a, fee_amount=3.30, email="fee@example.com")
+		log_charge(gift, amount=103.30)
+
+		gift.on_payment_authorized("Completed")
+		gift.reload()
+
+		self.assertEqual(gift.status, "Paid")
+		collection = frappe.get_doc("Collection", gift.collection)
+		self.assertEqual(collection.donations[0].amount, 103.30)
+		self.assertEqual(collection.expected_total, 103.30)
+
+	def test_a_charge_without_the_covered_fee_records_nothing(self):
+		gift = make_gift(self.fund, 100, church=self.branch_a, fee_amount=3.30, email="fee@example.com")
+		log_charge(gift, amount=100)
+
+		gift.on_payment_authorized("Completed")
+
+		self.assertEqual(frappe.db.get_value("Online Donation", gift.name, "status"), "Needs Review")
+		self.assertEqual(len(self.alerts(self.finance_a, gift)), 1)

@@ -3,8 +3,9 @@
 
 import frappe
 from frappe import _
-from frappe.utils import flt, get_fullname, get_url
+from frappe.utils import flt, get_fullname, sbool
 
+from churchit.church_finances.payments import get_fee_to_cover, get_payment_url
 from churchit.church_foundations.doctype.church.church import selected_church_name
 from churchit.church_scope import church_filters
 from churchit.contacts import get_primary_email
@@ -42,6 +43,11 @@ def get_context(context):
 	# picker and uses it silently; with several the donor selects one.
 	context.gateways = settings.get_offered_gateways(church)
 	context.default_gateway = settings.get_default_gateway(church)
+	context.fee_cover = {
+		row.payment_gateway: {"percent": flt(row.fee_percent), "fixed": flt(row.fee_fixed)}
+		for row in settings.gateways_for(church)
+		if row.offer_fee_cover
+	}
 
 	# Prefill the giver's details from their linked Person when logged in.
 	context.is_logged_in = frappe.session.user != "Guest"
@@ -68,6 +74,7 @@ def start_donation(
 	donor_name: str | None = None,
 	email: str | None = None,
 	notes: str | None = None,
+	cover_fee: str | int = 0,
 ):
 	"""Create a pending Online Donation and return the payment-gateway URL the
 	browser should redirect to. The gateway calls back into
@@ -87,14 +94,7 @@ def start_donation(
 		frappe.throw(_("Please choose a valid fund."))
 	church = fund_row.church or selected_church_name()
 
-	# Resolve the gateway from the donor's choice, but only honour values that
-	# are actually offered. Never trust a client-supplied gateway blindly.
-	offered = {g["name"] for g in settings.get_offered_gateways(church)}
-	if not offered:
-		frappe.throw(_("No payment gateway is configured. Please contact the church office."))
-	if payment_gateway and payment_gateway not in offered:
-		frappe.throw(_("Please choose a valid payment method."))
-	payment_gateway = payment_gateway or settings.get_default_gateway(church)
+	gateway = settings.get_gateway(church, payment_gateway)
 
 	# Resolve the giver's Person from the session; never trust a client-supplied person.
 	person = None
@@ -119,33 +119,23 @@ def start_donation(
 			"email": email,
 			"notes": notes,
 			"currency": currency,
-			"payment_gateway": payment_gateway,
+			"payment_gateway": gateway.payment_gateway,
 			"status": "Pending",
 		}
-	).insert(ignore_permissions=True)
+	)
+	if sbool(cover_fee) and gateway.offer_fee_cover:
+		gift.fee_amount = flt(get_fee_to_cover(gateway, amount), gift.precision("fee_amount"))
+	gift.insert(ignore_permissions=True)
 
-	from payments.utils import get_payment_gateway_controller
-
-	controller = get_payment_gateway_controller(payment_gateway)
-	if hasattr(controller, "validate_transaction_currency"):
-		controller.validate_transaction_currency(currency)
-
-	payer_email = email or (None if frappe.session.user == "Guest" else frappe.session.user)
-	payer_name = donor_name or (None if frappe.session.user == "Guest" else get_fullname(frappe.session.user))
-
-	return controller.get_payment_url(
-		**{
-			"amount": amount,
-			"title": _("Church Donation"),
-			"description": _("Online gift to the {0} fund").format(
-				frappe.db.get_value("Fund", fund, "fund") or fund
-			),
-			"reference_doctype": "Online Donation",
-			"reference_docname": gift.name,
-			"payer_email": payer_email,
-			"payer_name": payer_name,
-			"order_id": gift.name,
-			"currency": currency,
-			"redirect_to": get_url(f"/give?success={gift.name}"),
-		}
+	return get_payment_url(
+		gift,
+		gift.charged_amount,
+		currency,
+		church,
+		_("Church Donation"),
+		_("Online gift to the {0} fund").format(frappe.db.get_value("Fund", fund, "fund") or fund),
+		gift.payment_gateway,
+		payer_name=donor_name,
+		payer_email=email,
+		redirect_to=f"/give?success={gift.name}",
 	)
