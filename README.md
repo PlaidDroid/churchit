@@ -51,12 +51,22 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Follow-up workflows on a Kanban board per workflow, started by a guest card, a first check-in, a membership change, a life event or a smart list
 - Smart lists: saved reports of people with email, Rolodex, group and Church Email actions
 - Pathways: ordered steps, each a smart list, with a progress report; an Assimilation Funnel report
-- Care requests with a caregiver and due date, and background checks a position can require
+- Care requests with a caregiver and due date, and background checks a position or a group can require
 - Duplicate warnings, merging, and imports from Planning Center, Rock RMS or a spreadsheet
 - Envelope numbers, unique in each church, that find the giver in a gift's Person field
 - Remove Personal Data on request or after a set number of inactive years
 - A Map of Addresses
 - Portal invitations: invite people to a self-service portal
+
+### Groups
+- Group types (Small Group, Class, Support Group, Youth Group) that fill in a new group's defaults
+- Group meetings are Functions: Set Up Meetings makes a group's recurring schedule, and the group shows when and where it meets
+- A capacity, a closing date and leader approval for each group; members ask to join from the portal or from the public Find a Group page
+- Find a Group: a public page with a map and type and day filters, which shows the city of each group's meeting place but never the street
+- Lead a Group: on the portal, leaders see their members, record attendance, approve or deny join requests and message their group. They get a reminder the day after a meeting with no attendance recorded
+- Group files: leaders share private files with the members of their group on the portal
+- Background checks that a group can require of its leaders or of every member
+- A Group Attendance report, and a group filter on the attendance reports
 
 ### Portal & Website
 - Portal invitations "Invite to Portal" auto-creates a user account and sends a welcome email
@@ -158,7 +168,8 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 ### Reports
 - Churches overview (people and family counts)
 - People report (filterable by name, family, role, membership, baptism)
-- Function attendance by type and by person
+- Function attendance by type and by person, with a group filter
+- Group attendance: meetings held, average attendance and attendance rate for each group
 - Function count by type
 - Church directory (printable, with photos, roles, family grouping, and other options)
 - Person letters, birthdays, current positions, and more
