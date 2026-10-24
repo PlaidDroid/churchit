@@ -5,11 +5,26 @@
 
 import frappe
 from frappe import _
-from frappe.utils import cint, format_date, format_time, getdate
+from frappe.utils import (
+	add_days,
+	cint,
+	escape_html,
+	format_date,
+	format_time,
+	getdate,
+	now_datetime,
+	sbool,
+	today,
+)
 
+from churchit.church_ministries.attendance import record
 from churchit.church_ministries.doctype.function.function import TIME_FORMAT
+from churchit.church_people.group_leaders import require_leader
+from churchit.church_people.membership import living_people_filter
 
 REPEAT_UNITS = {"Daily": "days", "Weekly": "weeks", "Monthly": "months", "Yearly": "years"}
+# The leader page shows the meetings of this many weeks back.
+MEETING_WEEKS = 8
 
 
 def get_meets(group: str | None) -> str:
@@ -70,3 +85,106 @@ def get_repeat_day(schedule) -> str | None:
 	if schedule.repeat_frequency == "Yearly":
 		return format_date(start, "MMMM d")
 	return None
+
+
+def get_roster(group: str) -> list[frappe._dict]:
+	"""The living members of *group* by name, with their Group Role and whether they share their email and phone.
+
+	The caller checks that the reader may see them: the leader page asks `require_leader`.
+	"""
+	# church-scope: the member rows of one group, which the caller leads
+	roles = dict(
+		frappe.get_all(
+			"Group Member",
+			filters={"parenttype": "Group", "parent": group},
+			fields=["person", "group_role"],
+			as_list=True,
+		)
+	)
+	# church-scope: the members of that group, by name
+	people = frappe.get_all(
+		"Person",
+		filters=[{"name": ("in", list(roles))}, living_people_filter()],
+		fields=["name", "full_name", "share_email", "share_phone"],
+		order_by="full_name asc",
+	)
+	for person in people:
+		person.group_role = roles[person.name]
+	return people
+
+
+def get_group_meetings(group: str) -> list[frappe._dict]:
+	"""The meetings of *group* in the last 8 weeks up to today, newest first, each with its attendance by person.
+
+	Only a leader of the group may read them.
+	"""
+	require_leader(group)
+	# church-scope: the meetings of one group, which the session user leads
+	meetings = frappe.get_all(
+		"Function",
+		filters={
+			"group": group,
+			"auto_repeat": 0,
+			"start_date": ("between", [add_days(today(), -7 * MEETING_WEEKS), today()]),
+		},
+		fields=[
+			"name",
+			"function_name",
+			"start_date",
+			"start_time",
+			"did_not_meet",
+			"attendance_recorded_on",
+		],
+		order_by="start_date desc, start_time desc",
+	)
+	# church-scope: the attendance of those meetings
+	rows = frappe.get_all(
+		"Function Attendance",
+		filters={"parenttype": "Function", "parent": ("in", [meeting.name for meeting in meetings])},
+		fields=["parent", "person", "attendance_type"],
+	)
+	for meeting in meetings:
+		meeting.attendance = {row.person: row.attendance_type for row in rows if row.parent == meeting.name}
+	return meetings
+
+
+@frappe.whitelist(methods=["POST"])
+def record_group_attendance(
+	function: str,
+	present: str | list[str] | None = None,
+	absent: str | list[str] | None = None,
+	did_not_meet: str | int = 0,
+) -> None:
+	"""Leader page: record who came to a meeting of a group the session user leads, or that it did not meet."""
+	meeting = frappe.get_doc("Function", function)
+	leader = require_leader(meeting.group)
+	if meeting.auto_repeat:
+		frappe.throw(_("Record the attendance on a meeting, not on the group's schedule."))
+
+	present = frappe.parse_json(present or "[]")
+	absent = frappe.parse_json(absent or "[]")
+	did_not_meet = sbool(did_not_meet)
+	if not did_not_meet:
+		# church-scope: the member rows of the group the session user leads
+		members = frappe.get_all(
+			"Group Member", filters={"parenttype": "Group", "parent": meeting.group}, pluck="person"
+		)
+		outside = {*present, *absent} - set(members) - {row.person for row in meeting.attendance}
+		if outside:
+			frappe.throw(_("These people are not in this group: {0}").format(", ".join(sorted(outside))))
+		# Members cannot write a Function. The checks above confine these saves to the group's people.
+		for person in present:
+			record(person, function, "Confirmed")
+		for person in absent:
+			record(person, function, "Absent")
+
+	meeting.db_set({"did_not_meet": int(did_not_meet), "attendance_recorded_on": now_datetime()})
+	leader_name = escape_html(frappe.db.get_value("Person", leader, "full_name"))
+	meeting.add_comment(
+		"Info",
+		_("{0} recorded that the group did not meet.").format(leader_name)
+		if did_not_meet
+		else _("{0} recorded the attendance: {1} present, {2} absent.").format(
+			leader_name, len(present), len(absent)
+		),
+	)

@@ -771,6 +771,7 @@ def _setup_portal_settings():
 		("Alms Requests", "alms-request", "Alms Request", "Church User"),
 		("Care Requests", "care-request", "Care Request", "Church User"),
 		("Groups", "groups", "Group", "Church User"),
+		("Lead a Group", "group-leader", "Group", "Church User"),
 		("Giving Statements", "statements", "Giving Statement", "Church User"),
 		("Pledges", "pledge", "Pledge", "Church User"),
 		("Bulletins", "bulletins", "Bulletin", "Church User"),
