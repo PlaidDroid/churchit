@@ -9,6 +9,9 @@ from churchit.utils import set_report_link_titles
 
 
 def execute(filters=None):
+	filters = filters or {}
+	if filters.get("group"):
+		frappe.has_permission("Group", doc=filters["group"], throw=True)
 	columns = get_columns()
 	data = get_data(filters)
 	set_report_link_titles(columns, data)
@@ -40,10 +43,12 @@ def get_columns():
 			"options": "Function",
 			"width": 200,
 		},
+		{"fieldname": "group", "fieldtype": "Link", "label": _("Group"), "options": "Group", "width": 180},
 	]
 
 
 def get_data(filters=None):
+	filters = filters or {}
 	Attendance = frappe.qb.DocType("Function Attendance")
 	Function = frappe.qb.DocType("Function")
 
@@ -57,9 +62,12 @@ def get_data(filters=None):
 			Function.type,
 			Attendance.attendance_type,
 			Function.name,
+			Function.group,
 		)
 		.where(Attendance.person.isnotnull() & Attendance.attendance_type.isin(COUNTED_TYPES))
 		.where(Function.start_date <= today())
 		.orderby(Function.modified, order=Order.desc)
 	)
+	if filters.get("group"):
+		query = query.where(Function.group == filters["group"])
 	return scoped(query, Function, filters).run(as_dict=True)
