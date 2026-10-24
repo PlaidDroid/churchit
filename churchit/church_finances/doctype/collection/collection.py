@@ -4,6 +4,7 @@
 import frappe
 from frappe.model.document import Document
 
+from churchit.church_finances.doctype.fund.fund import add_transaction, remove_transactions
 from churchit.church_scope import refuse_another_churches_record
 from churchit.contacts import get_primary_emails
 
@@ -74,40 +75,26 @@ class Collection(Document):
 		self.update_funds(reverse=True)
 
 	def update_funds(self, reverse=False):
-		fund_data = {}
+		fund_totals = {}
 		for donation in self.donations:
 			if donation.fund and donation.amount:
-				fund_data.setdefault(donation.fund, 0)
-				fund_data[donation.fund] += donation.amount
+				fund_totals[donation.fund] = fund_totals.get(donation.fund, 0) + donation.amount
+
+		if reverse:
+			remove_transactions("Collection", self.name)
 
 		messages = []
-
-		for fund_name, fund_total in fund_data.items():
-			fund_doc = frappe.get_doc("Fund", fund_name)
-
-			if reverse:
-				fund_doc.transactions = [
-					txn
-					for txn in fund_doc.transactions
-					if not (txn.source_type == "Collection" and txn.source == self.name)
-				]
-				messages.append(f"💸 {fund_doc.fund} fund decreased by ${fund_total}")
-			else:
-				fund_doc.append(
-					"transactions",
-					{
-						"amount": fund_total,
-						"source_type": "Collection",
-						"source": self.name,
-						"date": self.date,
-					},
-				)
-				messages.append(f"💰 {fund_doc.fund} fund increased by ${fund_total}")
-
-			# Fund.before_save adds the ledger up, so the balance is settled by saving.
-			fund_doc.save(ignore_permissions=True)
-			if fund_doc.balance < 0:
-				messages.append(f"⚠️ {fund_doc.fund} fund balance is negative: {fund_doc.balance}")
+		for fund, total in sorted(fund_totals.items()):
+			if not reverse:
+				add_transaction(fund, total, "Collection", self.name, self.date)
+			label, balance = frappe.db.get_value("Fund", fund, ["fund", "balance"])
+			messages.append(
+				f"💸 {label} fund decreased by ${total}"
+				if reverse
+				else f"💰 {label} fund increased by ${total}"
+			)
+			if balance < 0:
+				messages.append(f"⚠️ {label} fund balance is negative: {balance}")
 
 		if messages:
 			frappe.msgprint("<br>".join(messages))

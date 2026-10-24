@@ -72,6 +72,46 @@ class TestCollection(FrappeTestCase):
 		collection.cancel()
 		self.assertEqual(frappe.db.get_value("Fund", self.fund, "balance"), 0)
 
+	def ledger(self, **filters):
+		rows = frappe.get_all(
+			"Financial Transaction",
+			{"parenttype": "Fund", **filters},
+			["parent", "amount"],
+			order_by="parent",
+		)
+		return [(row.parent, row.amount) for row in rows]
+
+	def test_each_fund_gets_one_ledger_row_and_no_version(self):
+		second = frappe.get_doc({"doctype": "Fund", "fund": "_Test Collection Second Fund"}).insert(
+			ignore_permissions=True
+		)
+		funds = (self.fund, second.name)
+		versions = {
+			fund: frappe.db.count("Version", {"ref_doctype": "Fund", "docname": fund}) for fund in funds
+		}
+		self._make_collection(amount=7).submit()
+		collection = frappe.get_doc({"doctype": "Collection", "date": now(), "expected_total": 180})
+		for fund, amount in ((self.fund, 100), (second.name, 30), (self.fund, 50)):
+			collection.append(
+				"donations", {"payment_type": self.payment_type, "fund": fund, "amount": amount}
+			)
+		collection.insert(ignore_permissions=True).submit()
+
+		self.assertEqual(self.ledger(source=collection.name), sorted([(self.fund, 150), (second.name, 30)]))
+		for fund in funds:
+			self.assertEqual(
+				frappe.db.count("Version", {"ref_doctype": "Fund", "docname": fund}), versions[fund]
+			)
+			self.assertEqual(
+				frappe.db.get_value("Fund", fund, "balance"),
+				sum(amount for _fund, amount in self.ledger(parent=fund)),
+			)
+
+		collection.cancel()
+		self.assertEqual(self.ledger(source=collection.name), [])
+		self.assertEqual(self.ledger(parent=self.fund), [(self.fund, 7)])
+		self.assertEqual([frappe.db.get_value("Fund", fund, "balance") for fund in funds], [7, 0])
+
 	def ledger_dates(self, from_date, to_date):
 		filters = {"from_date": from_date, "to_date": to_date}
 		return [row.date for row in fund_transactions_by_date.execute(filters)[1] if row.amount == 321]

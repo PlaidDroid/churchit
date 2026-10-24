@@ -47,6 +47,24 @@ class TestFundTransfer(FrappeTestCase):
 		self.assertEqual(frappe.db.get_value("Fund", self.from_fund, "balance"), -50)
 		self.assertEqual(frappe.db.get_value("Fund", self.to_fund, "balance"), 50)
 
+	def test_submit_writes_one_ledger_row_on_each_fund_without_saving_them(self):
+		versions = frappe.db.count("Version", {"ref_doctype": "Fund"})
+		transfer = self._make_transfer(amount=50, notes="Roof")
+		transfer.submit()
+
+		ledger = {"source_type": "Fund Transfer", "source": transfer.name}
+		self.assertEqual(
+			frappe.get_all("Financial Transaction", ledger, ["parent", "amount", "notes"], order_by="amount"),
+			[
+				{"parent": self.from_fund, "amount": -50, "notes": f"Transfer to {self.to_fund}: Roof"},
+				{"parent": self.to_fund, "amount": 50, "notes": f"Transfer from {self.from_fund}: Roof"},
+			],
+		)
+		self.assertEqual(frappe.db.count("Version", {"ref_doctype": "Fund"}), versions)
+
+		transfer.cancel()
+		self.assertFalse(frappe.db.exists("Financial Transaction", ledger))
+
 	def test_cancel_reverses_the_transfer(self):
 		transfer = self._make_transfer(amount=50)
 		transfer.submit()

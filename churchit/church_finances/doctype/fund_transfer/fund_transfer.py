@@ -3,6 +3,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import get_link_to_form, nowdate
 
+from churchit.church_finances.doctype.fund.fund import add_transaction, remove_transactions
 from churchit.church_scope import (
 	default_church,
 	is_multi_church,
@@ -49,67 +50,28 @@ class FundTransfer(Document):
 		self.remove_fund_transfer_transactions()
 
 	def transfer_funds(self):
-		from_fund = frappe.get_doc("Fund", self.from_fund)
-		to_fund = frappe.get_doc("Fund", self.to_fund)
+		note = f": {self.notes}" if self.notes else ""
+		rows = {
+			self.from_fund: (-self.amount, f"Transfer to {self.to_fund}{note}"),
+			self.to_fund: (self.amount, f"Transfer from {self.from_fund}{note}"),
+		}
+		for fund in sorted(rows):
+			amount, fund_note = rows[fund]
+			add_transaction(fund, amount, "Fund Transfer", self.name, self.date or nowdate(), notes=fund_note)
 
-		transfer_note = self.notes or ""
-		from_note = f"Transfer to {self.to_fund}"
-		to_note = f"Transfer from {self.from_fund}"
-		if transfer_note:
-			from_note += f": {transfer_note}"
-			to_note += f": {transfer_note}"
-
-		# Add transactions (no manual balance updates needed)
-		from_fund.append(
-			"transactions",
-			{
-				"amount": -self.amount,
-				"source_type": "Fund Transfer",
-				"source": self.name,
-				"date": self.date or nowdate(),
-				"notes": from_note,
-			},
-		)
-
-		to_fund.append(
-			"transactions",
-			{
-				"amount": self.amount,
-				"source_type": "Fund Transfer",
-				"source": self.name,
-				"date": self.date or nowdate(),
-				"notes": to_note,
-			},
-		)
-
-		from_fund.save(ignore_permissions=True)
-		to_fund.save(ignore_permissions=True)
-
+		from_label = frappe.db.get_value("Fund", self.from_fund, "fund")
+		to_label = frappe.db.get_value("Fund", self.to_fund, "fund")
 		frappe.msgprint(
 			f"✅ Transferred ${self.amount} from "
-			f"{get_link_to_form('Fund', self.from_fund, from_fund.fund)} to "
-			f"{get_link_to_form('Fund', self.to_fund, to_fund.fund)}."
+			f"{get_link_to_form('Fund', self.from_fund, from_label)} to "
+			f"{get_link_to_form('Fund', self.to_fund, to_label)}."
 		)
 
 	def remove_fund_transfer_transactions(self):
 		from_label = frappe.db.get_value("Fund", self.from_fund, "fund") or self.from_fund
 		to_label = frappe.db.get_value("Fund", self.to_fund, "fund") or self.to_fund
 
-		# Remove matching transactions from both funds
-		for fund_name in [self.from_fund, self.to_fund]:
-			fund_doc = frappe.get_doc("Fund", fund_name)
-			# Keep only transactions not from this transfer
-			fund_doc.set(
-				"transactions",
-				[
-					tx
-					for tx in fund_doc.transactions
-					if not (tx.source_type == "Fund Transfer" and tx.source == self.name)
-				],
-			)
-			fund_doc.save(ignore_permissions=True)
-			fund_doc.reload()
-
+		remove_transactions("Fund Transfer", self.name)
 		frappe.msgprint(
 			f"⏪ Reverted transfer of ${self.amount} from "
 			f"{get_link_to_form('Fund', self.from_fund, from_label)} to "
