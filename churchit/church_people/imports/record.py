@@ -43,6 +43,7 @@ PERSON_COLUMNS = (
 	"membership",
 	"membership_status",
 	"inactive_reason",
+	"envelope_number",
 	"medical_notes",
 )
 # Contact columns, and the Email or Phone Type each one stands for

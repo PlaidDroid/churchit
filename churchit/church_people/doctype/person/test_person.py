@@ -18,6 +18,7 @@ from churchit.church_foundations.church_access import set_user_church, user_chur
 from churchit.church_people.derived import refresh_daily
 from churchit.church_people.doctype.inactive_reason.inactive_reason import DECEASED
 from churchit.church_people.doctype.person.person import SOURCE_IMPORT
+from churchit.church_people.merge import merge_people
 from churchit.patches.v1_0 import set_inactive_since_from_history
 from churchit.tests.helpers import (
 	RollbackEachTest,
@@ -982,3 +983,40 @@ def user_of_both_churches(church_a, church_b):
 	set_user_church(user, church_a)
 	add_user_permission("Church", church_b, user, ignore_permissions=True, hide_descendants=1)
 	return user
+
+
+class TestPersonEnvelopeNumber(RollbackEachTest):
+	"""An envelope number finds one giver in their church."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+
+	def test_a_link_search_finds_a_person_by_envelope_number(self):
+		person = make_person("_Test Envelope", "Giver", church=self.branch_a, envelope_number="90417")
+
+		self.assertIn(person.name, [result["value"] for result in search_link("Person", "90417")])
+
+	def test_a_number_is_unique_in_a_church(self):
+		make_person("_Test Envelope", "First", church=self.branch_a, envelope_number="90418")
+
+		with self.assertRaisesRegex(frappe.ValidationError, "90418"):
+			make_person("_Test Envelope", "Second", church=self.branch_a, envelope_number="90418")
+		other_church = make_person("_Test Envelope", "Other", church=self.branch_b, envelope_number="90418")
+		self.assertEqual(other_church.envelope_number, "90418")
+
+	def test_a_person_keeps_their_own_number_when_saved_again(self):
+		person = make_person("_Test Envelope", "Again", church=self.branch_a, envelope_number="90419")
+		person.nickname = "_Test Again"
+
+		person.save(ignore_permissions=True)
+
+	def test_a_merge_moves_the_number_to_the_kept_person(self):
+		kept = make_person("_Test Envelope", "Kept", church=self.branch_a)
+		removed = make_person("_Test Envelope", "Removed", church=self.branch_a, envelope_number="90420")
+
+		merge_people(kept.name, removed.name)
+
+		self.assertEqual(frappe.db.get_value("Person", kept.name, "envelope_number"), "90420")

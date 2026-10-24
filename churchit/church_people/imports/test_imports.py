@@ -313,3 +313,20 @@ class TestImportAtABranch(ImportCase):
 		frappe.set_user("Administrator")
 		self.assertEqual(get_person("Quill", church=self.branch_a).legacy_id, "S-4")
 		self.assertFalse(frappe.get_doc("Person", theirs.name).emails)
+
+
+class TestEnvelopeNumberImport(ImportCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		force_single_church()
+		rows = read_fixture("people.csv")
+		cls.rows = [[*rows[0], "Envelope Number"], *([*row, ""] for row in rows[1:])]
+
+	def test_a_row_with_an_envelope_number_fills_the_field(self):
+		rows = edit(self.rows, "Alder", **{"Envelope Number": "4021"})
+
+		self.assertImported(self.run_import(PEOPLE_IMPORT, rows))
+
+		self.assertEqual(get_person("Alder").envelope_number, "4021")
+		self.assertIsNone(get_person("Bramble").envelope_number)

@@ -274,8 +274,13 @@ class Person(Document):
 			return
 		drop_deleted_document(self.doctype, old)
 		removed = frappe.get_doc("Person", old)
-		# One login and one calendar link name one person, and the calendar link is unique.
-		frappe.db.set_value("Person", old, {"user": None, "team_calendar_key": None}, update_modified=False)
+		# One login, one calendar link and one envelope number name one person, and the calendar link is unique.
+		frappe.db.set_value(
+			"Person",
+			old,
+			{"user": None, "team_calendar_key": None, "envelope_number": None},
+			update_modified=False,
+		)
 		adopt_contact_rows(self, removed)
 		for fieldname, key in MERGED_TABLES.items():
 			adopt_rows(self, removed, fieldname, key)
@@ -317,6 +322,7 @@ class Person(Document):
 		self.sync_spouse()
 		self.share_family_with_spouse()
 		self.refuse_another_churches_family()
+		self.refuse_a_taken_envelope_number()
 
 	def refuse_another_churches_spouse(self):
 		"""Only a user who can see a new spouse's church links them: the spouse record changes and may join this family.
@@ -347,6 +353,21 @@ class Person(Document):
 					frappe.bold(self.family)
 				),
 				frappe.PermissionError,
+			)
+
+	def refuse_a_taken_envelope_number(self):
+		"""Staff find a giver by envelope number, so each number belongs to one person in a church."""
+		if not self.envelope_number:
+			return
+		holder = frappe.db.exists(
+			"Person",
+			{"church": self.church, "envelope_number": self.envelope_number, "name": ("!=", self.name)},
+		)
+		if holder:
+			frappe.throw(
+				_("Envelope number {0} already belongs to {1}.").format(
+					frappe.bold(self.envelope_number), get_link_to_form("Person", holder)
+				)
 			)
 
 	def refuse_linking_another_login(self):
