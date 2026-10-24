@@ -3,6 +3,8 @@
 
 """A group's meetings: Functions with the group in their Group field."""
 
+from urllib.parse import urlencode
+
 import frappe
 from frappe import _
 from frappe.utils import (
@@ -11,20 +13,31 @@ from frappe.utils import (
 	escape_html,
 	format_date,
 	format_time,
+	get_url,
 	getdate,
 	now_datetime,
 	sbool,
 	today,
 )
 
+from churchit.church_communications.doctype.communication_consent.communication_consent import EMAIL
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
+	GROUP_MESSAGES,
+)
+from churchit.church_communications.sending import send
 from churchit.church_ministries.attendance import record
 from churchit.church_ministries.doctype.function.function import TIME_FORMAT
-from churchit.church_people.group_leaders import require_leader
+from churchit.church_ministries.doctype.ministry_team_assignment.ministry_team_assignment import (
+	can_send_email,
+)
+from churchit.church_people.group_leaders import get_leaders, require_leader
 from churchit.church_people.membership import living_people_filter
 
 REPEAT_UNITS = {"Daily": "days", "Weekly": "weeks", "Monthly": "months", "Yearly": "years"}
 # The leader page shows the meetings of this many weeks back.
 MEETING_WEEKS = 8
+REMINDER_KEY = "attendance-reminder"
+REMINDER_TEMPLATE = "Group Attendance Reminder"
 
 
 def get_meets(group: str | None) -> str:
@@ -188,3 +201,43 @@ def record_group_attendance(
 			leader_name, len(present), len(absent)
 		),
 	)
+
+
+def send_attendance_reminders() -> None:
+	"""Daily job: ask the leaders of yesterday's group meetings to record the attendance.
+
+	The send key makes a second run on the same day send nothing. Nothing is sent while the site has no
+	outgoing email account.
+	"""
+	if not can_send_email():
+		return
+	# church-scope: a job over every church; each reminder goes to the leaders of its own meeting's group
+	meetings = frappe.get_all(
+		"Function",
+		filters={
+			"group": ("is", "set"),
+			"auto_repeat": 0,
+			"start_date": add_days(today(), -1),
+			"attendance_recorded_on": ("is", "not set"),
+			"did_not_meet": 0,
+		},
+		pluck="name",
+	)
+	for name in meetings:
+		meeting = frappe.get_doc("Function", name)
+		leaders = get_leaders(meeting.group)
+		if not leaders:
+			continue
+		send(
+			leaders,
+			EMAIL,
+			GROUP_MESSAGES,
+			meeting,
+			key=REMINDER_KEY,
+			template=REMINDER_TEMPLATE,
+			context={
+				"group_name": frappe.db.get_value("Group", meeting.group, "group_name"),
+				"date": format_date(meeting.start_date),
+				"link": get_url(f"/group-leader?{urlencode({'group': meeting.group})}"),
+			},
+		)

@@ -1,7 +1,9 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
-"""The /group-leader page: a leader's roster and the attendance they record."""
+"""The /group-leader page: a leader's roster, the attendance they record, and the reminder to record it."""
+
+from unittest import mock
 
 import frappe
 from frappe.handler import execute_cmd
@@ -11,6 +13,7 @@ from frappe.website.serve import get_response
 from churchit.church_communications.doctype.communication_consent.communication_consent import (
 	EMAIL,
 	GIVEN,
+	WITHDRAWN,
 	record,
 )
 from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
@@ -20,6 +23,7 @@ from churchit.church_communications.doctype.communication_purpose.communication_
 from churchit.church_people.group_meetings import (
 	get_group_meetings,
 	record_group_attendance,
+	send_attendance_reminders,
 )
 from churchit.patches.after_install import create_unsynced_records
 from churchit.patches.v1_0 import add_group_leader_menu_item
@@ -287,3 +291,76 @@ class TestRecordGroupAttendance(GroupLeaderTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			execute_cmd("churchit.church_people.group_meetings.record_group_attendance")
 		self.assertEqual(self.statuses(frappe.get_doc("Function", meeting.name)), {})
+
+
+class TestAttendanceReminders(GroupLeaderTestCase):
+	def setUp(self):
+		super().setUp()
+		self.sendmail = mock.patch("frappe.sendmail").start()
+		mock.patch("churchit.church_people.group_meetings.can_send_email", return_value=True).start()
+		self.addCleanup(mock.patch.stopall)
+
+	def reminders(self, meeting):
+		"""The leaders reminded about *meeting*."""
+		names = frappe.get_all(
+			"Communication Link",
+			filters={"link_doctype": "Function", "link_name": meeting.name, "parenttype": "Communication"},
+			pluck="parent",
+		)
+		return frappe.get_all(
+			"Communication",
+			filters={"name": ("in", names), "send_key": "attendance-reminder"},
+			pluck="reference_name",
+		)
+
+	def test_a_meeting_yesterday_reminds_each_leader_once(self):
+		meeting = self.meeting()
+
+		send_attendance_reminders()
+		send_attendance_reminders()
+
+		self.assertEqual(self.reminders(meeting), [self.leader.name])
+		[email] = [
+			call.kwargs
+			for call in self.sendmail.call_args_list
+			if call.kwargs["reference_name"] == meeting.name
+		]
+		self.assertEqual(email["recipients"], ["_test_page_leader@example.com"])
+		self.assertIn(f"/group-leader?group={self.group.name}", email["message"])
+
+	def test_a_meeting_of_a_group_with_no_leader_does_not_stop_the_other_reminders(self):
+		leaderless = self.make_group("_Test Page Leaderless Group", [(self.sharer, MEMBER_ROLE)])
+		skipped = self.meeting(group=leaderless)
+		meeting = self.meeting()
+
+		send_attendance_reminders()
+
+		self.assertEqual(self.reminders(skipped), [])
+		self.assertEqual(self.reminders(meeting), [self.leader.name])
+
+	def test_a_recorded_a_cancelled_or_an_older_meeting_reminds_no_one(self):
+		recorded = self.meeting()
+		frappe.db.set_value("Function", recorded.name, "attendance_recorded_on", frappe.utils.now_datetime())
+		cancelled = self.meeting(did_not_meet=1)
+		older = self.meeting(-2)
+
+		send_attendance_reminders()
+
+		for meeting in (recorded, cancelled, older):
+			self.assertEqual(self.reminders(meeting), [], meeting.name)
+
+	def test_nothing_is_sent_while_the_site_has_no_outgoing_email_account(self):
+		meeting = self.meeting()
+
+		with mock.patch("churchit.church_people.group_meetings.can_send_email", return_value=False):
+			send_attendance_reminders()
+
+		self.assertEqual(self.reminders(meeting), [])
+
+	def test_a_leader_who_withdrew_group_messages_gets_no_reminder(self):
+		record([self.leader.name], EMAIL, WITHDRAWN, GROUP_MESSAGES)
+		meeting = self.meeting()
+
+		send_attendance_reminders()
+
+		self.assertEqual(self.reminders(meeting), [])
