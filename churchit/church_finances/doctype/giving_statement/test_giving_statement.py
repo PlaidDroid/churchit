@@ -4,13 +4,18 @@
 from unittest.mock import patch
 
 import frappe
+from frappe.email.doctype.email_account.email_account import EmailAccount
 from frappe.handler import execute_cmd
 from frappe.tests.utils import FrappeTestCase
 
 from churchit.church_finances.doctype.giving_statement.giving_statement import (
+	EMAIL_TEMPLATE,
+	PRINT_FORMAT,
+	email_statements,
 	generate_statements,
 	get_givers,
 	get_statement_recipients,
+	send_statement_emails,
 	statement_header,
 )
 from churchit.church_finances.doctype.payment_type.payment_type import (
@@ -18,7 +23,7 @@ from churchit.church_finances.doctype.payment_type.payment_type import (
 	create_non_cash_payment_type,
 )
 from churchit.church_foundations.church_access import set_user_church
-from churchit.patches.v1_0 import mark_funds_tax_deductible
+from churchit.patches.v1_0 import add_giving_statement_email_template, mark_funds_tax_deductible
 from churchit.tests.helpers import (
 	RollbackEachTest,
 	ensure,
@@ -385,7 +390,233 @@ class TestNonCashOnStatements(FrappeTestCase):
 
 		self.assertEqual(statement.total_amount, 25)
 		self.assertEqual([line.description for line in statement.lines if line.description], ["_Test piano"])
-		html = frappe.get_print("Giving Statement", statement.name, "Contribution Statement")
+		html = frappe.get_print("Giving Statement", statement.name, PRINT_FORMAT)
 		row = next(part for part in html.split("<tr") if "_Test piano" in part)
 		self.assertNotIn("0.00", row, "a non-cash line states no value")
 
+
+class TestStatementEmail(RollbackEachTest):
+	"""Statements go out once each, with their PDF, from a background job."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		_root, cls.branch_a, cls.branch_b = make_two_churches()
+		cls.addClassCleanup(frappe.clear_cache)
+		ensure(
+			"Email Account",
+			{"enable_outgoing": 1, "default_outgoing": 1},
+			{
+				"email_account_name": "_Test Statement Outgoing",
+				"email_id": "_test_statement_outgoing@example.com",
+				"service": "GMail",
+				"enable_outgoing": 1,
+				"default_outgoing": 1,
+				"no_smtp_authentication": 1,
+			},
+		)
+		add_giving_statement_email_template.execute()
+		cls.finance_a = ensure_user(
+			"_test_statement_email_a@example.com", "Email Finance A", roles=("Church Finance",)
+		)
+		set_user_church(cls.finance_a, cls.branch_a)
+		cls.finance_b = ensure_user(
+			"_test_statement_email_b@example.com", "Email Finance B", roles=("Church Finance",)
+		)
+		set_user_church(cls.finance_b, cls.branch_b)
+
+		giver = frappe.get_doc({"doctype": "Person", "first_name": "_Test Emailed", "church": cls.branch_a})
+		giver.append("emails", {"email_address": "_test_statement_giver@example.com", "is_primary": 1})
+		cls.giver = giver.insert(ignore_permissions=True).name
+		cls.no_email = make_person("_Test Unreachable", "Giver", church=cls.branch_a).name
+		make_collection("2029-05-05", [(cls.giver, 30), (cls.no_email, 20)], church=cls.branch_a)
+		cls.statement = cls.make_statement(cls.giver)
+		cls.statement_title = frappe.db.get_value("Giving Statement", cls.statement, "title")
+		cls.unreachable = cls.make_statement(cls.no_email)
+
+	@classmethod
+	def make_statement(cls, person):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Giving Statement",
+					"person": person,
+					"church": cls.branch_a,
+					"from_date": PERIOD[0],
+					"to_date": PERIOD[1],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def run_job(self, resend=False):
+		frappe.set_user(self.finance_a)
+		with patch.object(frappe.db, "commit"):
+			send_statement_emails([self.statement, self.unreachable], resend=resend)
+		frappe.set_user("Administrator")
+
+	def queued(self, name):
+		return frappe.get_all("Email Queue", filters={"reference_name": name}, pluck="attachments")
+
+	def test_one_run_queues_one_email_with_the_pdf_and_one_access_log(self):
+		self.run_job()
+
+		attachments = self.queued(self.statement)
+		self.assertEqual(len(attachments), 1)
+		attachment = frappe.parse_json(attachments[0])[0]
+		self.assertEqual(attachment.pop("print_format_attachment"), 1)
+		self.assertEqual(attachment["print_format"], PRINT_FORMAT)
+		# The queue makes the PDF this way when the email leaves. No PDF engine runs in tests.
+		with patch("frappe.utils.pdf.get_pdf", return_value=b"%PDF") as get_pdf:
+			self.assertTrue(frappe.attach_print(**attachment)["fname"].endswith(".pdf"))
+		self.assertIn(self.statement_title, get_pdf.call_args.args[0])
+		self.assertEqual(
+			frappe.db.count(
+				"Access Log",
+				{
+					"reference_document": self.statement,
+					"method": "Email",
+					"file_type": "PDF",
+					"user": self.finance_a,
+				},
+			),
+			1,
+		)
+		self.assertTrue(frappe.db.get_value("Giving Statement", self.statement, "emailed_on"))
+		self.assertEqual(self.queued(self.unreachable), [], "a statement with no email is skipped")
+
+	def test_a_second_run_sends_nothing(self):
+		self.run_job()
+		self.run_job()
+		self.assertEqual(len(self.queued(self.statement)), 1)
+
+	def test_resend_sends_again(self):
+		self.run_job()
+		self.run_job(resend=True)
+		self.assertEqual(len(self.queued(self.statement)), 2)
+
+	def test_a_rebuild_that_changes_the_total_is_sent_on_the_next_run(self):
+		self.run_job()
+		frappe.get_doc("Giving Statement", self.statement).save(ignore_permissions=True)
+		self.assertTrue(
+			frappe.db.get_value("Giving Statement", self.statement, "emailed_on"), "same total, still sent"
+		)
+
+		make_collection("2029-06-06", [(self.giver, 15)], church=self.branch_a)
+		frappe.get_doc("Giving Statement", self.statement).save(ignore_permissions=True)
+		self.assertFalse(frappe.db.get_value("Giving Statement", self.statement, "emailed_on"))
+
+		self.run_job()
+		self.assertEqual(len(self.queued(self.statement)), 2)
+
+	def test_a_non_cash_gift_added_after_the_email_is_sent_on_the_next_run(self):
+		self.run_job()
+		create_non_cash_payment_type()
+		make_collection(
+			"2029-06-07",
+			[],
+			church=self.branch_a,
+			rows=[
+				{"person": self.giver, "payment_type": NON_CASH, "amount": 0, "description": "_Test piano"}
+			],
+		)
+
+		frappe.get_doc("Giving Statement", self.statement).save(ignore_permissions=True)
+		self.assertFalse(frappe.db.get_value("Giving Statement", self.statement, "emailed_on"))
+
+		self.run_job()
+		self.assertEqual(len(self.queued(self.statement)), 2)
+
+	def test_a_giver_who_unsubscribed_from_all_email_is_not_marked_as_emailed(self):
+		frappe.get_doc(
+			{
+				"doctype": "Email Unsubscribe",
+				"email": "_test_statement_giver@example.com",
+				"global_unsubscribe": 1,
+			}
+		).insert(ignore_permissions=True)
+		logs = {"reference_document": self.statement, "method": "Email"}
+		logged = frappe.db.count("Access Log", logs)
+
+		self.run_job()
+
+		self.assertEqual(self.queued(self.statement), [])
+		self.assertFalse(frappe.db.get_value("Giving Statement", self.statement, "emailed_on"))
+		self.assertEqual(frappe.db.count("Access Log", logs), logged)
+
+	def test_the_job_sends_to_the_persons_address_at_the_time_of_the_run(self):
+		person = frappe.get_doc("Person", self.giver)
+		person.emails[0].email_address = "_test_statement_new_address@example.com"
+		person.save(ignore_permissions=True)
+
+		self.run_job()
+
+		queue = frappe.get_all("Email Queue", filters={"reference_name": self.statement}, pluck="name")
+		self.assertEqual(
+			frappe.get_all("Email Queue Recipient", filters={"parent": ("in", queue)}, pluck="recipient"),
+			["_test_statement_new_address@example.com"],
+		)
+		self.assertEqual(
+			frappe.db.get_value("Giving Statement", self.statement, "email"),
+			"_test_statement_new_address@example.com",
+		)
+
+	def test_the_job_skips_a_person_who_has_no_email_now(self):
+		person = frappe.get_doc("Person", self.giver)
+		person.set("emails", [])
+		person.save(ignore_permissions=True)
+
+		self.run_job()
+
+		self.assertEqual(self.queued(self.statement), [])
+
+	def test_the_email_goes_on_the_long_queue_for_the_statements_the_user_can_read(self):
+		frappe.set_user(self.finance_b)
+		with patch("frappe.enqueue") as enqueue:
+			email_statements(*PERIOD)
+		self.assertNotIn(self.statement, enqueue.call_args.kwargs["names"] if enqueue.called else [])
+
+		frappe.set_user(self.finance_a)
+		with patch("frappe.enqueue") as enqueue:
+			self.assertEqual(email_statements(*PERIOD, resend="1"), 2)
+		self.assertEqual(enqueue.call_args.kwargs["queue"], "long")
+		self.assertCountEqual(enqueue.call_args.kwargs["names"], [self.statement, self.unreachable])
+		self.assertIs(enqueue.call_args.kwargs["resend"], True)
+
+	def test_only_the_statement_roles_can_email(self):
+		staff = ensure_user("_test_statement_email_staff@example.com", "Email Staff", roles=("Church Staff",))
+		frappe.set_user(staff)
+		with patch("frappe.enqueue") as enqueue, self.assertRaises(frappe.PermissionError):
+			email_statements(*PERIOD)
+		enqueue.assert_not_called()
+
+	def test_emailing_without_an_outgoing_account_fails_before_the_job(self):
+		frappe.set_user(self.finance_a)
+		with (
+			patch("frappe.enqueue") as enqueue,
+			patch.object(EmailAccount, "find_default_outgoing", return_value=None),
+			patch.object(frappe.local, "outgoing_email_account", {}, create=True),
+			self.assertRaises(frappe.OutgoingEmailError),
+		):
+			email_statements(*PERIOD)
+		enqueue.assert_not_called()
+
+	def test_emailing_takes_a_post(self):
+		frappe.set_user(self.finance_a)
+		with (
+			patch("frappe.enqueue") as enqueue,
+			patch.object(frappe.local, "request", frappe._dict(method="GET"), create=True),
+			patch.object(frappe.local, "form_dict", frappe._dict(from_date=PERIOD[0], to_date=PERIOD[1])),
+			self.assertRaises(frappe.PermissionError),
+		):
+			execute_cmd("churchit.church_finances.doctype.giving_statement.giving_statement.email_statements")
+		enqueue.assert_not_called()
+
+	def test_the_template_patch_restores_a_missing_template_once(self):
+		frappe.delete_doc("Email Template", EMAIL_TEMPLATE, ignore_permissions=True)
+
+		add_giving_statement_email_template.execute()
+		add_giving_statement_email_template.execute()
+
+		self.assertEqual(frappe.db.count("Email Template", {"name": EMAIL_TEMPLATE}), 1)
