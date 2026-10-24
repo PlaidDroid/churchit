@@ -53,13 +53,14 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Pathways: ordered steps, each a smart list, with a progress report; an Assimilation Funnel report
 - Care requests with a caregiver and due date, and background checks a position can require
 - Duplicate warnings, merging, and imports from Planning Center, Rock RMS or a spreadsheet
+- Envelope numbers, unique in each church, that find the giver in a gift's Person field
 - Remove Personal Data on request or after a set number of inactive years
 - A Map of Addresses
 - Portal invitations: invite people to a self-service portal
 
 ### Portal & Website
 - Portal invitations "Invite to Portal" auto-creates a user account and sends a welcome email
-- Portal pages for personal details, my household, a member directory with per-person sharing, communication preferences, prayer requests, alms requests, function sign-ups, attendance history, giving statements, and bulletin PDFs
+- Portal pages for personal details, my household, a member directory with per-person sharing, communication preferences, prayer requests, alms requests, function sign-ups, attendance history, giving statements, pledges, and bulletin PDFs
 - A guest Connection Card with a QR code, a one-time link for a person to update their details without a login, and new portal logins linked to their person
 - Anonymous prayer request submission (no login required)
 - Publishable beliefs/statement of faith
@@ -119,6 +120,16 @@ The following features have been implemented in this app (see the [🗺️ Roadm
 - Fund transfers between accounts
 - Expense tracking by category
 - Alms request system for financial assistance (with web form)
+- Online giving on /give through Stripe or PayPal, with an optional processing fee that the giver can cover
+- Give links and QR codes for a fund, which open /give with the fund and an amount filled in
+- Other ways to give (bank transfer, standing order, mailed check) on /give, per church
+- Finance can link a guest's online gift to a person, and a cancelled gift Collection marks the gift Refunded
+- Non-cash gifts (donated property) recorded with a description and no value
+- Funds that are not tax deductible stay off giving statements
+- Email every giving statement with its PDF in one step
+- Pledge campaigns: members pledge on the portal, and the Pledge Progress report compares each pledge and each campaign goal with the gifts received
+- Import giving history from another system, a spreadsheet or a payment processor's export into draft collections
+- GL export: map funds, payment types, expense types and the church to accounts, and export a balanced GL Journal as CSV
 
 ### Missions
 - Missionary profiles with contact info, location, and support details
