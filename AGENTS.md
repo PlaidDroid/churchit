@@ -455,6 +455,11 @@ The scan counts any `record.fieldname` attribute in a page's code, so a page tha
 whose name is also a private field of a published doctype reads it with `.get()` (the sermon
 presentation reads slide notes this way).
 
+The scan does not follow a method of a Single or its `self.` reads. A page that shows a field
+through such a method imports the class as the type of its document
+(`settings: GivingSettings = frappe.get_cached_doc("Giving Settings")`), and the method reads the
+field as an attribute of a row (`wording.other_ways_to_give`), as `/give` does.
+
 ## Settings a church can differ on
 
 Three Singles hold site-wide configuration. Each takes per-church overrides through one resolution
@@ -463,7 +468,7 @@ point, so no caller threads a church around:
 | Single | Override | Resolved by |
 | ------ | -------- | ----------- |
 | Giving Settings | a `church` column on each `Giving Gateway` row | `gateways_for(church)` |
-| Giving Settings | `Church Giving Wording` rows | `get_thank_you_message`, `get_statement_acknowledgment` |
+| Giving Settings | `Church Giving Wording` rows | `get_thank_you_message`, `get_statement_acknowledgment`, `get_other_ways_to_give` |
 | Check-In Settings | `Church Check In Printer` rows | `for_church(church)` |
 | Bulletin Settings | `Church Bulletin Sections` rows | `for_church(church)` |
 
@@ -486,9 +491,58 @@ merchant account the main church set up.
 
 Only the gateways in `giving_settings.SUPPORTED_GATEWAY_SETTINGS` (Stripe and PayPal) call back
 `on_payment_authorized` with an Online Donation, so Giving Settings refuses any other and
-`gateways_for` skips one stored before. A gift is recorded only through
-`OnlineDonation.record_charge`, which compares the amount and currency of the newest Completed
-Integration Request with the gift, because the checkout takes the amount from the browser.
+`gateways_for` skips one stored before. `GivingSettings.get_gateway(church, payment_gateway)` gives
+the row a payment uses: the one asked for when the church is offered it, else the church's default.
+
+## Giving and the fund ledger
+
+Write Fund ledger rows only with `fund.add_transaction` and `fund.remove_transactions`. They lock
+the Fund row, insert or delete only their own Financial Transaction rows by name, and set `balance`
+and `goal_progress` with `frappe.db.set_value`, so a gift adds no Version and a stale desk form fails
+as modified. Never append to `Fund.transactions` and save the Fund from code. A document that
+touches two funds calls `add_transaction` in fund name order, so two writers cannot deadlock. Do
+not take a locking read on Financial Transaction rows: its gap locks block writers on other Funds.
+`Fund.before_save` keeps the same sum, so a desk save corrects a drifted balance.
+
+A payable record gets its checkout URL from `church_finances/payments.get_payment_url`, which takes
+only a gateway that `get_gateway` offers to the record's church. Its `on_payment_authorized(status)`
+locks its row, records once when `payments.is_charge_confirmed` (the newest Completed Integration
+Request has the amount and currency), and else calls `payments.notify_finance`, which alerts the
+Church Finance users of the record's church. Churchit calls no vendor API and has no dispatch map.
+An Online Donation compares `charged_amount`: the gift plus `fee_amount`, the fee the giver chose
+to cover, which `start_donation` works out on the server from the gateway row
+(`payments.get_fee_to_cover`). The covered fee is part of the gift everywhere: the Donation row,
+`expected_total`, the receipt and the statement. Giving Settings refuses a fee percent of 100 or
+more and a negative fee.
+
+An Online Donation gets its `collection` only in `record_donation` (`refuse_a_changed_collection`).
+When Finance sets or clears `person` on a recorded gift, `on_update` copies it to the Collection's
+Donation row with the person's primary email, comments on the Collection and refreshes both
+people's summaries after commit. Cancelling a Collection is the refund: `Collection.on_cancel` sets
+each of its Paid Online Donations to Refunded before it removes the ledger rows, and
+`record_charge` skips a Paid or Refunded gift, so a late callback records nothing. A partial
+refund is a negative Donation row in a new Collection.
+
+Giving statements are tax receipts. `get_donations` and `get_givers` count only funds with
+`is_tax_deductible`; a shared Fund has one flag for every church. A Payment Type with `is_non_cash`
+marks donated property: `Collection.validate` refuses such a row with an amount or with no
+`description`, so the ledger, the totals and every report stay cash only, and the statement prints
+the description in place of an amount. Never add an estimated value. `emailed_on` is the only record
+that a statement went: a rebuild that changes any line clears it, and a send that the queue drops (a
+global unsubscribe) does not set it. `send_statement_emails` runs on the long queue, locks each
+statement, sends to the person's primary email at that time and commits after each one.
+
+Pledge Campaign owns its fund, dates and goal and is never shared; a Pledge takes its church from
+its campaign. Pledge Progress counts only the Donation rows of the campaign church's submitted
+Collections to the campaign fund, to the end of the last day. Never derive it from `Fund.balance`
+or `Fund.goal_progress`, which an Expense changes. On the `pledge` web form every login pledges
+only for its own Person (`Pledge.take_members_own_pledge`).
+
+GL Account Mapping maps a Fund, Payment Type, Expense Type or Church to an account, once for each
+church and record. The GL Journal takes each line's mapping from the source document's church,
+refuses a document whose debits and credits differ, lists every missing mapping in one message,
+and names a source document by its doctype and name only. Do not add a title or a person to the
+memo: an Expense title can hold a person's name.
 
 ## Integrations
 
@@ -594,6 +648,10 @@ replaces `MapView.setup_view` (see the next section).
   does nothing. Never write a future time: a site that imports it then skips every real edit made
   before that time. If a local database row already holds a future stamp, reset that row instead
   (`tests/test_json_hygiene.py` refuses future stamps).
+- **An email can carry a print format that is rendered when it is sent.** Pass
+  `{"print_format_attachment": 1, "doctype", "name", "print_format"}` in `attachments` to
+  `frappe.sendmail`, as `GivingStatement.send_by_email` does, so no PDF is made while a row lock is
+  held.
 - **Frappe imports module folders only for the doctypes in its own `IMPORTABLE_DOCTYPES` list**
   (`frappe/model/sync.py`), which covers Notification but not Letter Head or Email Template. Records
   shipped as JSON beside their module for anything outside that list never reach a site, however
@@ -830,6 +888,15 @@ While `frappe.flags.in_import` is set, Frappe applies no field defaults and skip
 validation, so a record made from a Person save during an import must set its mandatory fields
 itself. Frappe reads `import_labels` aliases only for child-table fields, so a parent column matches
 only its label, its translated label, its fieldname or `Label (fieldname)`.
+
+Giving history imports through the virtual DocType Giving Import in Church Finances. Its provider,
+`church_finances/imports/giving.GivingImportProvider`, subclasses Frappe's `ImportProvider`
+directly, because a row makes a Donation, not a Person. It finds the giver by `legacy_system` and
+`legacy_id`, else by the only holder of the email in the importer's churches, and adds the Donation
+(Gift ID in `legacy_id`) to the draft Collection of the row's `import_batch` and date. It refuses a
+Gift ID already on a Collection that is not cancelled, and a row that matches an Online Donation the
+gateway charged. Finance submits the drafts, so nothing reaches the funds before a person checks
+it. The Donation Acknowledgment notification skips a Collection with an `import_batch`.
 
 ## Person Notes
 
@@ -1068,7 +1135,10 @@ reminder) sends again. It does not commit. A text leaves at once, so a caller th
 calls `send` once per person and commits after each, as `Delivery.send_all` does: a rollback after a
 text left forgets its copy, and a rerun texts that person again. Church Email copies keep a blank
 `send_key`. New code that messages people uses it, not `frappe.sendmail` or `send_sms`, so consent
-and the copy apply.
+and the copy apply. Giving statements are the exception: they are tax receipts, so
+`GivingStatement.send_by_email` sends them with `frappe.sendmail` and the Giving Statement Email
+Template, as Online Donation sends its receipt, with no consent check (a global unsubscribe still
+stops them; see "Giving and the fund ledger").
 
 Consent is answered only by `consent.allowed`, or `consent.allowed_people` for a list. The newest
 record decides, ties by creation; a blank-purpose Given never undoes a withdrawal for one purpose.
