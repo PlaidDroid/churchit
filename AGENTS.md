@@ -324,6 +324,16 @@ attendance save trips it.
 Recurring Functions are made in `church_ministries/recurrence.py`. Deleting an occurrence adds its
 date to the template's Skip Dates (`Function.on_trash`), so the daily job does not make it again.
 
+A group meeting is a Function with `group` set, and the group's schedule is the `auto_repeat`
+Function with that group. `group` is the only link from a Function to a Group: `Function.validate`
+refuses a new Group association row, a group of another church and a shared Function with a group. A
+schedule takes no attendance rows, because `apply_template` copies them to each occurrence. A
+leader's attendance goes through `attendance.record` (`group_meetings.record_group_attendance`),
+which also sets `did_not_meet` and `attendance_recorded_on`. `Group.meets` is display only:
+`group_meetings.get_meets` writes it from the schedule on load and on save, so do not add schedule
+fields to Group. Group attendance figures leave out `did_not_meet` meetings and schedules, and count
+only `COUNTED_TYPES` on past meetings.
+
 Birthdays and ages come from the Person fields, never from Life Event rows. `birth_month` and
 `birth_day` are set from the Birth event even when its year is unknown (0 when there is no
 birthday). `birth_date` needs a known year. `age` needs one too and, for someone who died, a known
@@ -423,6 +433,16 @@ Some portal surfaces read past document permissions by design and apply the memb
 hand: the community prayer request list (`get_community_filters`), the Join a public group picker
 (`group_api.joinable_public_groups`), `/directory`, the Function Sign-Up form's function options and
 the recipient search (`search_church_recipient`). A new one must do the same.
+
+The group leader surfaces read past permissions too, but gate on leadership, not on the church: a
+portal leader holds no DocPerm on Group or Function. `/group-leader`,
+`group_meetings.get_group_meetings`, `record_group_attendance` and `group_api.message_group` call
+`group_leaders.require_leader(group)`, and `decide_join_request` calls it unless the user may write
+the Group. `group_meetings.get_roster` is the one answer to who a leader sees and messages: the
+group's living members. `/find-a-group` lists the selected church's open groups and shows only the
+city and a pin rounded to 2 decimals from each group's schedule Function. It never reads `meets` or
+the street. A member's own requests come from `joinable_public_groups`, so the public page reads no
+Group Join Request.
 
 A guest endpoint behind a public page declares no `church` parameter. `churchit.with_church`
 (`site_church.js`) sends the page's `?church=` with the call, and the endpoint reads it through
@@ -596,6 +616,9 @@ replaces `MapView.setup_view` (see the next section).
 - **Administrator is never restricted.** User permissions do not apply to it, so it always sees every
   church. Test scoping as a Church Manager, never as Administrator.
 - **Booleans over `frappe.xcall` arrive as strings.** Use `frappe.utils.sbool`, not `cint`.
+- **A Check of 0 cannot be told from not set.** A server copy of a type's defaults would undo a
+  user's untick, so Group Type defaults are copied only by `group.js` when `group_type` changes, and
+  the server copies nothing. Do not use `fetch_from` or `fetch_if_empty` for such defaults.
 - **The payments app replaces Frappe's web form save.** Its copy of `accept` takes the doctype from
   the browser and ignores Web Form Request keys (frappe/payments#276), so hooks.py points `accept`
   back at Frappe's own; the last installed app wins. A test that calls Frappe's `accept` directly
@@ -962,6 +985,33 @@ Never put a request key in a Communication or Comment: anyone who reads the Pers
 `Person.team_calendar_key` is at permlevel 4 (System Manager only). Code reads and writes it with
 `frappe.db`; do not read it through a document a user sees.
 
+A person leads a group when their Group Member row has a Group Role with `is_leader` (Leads the
+Group). Ask only `church_people/group_leaders.py`: `get_leaders`, `is_group_leader`,
+`get_led_groups` and `require_leader`, which returns the session's Person or raises PermissionError
+for a Guest, a user with no Person and a non-leader. They live outside `group.py` so that
+`group_meetings.py` imports them without a cycle.
+
+A join request is a Group Join Request, never a Group Member row: Person summaries, a Church Email
+to a group and the directory read every member row. Only `group_api.join_group` makes one and only
+`decide_join_request` decides one; staff have no create on it and add a member on the Group form.
+Both lock the Group row first, then the request row (`for_update`), so a join and a decision cannot
+deadlock and two decisions cannot both pass.
+Approval appends the Group Member and saves the Group with `ignore_permissions`, so `Group.validate`
+applies the group's requirements. A full or closed group refuses a join: `Group.is_full` and
+`is_enrollment_open` work out `capacity` and `close_enrollment_on` when read, and no job stores
+them. Members have no read on Group Join Request; a leader sees requests through
+`get_open_join_requests`.
+
+Group File is the member-only file store of a group. A portal member reads and lists only the files
+of their own groups (`member_access.has_group_file_permission`, `group_file_query_conditions`), and
+only a leader of the group adds one (`GroupFile.validate`, which runs under the web form's
+`ignore_permissions` too). Its file must be private and one the user can open. File's
+`before_insert` has written the content before a `doc_events` hook runs, so
+`make_group_files_private` refuses a public file instead of flipping the flag, and
+`GroupFile.validate` refuses a public URL, or a private file the user cannot open, that the web form
+attached with `set_value`. The Attach field is `attached_file`, not `file`: Frappe's web form
+uploads again for a saved result with a `file` key.
+
 ## Care and child safety
 
 `background_check.is_cleared(person, on_date, check_types)` is the one rule for "cleared to serve":
@@ -971,6 +1021,14 @@ Request's caregiver gets the request through `assign_to`, which shares it only w
 has the share right. So `CareRequest.assign` shares it first, with `ignore_share_permission`.
 `before_save` has already refused a caregiver outside the request's church
 (`refuse_a_caregiver_outside_the_church`).
+
+`background_check.get_check_problem(person, on_date, check_types, label)` is the one message for a
+missing check, and Ministry Team Assignment and Group both call it. A Group with
+`needs_background_check` checks, in `group_requirements.check_member_requirements` (from
+`Group.validate`), only member rows whose (person, role) pair is new since the last save, and with
+Checks Apply To Leaders only rows whose Group Role leads the group. `block_without_checks` throws;
+otherwise the save warns. The requirement fields are on Group, not on the global Group Type, so one
+church cannot weaken another church's rule.
 
 At the Check-In Station, `function_check_in.add_check_ins(function, persons, kind)` is the one way
 code checks people in: the station, the kiosk and pre check-in call it after their own permission
@@ -1139,6 +1197,13 @@ and the copy apply. Giving statements are the exception: they are tax receipts, 
 `GivingStatement.send_by_email` sends them with `frappe.sendmail` and the Giving Statement Email
 Template, as Online Donation sends its receipt, with no consent check (a global unsubscribe still
 stops them; see "Giving and the fund ledger").
+
+Every group message goes through `send` with the purpose Group Messages
+(`communication_purpose.GROUP_MESSAGES`, which cannot be deleted): a leader's message, the daily
+attendance reminder, a join request to the leaders and the decision to the person. A leader's
+subject and text are `context` values, never template source. A leader's message takes the name of
+its Comment on the Group as its key, so the same words sent twice both go out. `send` sends nothing
+for an empty list of people.
 
 Consent is answered only by `consent.allowed`, or `consent.allowed_people` for a list. The newest
 record decides, ties by creation; a blank-purpose Given never undoes a withdrawal for one purpose.
