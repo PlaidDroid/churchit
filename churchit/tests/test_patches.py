@@ -25,6 +25,7 @@ from churchit.patches.v1_0 import (
 	add_missionary_map_to_missions_page,
 	add_missionary_statuses,
 	add_personal_details_and_care_requests_to_portal,
+	add_pledges_to_portal,
 	add_unsynced_default_records,
 	clear_unknown_person_sources,
 	list_missionary_people_in_a_table,
@@ -265,7 +266,7 @@ class TestVersionedPatches(FrappeTestCase):
 		)
 
 	def test_portal_menu_items_are_added_once(self):
-		for patch in (portal_patch, add_attendance_to_portal):
+		for patch in (portal_patch, add_attendance_to_portal, add_pledges_to_portal):
 			with self.subTest(patch.ROUTE):
 				settings = frappe.get_doc("Portal Settings")
 				settings.menu = [row for row in settings.menu if row.route != patch.ROUTE]

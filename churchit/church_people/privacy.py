@@ -87,6 +87,7 @@ RECORDS_ABOUT_THE_PERSON = (
 	("Giving Statement", "person"),
 	("Member Transfer", "person"),
 	("Online Donation", "person"),
+	("Pledge", "person"),
 	("Prayer Request", "requestor"),
 	("Visitation Log", "person"),
 )

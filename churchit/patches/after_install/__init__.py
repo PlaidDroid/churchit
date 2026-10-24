@@ -739,6 +739,7 @@ def _setup_portal_settings():
 		("Care Requests", "care-request", "Care Request", "Church User"),
 		("Groups", "groups", "Group", "Church User"),
 		("Giving Statements", "statements", "Giving Statement", "Church User"),
+		("Pledges", "pledge", "Pledge", "Church User"),
 		("Bulletins", "bulletins", "Bulletin", "Church User"),
 		("Personal Details", "personal-details", "Person", "Church User"),
 		("Communication Preferences", "preferences", "Communication Consent", "Church User"),

@@ -83,3 +83,4 @@ churchit.patches.v1_0.add_child_safety_purpose
 churchit.patches.v1_0.mark_funds_tax_deductible
 churchit.patches.v1_0.add_non_cash_payment_type
 churchit.patches.v1_0.add_giving_statement_email_template
+churchit.patches.v1_0.add_pledges_to_portal

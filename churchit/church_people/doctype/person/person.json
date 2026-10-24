@@ -764,6 +764,11 @@
    "link_fieldname": "person"
   },
   {
+   "group": "Giving",
+   "link_doctype": "Pledge",
+   "link_fieldname": "person"
+  },
+  {
    "group": "Membership",
    "link_doctype": "Member Transfer",
    "link_fieldname": "person"
@@ -784,7 +789,7 @@
    "link_fieldname": "person"
   }
  ],
- "modified": "2026-10-23 01:13:53.000000",
+ "modified": "2026-10-23 01:13:54.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Person",
