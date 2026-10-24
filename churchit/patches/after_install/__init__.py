@@ -375,7 +375,7 @@ def _create_missionary_support_frequencies():
 
 def _create_group_roles():
 	for role in ("Leader", "Member"):
-		_insert_if_missing("Group Role", {"role": role}, role=role)
+		_insert_if_missing("Group Role", {"role": role}, role=role, is_leader=int(role == "Leader"))
 
 
 def _create_group_statuses():

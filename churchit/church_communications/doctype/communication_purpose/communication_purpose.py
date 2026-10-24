@@ -10,12 +10,15 @@ CHURCH_NEWS = "Church News"
 PASTORAL_CARE = "Pastoral Care"
 # What a page from the Check-In Station asks consent for.
 CHILD_SAFETY = "Child Safety"
-USED_BY_THE_APP = (CHURCH_NEWS, CHILD_SAFETY)
+# What a group leader's message, a join request and an attendance reminder ask consent for.
+GROUP_MESSAGES = "Group Messages"
+USED_BY_THE_APP = (CHURCH_NEWS, CHILD_SAFETY, GROUP_MESSAGES)
 
 STARTER_PURPOSES = {
 	CHURCH_NEWS: "Church Emails: news, events and announcements sent to the congregation.",
 	PASTORAL_CARE: "Messages about a person's care, such as visits, prayer and support.",
 	CHILD_SAFETY: "Pages from the Check-In Station that ask a child's parents to come.",
+	GROUP_MESSAGES: "Messages from group leaders, join requests and their answers, and attendance reminders.",
 }
 
 

@@ -4,7 +4,11 @@
 import frappe
 from frappe.handler import execute_cmd
 
+from churchit.church_communications.doctype.communication_purpose.communication_purpose import (
+	GROUP_MESSAGES,
+)
 from churchit.church_people.doctype.group.group import add_people
+from churchit.church_people.group_leaders import get_led_groups, is_group_leader, require_leader
 from churchit.tests.helpers import RollbackEachTest, ensure_user, make_person
 
 
@@ -71,3 +75,44 @@ class TestGroup(RollbackEachTest):
 		)
 		with self.assertRaises(frappe.PermissionError):
 			add_people(group.name, [self.outsider.name])
+
+
+class TestGroupLeaders(RollbackEachTest):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		frappe.db.set_value("Group Role", "Leader", "is_leader", 1)
+		cls.leader = make_person("_Test Leaders", "Leader")
+		cls.member = make_person("_Test Leaders", "Member")
+		cls.leader_user = ensure_user("_test_group_leader@example.com", "_Test Group Leader")
+		cls.member_user = ensure_user("_test_group_led@example.com", "_Test Group Led")
+		frappe.db.set_value("Person", cls.leader.name, "user", cls.leader_user)
+		frappe.db.set_value("Person", cls.member.name, "user", cls.member_user)
+
+	def setUp(self):
+		super().setUp()
+		self.group = frappe.get_doc({"doctype": "Group", "group_name": "_Test Led Group"})
+		self.group.append("members", {"person": self.leader.name, "group_role": "Leader"})
+		self.group.append("members", {"person": self.member.name, "group_role": "Member"})
+		self.group.insert(ignore_permissions=True)
+
+	def test_a_leader_row_leads_and_a_member_row_does_not(self):
+		self.assertTrue(is_group_leader(self.group.name, self.leader.name))
+		self.assertFalse(is_group_leader(self.group.name, self.member.name))
+		self.assertEqual(get_led_groups(self.leader.name), [self.group.name])
+		self.assertEqual(get_led_groups(self.member.name), [])
+
+	def test_require_leader_returns_the_leader(self):
+		frappe.set_user(self.leader_user)
+		self.assertEqual(require_leader(self.group.name), self.leader.name)
+
+	def test_require_leader_refuses_a_guest_a_member_and_a_user_with_no_person(self):
+		for user in ("Guest", self.member_user, "Administrator"):
+			frappe.set_user(user)
+			with self.assertRaises(frappe.PermissionError):
+				require_leader(self.group.name)
+
+	def test_the_starter_leader_role_leads_and_group_messages_cannot_be_deleted(self):
+		self.assertEqual(frappe.db.get_value("Group Role", "Leader", "is_leader"), 1)
+		with self.assertRaises(frappe.ValidationError):
+			frappe.delete_doc("Communication Purpose", GROUP_MESSAGES)
