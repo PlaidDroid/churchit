@@ -73,6 +73,7 @@ PERSONAL_DOCTYPES = (
 	("Person Note", "person"),
 	("Connection Card", "person"),
 	("Pickup Restriction", "child"),
+	("Group Join Request", "person"),
 )
 # Records about the person that a church keeps, by the field naming them. Their history, comments, attachments
 # and messages are about the person, so those go. A field naming someone in a role, such as caregiver, is not.

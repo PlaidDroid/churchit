@@ -52,6 +52,8 @@
 			{% endfor %}
 		</ul>
 
+		{% include "churchit/templates/includes/group_join_requests.html" %}
+
 		<h5 class="mt-4">{{ _("Meetings") }}</h5>
 		{% if not meetings[group] %}
 			<p class="text-muted">{{ _("The group has no meetings in the last 8 weeks.") }}</p>

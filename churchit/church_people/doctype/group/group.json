@@ -198,12 +198,17 @@
    "link_fieldname": "group"
   },
   {
+   "group": "Members",
+   "link_doctype": "Group Join Request",
+   "link_fieldname": "group"
+  },
+  {
    "group": "Files",
    "link_doctype": "Group File",
    "link_fieldname": "group"
   }
  ],
- "modified": "2026-10-23 21:10:00.000000",
+ "modified": "2026-10-23 22:30:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Group",

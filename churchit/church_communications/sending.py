@@ -244,6 +244,8 @@ def send(
 		message = email_template.response_html if email_template.use_html else email_template.response
 	for label, content in ((_("Subject"), subject), (_("Message"), message), (_("Text"), text)):
 		check_placeholders(content, label, extra=tuple(context))
+	if not people:
+		return set()
 
 	# A second sender for the same source waits here, then finds these copies sent.
 	if not frappe.db.get_value(source.doctype, source.name, "name", for_update=True):
