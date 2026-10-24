@@ -1,10 +1,13 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from urllib.parse import urlencode
+
 import frappe
 from frappe import _
 from frappe.utils import flt, get_fullname, sbool
 
+from churchit.church_finances.doctype.giving_settings.giving_settings import GivingSettings
 from churchit.church_finances.payments import get_fee_to_cover, get_payment_url
 from churchit.church_foundations.doctype.church.church import selected_church_name
 from churchit.church_scope import church_filters
@@ -14,18 +17,24 @@ no_cache = 1
 
 
 def get_context(context):
-	settings = frappe.get_cached_doc("Giving Settings")
+	settings: GivingSettings = frappe.get_cached_doc("Giving Settings")
 	church = selected_church_name()
 	context.no_cache = 1
 	context.title = _("Give")
 	context.enabled = bool(settings.enabled)
 	context.currency = settings.currency or "USD"
 	context.thank_you_message = settings.get_thank_you_message(church)
+	context.other_ways_to_give = settings.get_other_ways_to_give(church)
 	context.success = frappe.form_dict.get("success")
 
 	# When anonymous giving is off, the giver must log in so the gift links to a Person.
+	# The login returns to the give link's church, fund and amount.
 	if settings.enabled and not settings.allow_anonymous and frappe.session.user == "Guest":
-		frappe.local.flags.redirect_location = "/login?redirect-to=/give"
+		link = {
+			key: frappe.form_dict[key] for key in ("church", "fund", "amount") if frappe.form_dict.get(key)
+		}
+		page = "/give?" + urlencode(link) if link else "/give"
+		frappe.local.flags.redirect_location = "/login?" + urlencode({"redirect-to": page}, safe="/")
 		raise frappe.Redirect
 
 	# Funds the giver can choose from (name = link value, fund = display label).
@@ -36,8 +45,11 @@ def get_context(context):
 		fields=["name", "fund"],
 		order_by="fund",
 	)
-	fund_names = {fund.name for fund in context.funds}
-	context.default_fund = settings.default_fund if settings.default_fund in fund_names else None
+	# A give link (?fund=&amount=) chooses only a fund this page offers.
+	chosen_fund = frappe.form_dict.get("fund") or settings.default_fund
+	context.default_fund = chosen_fund if chosen_fund in {fund.name for fund in context.funds} else None
+	amount = flt(frappe.form_dict.get("amount"))
+	context.amount = amount if amount > 0 else None
 
 	# Gateways the donor may choose from. With one gateway the page hides the
 	# picker and uses it silently; with several the donor selects one.
@@ -53,13 +65,15 @@ def get_context(context):
 	context.is_logged_in = frappe.session.user != "Guest"
 	context.donor_name = ""
 	context.donor_email = ""
+	context.envelope_number = None
 	if context.is_logged_in:
 		person = frappe.db.get_value(
-			"Person", {"user": frappe.session.user}, ["name", "full_name"], as_dict=True
+			"Person", {"user": frappe.session.user}, ["name", "full_name", "envelope_number"], as_dict=True
 		)
 		if person:
 			context.donor_name = person.full_name or ""
 			context.donor_email = get_primary_email("Person", person.name) or ""
+			context.envelope_number = person.envelope_number
 		if not context.donor_name:
 			context.donor_name = get_fullname(frappe.session.user)
 		if not context.donor_email:

@@ -89,6 +89,11 @@ class GivingSettings(Document):
 		"""This church's acknowledgment wording, else the site-wide text."""
 		return self.wording_for(church).get("statement_acknowledgment") or self.statement_acknowledgment
 
+	def get_other_ways_to_give(self, church=None):
+		"""This church's bank, standing order or mailing details, else the site-wide text."""
+		# An attribute read, so the published-field scan of /give badges the field.
+		return self.wording_for(church).other_ways_to_give or self.other_ways_to_give
+
 	def wording_for(self, church=None):
 		"""The wording row for *church*, or an empty row when it has none."""
 		if not church:

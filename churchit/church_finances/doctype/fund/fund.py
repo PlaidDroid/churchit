@@ -1,10 +1,15 @@
 # This source code is freely given for the sake of the gospel (Matthew 10:8)
 # and is licensed under MIT No Attribution (MIT-0).
 
+from urllib.parse import urlencode
+
 import frappe
 from frappe.model.document import Document
 from frappe.query_builder.functions import Max
-from frappe.utils import flt
+from frappe.utils import flt, get_url
+from frappe.utils.print_format_generator import get_qr_code
+
+from churchit.church_scope import is_multi_church
 
 
 class Fund(Document):
@@ -90,3 +95,16 @@ def set_balance(fund: str, balance: float, goal_amount: float):
 	frappe.db.set_value(
 		"Fund", fund, {"balance": balance, "goal_progress": get_goal_progress(balance, goal_amount)}
 	)
+
+
+@frappe.whitelist()
+def get_give_link(fund: str) -> dict:
+	"""The /give address that chooses *fund*, and its QR code, for a printed card or an NFC tag."""
+	frappe.has_permission("Fund", "read", fund, throw=True)
+	query = {"fund": fund}
+	church = frappe.db.get_value("Fund", fund, "church")
+	if church and is_multi_church():
+		query = {"church": church, **query}
+
+	url = get_url(f"/give?{urlencode(query)}")
+	return {"url": url, "qr_code": get_qr_code(url)}
