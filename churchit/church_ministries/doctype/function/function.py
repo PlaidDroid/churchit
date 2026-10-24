@@ -9,6 +9,7 @@ from frappe.model.document import Document
 from frappe.utils import add_days, date_diff, format_datetime, get_datetime, getdate
 
 from churchit.church_ministries.attendance import get_attendance_total
+from churchit.church_scope import refuse_another_churches_record
 from churchit.utils import link_title
 
 TIME_FORMAT = "h:mm a"
@@ -23,6 +24,27 @@ class Function(Document):
 			and not self.flags.ignore_permissions
 		):
 			frappe.throw(_("Only the recurring functions job sets Source Template."), frappe.PermissionError)
+
+		self.refuse_new_group_associations()
+		if any(self.has_value_changed(field) for field in ("group", "church", "is_shared")):
+			self.validate_group()
+
+	def validate_group(self):
+		"""A group belongs to one church, so its meetings do too."""
+		if self.group and self.is_shared:
+			frappe.throw(_("A Function with a Group cannot be shared with all churches."))
+		refuse_another_churches_record(self, "Group", self.group)
+
+	def refuse_new_group_associations(self):
+		"""A Function names its group in Group. Rows kept from before that field stay as they are."""
+		if self.is_new() and self.source_template:
+			return  # An occurrence keeps the rows its template has.
+		before = self.get_doc_before_save()
+		rows_before = before.associations if before else []
+		kept = {row.association for row in rows_before if row.association_type == "Group"}
+		for row in self.associations:
+			if row.association_type == "Group" and row.association not in kept:
+				frappe.throw(_("Choose the group in the Group field, not in Associations."))
 
 	def before_save(self):
 		name = self.function_name or ""
@@ -74,6 +96,7 @@ def apply_template(source_name: str, start_date: str | None = None):
 		"all_day",
 		"description",
 		"associated_ministry",
+		"group",
 		"min_age",
 		"max_age",
 		"min_grade",

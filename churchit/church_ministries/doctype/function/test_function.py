@@ -8,7 +8,15 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, get_datetime, getdate
 
 from churchit.church_ministries.doctype.function.function import _as_time, apply_template
-from churchit.tests.helpers import ensure, make_function, make_person, make_team_position
+from churchit.church_ministries.recurrence import create_occurrence
+from churchit.tests.helpers import (
+	RollbackEachTest,
+	ensure,
+	make_function,
+	make_person,
+	make_team_position,
+	make_two_churches,
+)
 
 
 class TestFunction(FrappeTestCase):
@@ -85,3 +93,71 @@ class TestFunction(FrappeTestCase):
 		self.assertEqual(_as_time(time(9, 30)), time(9, 30))
 		self.assertEqual(_as_time(timedelta(hours=9, minutes=30)), time(9, 30))
 		self.assertEqual(_as_time("09:30:00"), time(9, 30))
+
+
+class TestFunctionGroup(RollbackEachTest):
+	def make_group(self, name, **values):
+		return frappe.get_doc({"doctype": "Group", "group_name": name, **values}).insert(
+			ignore_permissions=True
+		)
+
+	def test_an_occurrence_keeps_the_templates_group(self):
+		group = self.make_group("_Test Meeting Group")
+		template = make_function(
+			"_Test Group Template", group=group.name, auto_repeat=1, repeat_frequency="Weekly"
+		)
+
+		occurrence = create_occurrence(template, getdate("2031-05-08"))
+
+		self.assertEqual(occurrence.group, group.name)
+
+	def test_another_churches_group_is_refused(self):
+		_root, church_a, church_b = make_two_churches()
+		group = self.make_group("_Test Church B Group", church=church_b)
+
+		with self.assertRaises(frappe.PermissionError):
+			make_function("_Test Church A Meeting", church=church_a, group=group.name)
+
+	def test_a_shared_function_cannot_have_a_group(self):
+		group = self.make_group("_Test Shared Group")
+
+		with self.assertRaises(frappe.ValidationError):
+			make_function("_Test Shared Meeting", is_shared=1, group=group.name)
+
+	def test_a_new_group_association_row_is_refused(self):
+		group = self.make_group("_Test Association Group")
+		function = make_function("_Test Associated Function")
+
+		function.append("associations", {"association_type": "Group", "association": group.name})
+		with self.assertRaises(frappe.ValidationError):
+			function.save(ignore_permissions=True)
+
+	def test_a_new_function_with_a_group_association_row_is_refused(self):
+		group = self.make_group("_Test New Association Group")
+
+		with self.assertRaises(frappe.ValidationError):
+			make_function(
+				"_Test New Associated Function",
+				associations=[{"association_type": "Group", "association": group.name}],
+			)
+
+	def test_a_kept_group_association_row_saves(self):
+		"""The move patch leaves a Function's extra Group rows, and later saves keep them."""
+		group = self.make_group("_Test Kept Group")
+		function = make_function("_Test Kept Association")
+		frappe.get_doc(
+			{
+				"doctype": "Function Association",
+				"parenttype": "Function",
+				"parentfield": "associations",
+				"parent": function.name,
+				"association_type": "Group",
+				"association": group.name,
+			}
+		).db_insert()
+		function.reload()
+
+		function.description = "Still saves"
+		function.save(ignore_permissions=True)
+
+		self.assertEqual([row.association for row in function.associations], [group.name])

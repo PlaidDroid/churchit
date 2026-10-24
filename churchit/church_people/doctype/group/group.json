@@ -13,6 +13,7 @@
   "group_type",
   "church",
   "description",
+  "meets",
   "column_break_details",
   "status",
   "public",
@@ -46,6 +47,14 @@
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description"
+  },
+  {
+   "description": "When and where the group meets, from its recurring Function. Set Up Meetings changes it.",
+   "fieldname": "meets",
+   "fieldtype": "Small Text",
+   "label": "Meets",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "section_break_members",
@@ -133,9 +142,14 @@
    "group": "Ministry",
    "link_doctype": "Ministry",
    "link_fieldname": "group"
+  },
+  {
+   "group": "Meetings",
+   "link_doctype": "Function",
+   "link_fieldname": "group"
   }
  ],
- "modified": "2026-10-23 21:03:00.000000",
+ "modified": "2026-10-23 21:04:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "Group",

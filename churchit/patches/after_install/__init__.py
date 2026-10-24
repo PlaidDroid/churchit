@@ -250,6 +250,7 @@ def _create_function_types():
 		"Business Meeting",
 		"Communion",
 		"Baptism",
+		"Group Meeting",
 	):
 		_insert_if_missing("Function Type", {"type": function_type}, type=function_type)
 

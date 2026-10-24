@@ -24,6 +24,21 @@ frappe.ui.form.on("Group", {
 				__("Actions")
 			);
 		}
+
+		if (!frm.is_new() && frappe.model.can_create("Function")) {
+			frm.add_custom_button(
+				__("Set Up Meetings"),
+				() =>
+					frappe.new_doc("Function", {
+						function_name: frm.doc.group_name,
+						group: frm.doc.name,
+						type: "Group Meeting",
+						auto_repeat: 1,
+						church: frm.doc.church,
+					}),
+				__("Actions")
+			);
+		}
 	},
 
 	group_type(frm) {

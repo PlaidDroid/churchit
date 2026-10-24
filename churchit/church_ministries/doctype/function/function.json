@@ -11,6 +11,9 @@
   "type",
   "function_name",
   "associated_ministry",
+  "group",
+  "did_not_meet",
+  "attendance_recorded_on",
   "all_day",
   "start_date",
   "start_time",
@@ -105,6 +108,33 @@
    "label": "Associated Ministry",
    "options": "Ministry",
    "search_index": 1
+  },
+  {
+   "description": "The Group this function is a meeting of. Its leaders record the attendance.",
+   "fieldname": "group",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Group",
+   "options": "Group",
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "group",
+   "description": "The group did not meet this time. It records no attendance and gets no reminder.",
+   "fieldname": "did_not_meet",
+   "fieldtype": "Check",
+   "label": "Did Not Meet",
+   "no_copy": 1
+  },
+  {
+   "depends_on": "group",
+   "description": "When a leader last saved this meeting's attendance.",
+   "fieldname": "attendance_recorded_on",
+   "fieldtype": "Datetime",
+   "label": "Attendance Recorded On",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "default": "0",
@@ -442,7 +472,7 @@
    "link_fieldname": "function"
   }
  ],
- "modified": "2026-10-22 23:22:01.000000",
+ "modified": "2026-10-23 21:47:05.000000",
  "modified_by": "Administrator",
  "module": "Church Ministries",
  "name": "Function",

@@ -5,8 +5,16 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import getdate
 
+from churchit.church_people.group_meetings import get_meets
+
 
 class Group(Document):
+	def onload(self):
+		self.meets = get_meets(self.name)
+
+	def validate(self):
+		self.meets = get_meets(self.name)
+
 	@property
 	def member_count(self) -> int:
 		return len(self.members)

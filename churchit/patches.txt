@@ -86,4 +86,6 @@ churchit.patches.v1_0.add_giving_statement_email_template
 churchit.patches.v1_0.add_pledges_to_portal
 churchit.patches.v1_0.mark_leader_group_role
 churchit.patches.v1_0.add_group_messages_purpose
+churchit.patches.v1_0.move_group_associations_to_function_group
+churchit.patches.v1_0.add_group_meeting_function_type
 churchit.patches.v1_0.add_group_types
