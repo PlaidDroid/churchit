@@ -42,7 +42,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Person Reports",
-   "link_count": 27,
+   "link_count": 28,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -179,6 +179,16 @@
    "label": "Groups",
    "link_count": 0,
    "link_to": "Groups",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Group Attendance",
+   "link_count": 0,
+   "link_to": "Group Attendance",
    "link_type": "Report",
    "onboard": 0,
    "type": "Link"
@@ -332,7 +342,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Person Documents",
-   "link_count": 32,
+   "link_count": 35,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -370,9 +380,39 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Group Join Requests",
+   "link_count": 0,
+   "link_to": "Group Join Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Group Files",
+   "link_count": 0,
+   "link_to": "Group File",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Group Roles",
    "link_count": 0,
    "link_to": "Group Role",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Group Types",
+   "link_count": 0,
+   "link_to": "Group Type",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -658,7 +698,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-10-22 22:24:45.000000",
+ "modified": "2026-10-23 22:31:00.000000",
  "modified_by": "Administrator",
  "module": "Church People",
  "name": "People",
