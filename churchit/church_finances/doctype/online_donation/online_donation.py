@@ -63,7 +63,7 @@ class OnlineDonation(Document):
 		The checkout page sends the amount from the browser, so the gift's own amount
 		is not proof of what the donor paid. The gateway's request log is.
 		"""
-		if frappe.db.get_value(self.doctype, self.name, "status", for_update=True) == "Paid":
+		if frappe.db.get_value(self.doctype, self.name, "status", for_update=True) in ("Paid", "Refunded"):
 			return
 
 		request = get_integration_request(self)

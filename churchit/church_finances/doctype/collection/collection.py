@@ -2,6 +2,7 @@
 # and is licensed under MIT No Attribution (MIT-0).
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 from churchit.church_finances.doctype.fund.fund import add_transaction, remove_transactions
@@ -10,6 +11,16 @@ from churchit.contacts import get_primary_emails
 
 
 class Collection(Document):
+	def before_insert(self):
+		# Its cancel marked the gift Refunded, so an amended copy would count a gift with no record.
+		# church-scope: the gifts of the Collection this one amends, which the user could cancel
+		if self.amended_from and frappe.db.exists("Online Donation", {"collection": self.amended_from}):
+			frappe.throw(
+				_(
+					"Collection {0} recorded an online gift, so it cannot be amended. To correct it, make a new collection with a negative donation row."
+				).format(self.amended_from)
+			)
+
 	def validate(self):
 		for donation in self.donations:
 			refuse_another_churches_record(self, "Fund", donation.fund)
@@ -72,6 +83,13 @@ class Collection(Document):
 		self.update_funds(reverse=False)
 
 	def on_cancel(self):
+		# Finance cancels a gift's Collection after a refund at the processor. The gifts
+		# are locked one by one before the Funds, in the order record_charge locks them.
+		# church-scope: the gifts this Collection recorded, which its own cancel check allowed
+		gifts = frappe.get_all("Online Donation", {"collection": self.name, "status": "Paid"}, pluck="name")
+		for gift in gifts:
+			frappe.db.set_value("Online Donation", gift, "status", "Refunded")
+
 		self.update_funds(reverse=True)
 
 	def update_funds(self, reverse=False):

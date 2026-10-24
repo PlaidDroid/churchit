@@ -8,8 +8,10 @@ from frappe.exceptions import ValidationError
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_months, get_datetime, getdate, now
 
+from churchit.church_finances.doctype.online_donation import online_donation
 from churchit.church_finances.report.fund_transactions_by_date import fund_transactions_by_date
 from churchit.patches.v1_0 import date_collection_ledger_rows
+from churchit.tests.helpers import RollbackEachTest, make_person
 
 
 def _ensure(doctype, filters, values):
@@ -139,3 +141,121 @@ class TestCollection(FrappeTestCase):
 		with patch.object(frappe.db, "set_value") as set_value:
 			date_collection_ledger_rows.execute()
 		set_value.assert_not_called()
+
+
+class TestRefund(RollbackEachTest):
+	"""A refund at the processor is recorded by cancelling the gift's Collection, or by a negative row."""
+
+	def setUp(self):
+		super().setUp()
+		self.giver = make_person("_Test Refund", "Giver")
+		self.fund = frappe.get_doc({"doctype": "Fund", "fund": "_Test Refund Fund"}).insert(
+			ignore_permissions=True
+		)
+		self.payment_type = _ensure("Payment Type", {"type": "Cash"}, {"type": "Cash"})
+
+	def make_collection(self, date, amount):
+		"""A submitted Collection with one gift of *amount* from the giver."""
+		collection = frappe.get_doc({"doctype": "Collection", "date": date, "expected_total": amount})
+		collection.append(
+			"donations",
+			{
+				"person": self.giver.name,
+				"fund": self.fund.name,
+				"payment_type": self.payment_type,
+				"amount": amount,
+			},
+		)
+		collection.insert(ignore_permissions=True).submit()
+		return collection
+
+	def gift(self, collection=None, status="Paid"):
+		gift = frappe.get_doc(
+			{
+				"doctype": "Online Donation",
+				"amount": 40,
+				"fund": self.fund.name,
+				"currency": "USD",
+				"status": status,
+			}
+		).insert(ignore_permissions=True)
+		# Only recording a gift sets its Collection, so the test sets it under the form.
+		if collection:
+			gift.db_set("collection", collection.name)
+		return gift
+
+	def status(self, gift):
+		return frappe.db.get_value("Online Donation", gift.name, "status")
+
+	def test_cancelling_a_gifts_collection_refunds_the_gift(self):
+		collection = self.make_collection("2031-03-01", 40)
+		gift, pending = self.gift(collection), self.gift(collection, status="Pending")
+
+		collection.cancel()
+
+		self.assertEqual((self.status(gift), self.status(pending)), ("Refunded", "Pending"))
+		self.assertFalse(frappe.db.exists("Financial Transaction", {"source": collection.name}))
+
+	def test_a_second_callback_on_a_refunded_gift_records_nothing(self):
+		_ensure(
+			"Payment Type",
+			{"type": online_donation.ONLINE_PAYMENT_TYPE},
+			{"type": online_donation.ONLINE_PAYMENT_TYPE},
+		)
+		gift = self.gift(status="Pending")
+		with (
+			patch.object(online_donation, "is_charge_confirmed", return_value=True),
+			patch.object(online_donation.OnlineDonation, "send_acknowledgment"),
+		):
+			gift.on_payment_authorized("Completed")
+			frappe.get_doc(
+				"Collection", frappe.db.get_value("Online Donation", gift.name, "collection")
+			).cancel()
+			collections = frappe.db.count("Collection")
+
+			frappe.get_doc("Online Donation", gift.name).on_payment_authorized("Completed")
+
+		self.assertEqual(self.status(gift), "Refunded")
+		self.assertEqual(frappe.db.count("Collection"), collections)
+		self.assertFalse(frappe.db.exists("Financial Transaction", {"parent": self.fund.name}))
+		self.assertEqual(frappe.db.get_value("Fund", self.fund.name, "balance"), 0)
+
+	def amend(self, collection):
+		amended = frappe.copy_doc(collection)
+		amended.update({"amended_from": collection.name, "docstatus": 0})
+		return amended.insert(ignore_permissions=True)
+
+	def test_a_gifts_collection_cannot_be_amended(self):
+		"""The cancel marked the gift Refunded, so the amended copy would put its money back with no gift."""
+		collection = self.make_collection("2031-03-01", 40)
+		gift = self.gift(collection)
+		collection.cancel()
+
+		with self.assertRaises(frappe.ValidationError):
+			self.amend(collection)
+		self.assertFalse(frappe.db.exists("Collection", {"amended_from": collection.name}))
+		self.assertEqual(self.status(gift), "Refunded")
+
+		other = self.make_collection("2031-03-02", 15)
+		other.cancel()
+		self.assertTrue(self.amend(other).name)
+
+	def test_cancelling_a_collection_with_no_gift_changes_no_gift(self):
+		gift = self.gift(self.make_collection("2031-03-01", 40))
+		self.make_collection("2031-03-02", 15).cancel()
+		self.assertEqual(self.status(gift), "Paid")
+
+	def test_a_negative_row_next_year_lowers_only_next_years_statement(self):
+		self.make_collection("2031-03-01", 100)
+		self.make_collection("2032-02-01", 50)
+		self.make_collection("2032-04-01", -20)
+
+		totals = [
+			frappe.get_doc(
+				{"doctype": "Giving Statement", "person": self.giver.name, "from_date": start, "to_date": end}
+			)
+			.insert(ignore_permissions=True)
+			.total_amount
+			for start, end in (("2031-01-01", "2031-12-31"), ("2032-01-01", "2032-12-31"))
+		]
+		self.assertEqual(totals, [100, 30])
